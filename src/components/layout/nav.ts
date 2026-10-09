@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   ScrollText,
   Settings,
+  ShieldCheck,
+  UserCog,
   Users,
   Wallet,
   Workflow,
@@ -58,6 +60,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Reports", icon: ScrollText, href: "/reports" },
       { label: "Audit", icon: Bell, href: "/audit" },
+      { label: "Users", icon: UserCog, href: "/users" },
+      { label: "Roles", icon: ShieldCheck, href: "/roles" },
       { label: "Settings", icon: Settings, href: "/settings" },
     ],
   },

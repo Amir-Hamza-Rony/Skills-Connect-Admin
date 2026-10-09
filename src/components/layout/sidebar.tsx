@@ -1,7 +1,21 @@
 import { useEffect } from "react"
+import { LogOut } from "lucide-react"
+import { NavLink } from "react-router-dom"
+
+import { useAuth } from "@/lib/auth"
 import { NAV_SECTIONS } from "@/components/layout/nav"
+import { ROUTE_PERMISSIONS, hasPermission } from "@/lib/permissions"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
+
+export function initialsOf(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((p) => p.replace(/[^A-Za-z]/g, "").charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase()
+}
 
 function Brand() {
   return (
@@ -22,45 +36,76 @@ function Brand() {
 }
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
+  const { permissions } = useAuth()
   return (
     <nav aria-label="Primary" className="space-y-5 px-2">
-      {NAV_SECTIONS.map((section) => (
-        <div key={section.title}>
-          <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {section.title}
-          </p>
-          <ul className="space-y-0.5">
-            {section.items.map((item) => {
-              const active = item.href === "/dashboard"
-              const Icon = item.icon
-              return (
-                <li key={item.href}>
-                  <a
-                    href={item.href}
-                    onClick={(e) => {
-                      // Day-1 shell: single dashboard view; full routing lands later.
-                      e.preventDefault()
-                      onNavigate?.()
-                    }}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors outline-none",
-                      "focus-visible:ring-2 focus-visible:ring-ring",
-                      active
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="size-4 shrink-0" aria-hidden />
-                    {item.label}
-                  </a>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      ))}
+      {NAV_SECTIONS.map((section) => {
+        const visible = section.items.filter((item) => {
+          const required = ROUTE_PERMISSIONS[item.href]
+          return !required || hasPermission(permissions, required)
+        })
+        if (visible.length === 0) return null
+        return (
+          <div key={section.title}>
+            <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {section.title}
+            </p>
+            <ul className="space-y-0.5">
+              {visible.map((item) => {
+                const Icon = item.icon
+                return (
+                  <li key={item.href}>
+                    <NavLink
+                      to={item.href}
+                      onClick={() => onNavigate?.()}
+                      className={({ isActive }) =>
+                        cn(
+                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors outline-none",
+                          "focus-visible:ring-2 focus-visible:ring-ring",
+                          isActive
+                            ? "bg-accent text-accent-foreground"
+                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                        )
+                      }
+                    >
+                      <Icon className="size-4 shrink-0" aria-hidden />
+                      {item.label}
+                    </NavLink>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      })}
     </nav>
+  )
+}
+
+function UserCard() {
+  const { user, logout } = useAuth()
+  if (!user) return null
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+        {initialsOf(user.name)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{user.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {user.email}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={logout}
+        aria-label="Sign out"
+        title="Sign out"
+        className="rounded-md p-1.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <LogOut className="size-4" aria-hidden />
+      </button>
+    </div>
   )
 }
 
@@ -80,19 +125,7 @@ export function Sidebar() {
         <NavList />
       </div>
       <div className="shrink-0 border-t border-sidebar-border p-3">
-        <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-            AD
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">
-              Administrator
-            </span>
-            <span className="block truncate text-xs text-muted-foreground">
-              Mock role
-            </span>
-          </span>
-        </div>
+        <UserCard />
       </div>
     </aside>
   )
@@ -149,6 +182,9 @@ export function SidebarDrawer({
         <Separator className="mx-4 mb-4 w-auto shrink-0" />
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
           <NavList onNavigate={onClose} />
+        </div>
+        <div className="shrink-0 border-t border-sidebar-border p-3">
+          <UserCard />
         </div>
       </aside>
     </div>
