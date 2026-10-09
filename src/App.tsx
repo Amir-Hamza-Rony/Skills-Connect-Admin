@@ -6,6 +6,8 @@ import { RequireAuth, RequirePermission } from "@/components/require-auth"
 import { Dashboard } from "@/components/dashboard/dashboard"
 import { LoginPage } from "@/pages/login"
 import { PlaceholderPage } from "@/pages/placeholder"
+import { RolesPage } from "@/pages/roles"
+import { UsersPage } from "@/pages/users"
 
 function ShellRoutes() {
   return (
@@ -17,10 +19,7 @@ function ShellRoutes() {
           path="users"
           element={
             <RequirePermission perm="users.manage">
-              <PlaceholderPage
-                title="Users"
-                note="User management lands in D2-T3 with role assignment and activation."
-              />
+              <UsersPage />
             </RequirePermission>
           }
         />
@@ -28,10 +27,7 @@ function ShellRoutes() {
           path="roles"
           element={
             <RequirePermission perm="roles.manage">
-              <PlaceholderPage
-                title="Roles"
-                note="Role and permission matrix UI lands in D2-T3."
-              />
+              <RolesPage />
             </RequirePermission>
           }
         />
