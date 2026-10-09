@@ -114,3 +114,170 @@ export type Permission =
   | "reports.view"
   | "audit.view"
   | "settings.manage"
+
+/* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
+/* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
+
+export type OrderStatus =
+  | "Lead"
+  | "Qualified"
+  | "Won"
+  | "Lost"
+  | "New"
+  | "Awaiting Payment"
+  | "Awaiting Documents"
+  | "Documents Under Review"
+  | "Ready for Submission"
+  | "Submitted to Source Agent"
+  | "Submitted to RTO"
+  | "RTO Acknowledged"
+  | "Under Assessment"
+  | "Additional Evidence Required"
+  | "Rework Required"
+  | "Approved"
+  | "Certificate Issued"
+  | "Completed"
+  | "On Hold"
+  | "Cancelled"
+  | "Refunded"
+
+export const ORDER_STATUS_GROUPS: Array<{
+  group: string
+  statuses: OrderStatus[]
+}> = [
+  { group: "Sales", statuses: ["Lead", "Qualified", "Won", "Lost"] },
+  {
+    group: "Onboarding",
+    statuses: ["New", "Awaiting Payment", "Awaiting Documents", "Documents Under Review"],
+  },
+  {
+    group: "Submission",
+    statuses: ["Ready for Submission", "Submitted to Source Agent", "Submitted to RTO", "RTO Acknowledged"],
+  },
+  {
+    group: "Assessment",
+    statuses: ["Under Assessment", "Additional Evidence Required", "Rework Required"],
+  },
+  { group: "Completion", statuses: ["Approved", "Certificate Issued", "Completed"] },
+  { group: "Exception", statuses: ["On Hold", "Cancelled", "Refunded"] },
+]
+
+export type DocumentStatus =
+  | "Requested"
+  | "Not Received"
+  | "Received"
+  | "Under Review"
+  | "Approved"
+  | "Rejected"
+  | "Superseded"
+
+export type EvidenceStatus =
+  | "Not Started"
+  | "In Progress"
+  | "Complete"
+  | "Additional Evidence Required"
+
+export type RtoSubmissionStatus =
+  | "Not Ready"
+  | "Ready"
+  | "Submitted"
+  | "Acknowledged"
+  | "Under Assessment"
+  | "Additional Evidence Required"
+  | "Issued"
+
+export type CertificateStatus =
+  | "Not Issued"
+  | "Pending"
+  | "Issued"
+  | "Certificate File Received"
+  | "Delivered to Client"
+
+export type PaymentStatus =
+  | "Unpaid"
+  | "Part Paid"
+  | "Paid"
+  | "Overdue"
+  | "Refunded"
+  | "Written Off"
+
+export type TaskStatus = "Todo" | "In Progress" | "Done" | "Blocked"
+
+export interface Client {
+  id: string
+  legalName: string
+  preferredName: string
+  phone: string
+  email: string
+  address: string
+  status: string
+  sourceAgentId: string | null
+  notes: string
+  createdAt: string
+}
+
+export interface StatusChange {
+  timestamp: string
+  actorId: string
+  field: string
+  before: string
+  after: string
+}
+
+export interface Order {
+  id: string
+  clientId: string
+  qualificationId: string
+  salesAgentId: string
+  sourceAgentId: string
+  rtoId: string
+  status: OrderStatus
+  evidenceStatus: EvidenceStatus
+  rtoSubmissionStatus: RtoSubmissionStatus
+  certificateStatus: CertificateStatus
+  sellingPrice: number
+  supplierCostSnapshot: number
+  otherCost: number
+  currency: "AUD"
+  createdAt: string
+  updatedAt: string
+  completedAt: string | null
+  history: StatusChange[]
+}
+
+export interface OrderDocument {
+  id: string
+  clientId: string
+  orderId: string
+  type: string
+  storageKey: string
+  version: number
+  status: DocumentStatus
+  receivedAt: string | null
+  reviewedAt: string | null
+  reviewedBy: string | null
+  rejectionReason: string | null
+}
+
+export interface WorkflowTask {
+  id: string
+  orderId: string
+  stage: string
+  title: string
+  assigneeId: string | null
+  dueDate: string | null
+  status: TaskStatus
+  priority: "Low" | "Medium" | "High"
+}
+
+/** Per-qualification document checklist template. */
+export const DOC_CHECKLISTS: Record<string, string[]> = {
+  default: [
+    "Identity (passport / licence)",
+    "USI transcript",
+    "Employment evidence",
+    "Reference letter",
+    "Photos / skills evidence",
+    "RTO enrolment kit",
+  ],
+}
