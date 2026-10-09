@@ -5,7 +5,11 @@ import { AppShell } from "@/components/layout/app-shell"
 import { RequireAuth, RequirePermission } from "@/components/require-auth"
 import { Dashboard } from "@/components/dashboard/dashboard"
 import { AgentsPage } from "@/pages/agents"
+import { ClientProfilePage } from "@/pages/client-profile"
+import { ClientsPage } from "@/pages/clients"
 import { LoginPage } from "@/pages/login"
+import { OrderDetailPage } from "@/pages/order-detail"
+import { OrdersPage } from "@/pages/orders"
 import { PlaceholderPage } from "@/pages/placeholder"
 import { PricingPage } from "@/pages/pricing"
 import { QualificationsPage } from "@/pages/qualifications"
@@ -70,13 +74,33 @@ function ShellRoutes() {
         <Route
           path="clients"
           element={
-            <PlaceholderPage title="Clients" note="Client management lands on Day 3." />
+            <RequirePermission perm="clients.view">
+              <ClientsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="clients/:id"
+          element={
+            <RequirePermission perm="clients.view">
+              <ClientProfilePage />
+            </RequirePermission>
           }
         />
         <Route
           path="orders"
           element={
-            <PlaceholderPage title="Orders" note="Order management lands on Day 3." />
+            <RequirePermission perm="orders.view">
+              <OrdersPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="orders/:id"
+          element={
+            <RequirePermission perm="orders.view">
+              <OrderDetailPage />
+            </RequirePermission>
           }
         />
         <Route
