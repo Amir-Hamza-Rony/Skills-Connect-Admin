@@ -281,3 +281,85 @@ export const DOC_CHECKLISTS: Record<string, string[]> = {
     "RTO enrolment kit",
   ],
 }
+
+/* ================= Day-4: Finance, QuickBooks, Audit =================== */
+
+export type InvoiceStatus =
+  | "Draft"
+  | "Sent"
+  | "Part Paid"
+  | "Paid"
+  | "Overdue"
+  | "Void"
+
+export interface Invoice {
+  id: string
+  orderId: string
+  invoiceNumber: string
+  total: number
+  dueDate: string
+  status: InvoiceStatus
+  createdAt: string
+}
+
+export type InstalmentStatus =
+  | "Pending"
+  | "Due"
+  | "Paid"
+  | "Part Paid"
+  | "Overdue"
+  | "Waived"
+  | "Cancelled"
+
+export interface Instalment {
+  id: string
+  dueDate: string
+  amount: number
+  paidAmount: number
+  status: InstalmentStatus
+}
+
+export interface PaymentPlan {
+  id: string
+  orderId: string
+  total: number
+  instalments: Instalment[]
+}
+
+export type PaymentMethod = "Bank Transfer" | "Card" | "Cash" | "Other"
+
+export interface Payment {
+  id: string
+  orderId: string
+  invoiceId: string | null
+  amount: number
+  date: string
+  method: PaymentMethod
+  reference: string
+  allocatedAmount: number
+  status: "Allocated" | "Partially Allocated" | "Unallocated" | "Refunded" | "Void"
+}
+
+export type QBSyncStatus = "Not Synced" | "Pending" | "Synced" | "Failed"
+
+export interface QBSyncRecord {
+  entityType: "invoice" | "payment"
+  entityId: string
+  idempotencyKey: string
+  status: QBSyncStatus
+  attempts: number
+  lastSyncAt: string | null
+  syncError: string | null
+  qbReference: string | null
+}
+
+export interface AuditEvent {
+  id: string
+  timestamp: string
+  actorId: string
+  entityType: string
+  entityId: string
+  action: string
+  before: string
+  after: string
+}

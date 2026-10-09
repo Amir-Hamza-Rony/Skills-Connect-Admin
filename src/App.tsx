@@ -8,6 +8,7 @@ import { AgentsPage } from "@/pages/agents"
 import { ClientProfilePage } from "@/pages/client-profile"
 import { ClientsPage } from "@/pages/clients"
 import { DocumentsPage } from "@/pages/documents"
+import { FinancePage } from "@/pages/finance"
 import { LoginPage } from "@/pages/login"
 import { OrderDetailPage } from "@/pages/order-detail"
 import { OrdersPage } from "@/pages/orders"
@@ -124,7 +125,9 @@ function ShellRoutes() {
         <Route
           path="finance"
           element={
-            <PlaceholderPage title="Finance" note="Invoices, plans, and payments land on Day 4." />
+            <RequirePermission perm="finance.view">
+              <FinancePage />
+            </RequirePermission>
           }
         />
         <Route
