@@ -205,3 +205,27 @@ All 15 acceptance criteria (C1–C3, F1–F3, E1–E3, G1–G2, H1–H2, permiss
 3. Exact RBAC permission matrix, commission rules, completion-criteria per qualification, and document-type catalogue need business confirmation.
 4. Stack details (Vite vs other bundler, Mongoose confirmation, session vs JWT rotation, S3 provider, BullMQ vs equivalent, Docker target, log vendor) are recommendations until scaffolding pins them.
 5. DOCX images (`image1–4.png`) and custom XML were not extracted as requirements — assumed illustrative; flag if any contains normative workflow.
+
+---
+
+## 15. Backend roadmap (Phase B1–B6) — planned, not started
+
+Full detail: `BACKEND-PLAN.md`. Front-end shell (Day 1–5) is complete with a
+preview in-memory store (57 REST-shaped functions); these phases replace it
+with Node + Express + TypeScript + MongoDB/Mongoose. Estimate ≈ 22–30 working
+days (not 5 days). Proposed defaults pending confirmation: JWT access +
+rotating httpOnly refresh (D1), same-repo `server/` (D2), local Docker Mongo
+(D3), MinIO dev storage (D4).
+
+| Phase | Work | Days | Key dependencies | Done when |
+|---|---|---|---|---|
+| **B1** Server foundation | Express+TS app, zod env, Mongo/Redis connect, error/log middleware, docker-compose (mongo/redis/minio), Vitest+Supertest harness | 3–4 | D2/D3 decisions, Docker | `GET /health` green; compose gives mongo+redis+minio |
+| **B2** Auth + RBAC | User/Role models, argon2id, access+refresh rotation, revoke/logout, rate-limit, `requirePermission` everywhere, audit middleware, real frontend login | 3–4 | D1–D3 locked | Wrong password rejected; Sales gets 403 on `/users` |
+| **B3** Masters + Clients/Orders | 17 collections (incl. new `certificates`), dedupe report, immutable snapshots, transactional transitions + history + tasks, stores → API calls | 4–5 | Mongo access | Multi-order + snapshot + history in one transaction |
+| **B4** Documents + storage | S3 adapter, 15-min signed URLs, checklist templates, version-supersede, review, access logging | 3–4 | D4 locked, bucket creds | Raw storage key never reaches client |
+| **B5** Finance + QuickBooks | Invoices/plans/payments server-side, allocation + overdue calc, BullMQ idempotent QB sync + webhook + retry | 4–5 | QB sandbox creds, Redis | Retry creates exactly one QB record |
+| **B6** Reports + Audit + Migration + Deploy | Aggregation pipelines, audit indexes, Excel import + reconciliation, Docker prod image, staging deploy, UAT | 5–7 | Workbook, QB export, hosting | DB totals reconcile workbook vs QB |
+
+External blockers: MongoDB Atlas URL/db/IP-allowlist (offered, pending) · storage choice+creds ·
+Redis · QuickBooks creds · source workbook · hosting target. Frontend cutover needs
+no page rewrites (`api.ts` adapter, same store signatures, delete `src/mocks/*`).
