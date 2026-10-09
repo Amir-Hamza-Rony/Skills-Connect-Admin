@@ -15,6 +15,7 @@ import { OrdersPage } from "@/pages/orders"
 import { PlaceholderPage } from "@/pages/placeholder"
 import { PricingPage } from "@/pages/pricing"
 import { QualificationsPage } from "@/pages/qualifications"
+import { ReportsPage } from "@/pages/reports"
 import { RolesPage } from "@/pages/roles"
 import { RtosPage } from "@/pages/rtos"
 import { TasksPage } from "@/pages/tasks"
@@ -133,7 +134,9 @@ function ShellRoutes() {
         <Route
           path="reports"
           element={
-            <PlaceholderPage title="Reports" note="Reports land on Day 4." />
+            <RequirePermission perm="reports.view">
+              <ReportsPage />
+            </RequirePermission>
           }
         />
         <Route

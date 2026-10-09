@@ -11,64 +11,111 @@ import {
   Send,
   TrendingDown,
   TrendingUp,
+  Users,
   Wallet,
   type LucideIcon,
 } from "lucide-react"
+import { useEffect, useState } from "react"
 
-import { DashboardSection } from "@/components/dashboard/kpi-card"
+import { DashboardSection, type KpiDefinition } from "@/components/dashboard/kpi-card"
 import { Badge } from "@/components/ui/badge"
 import { useTheme } from "@/lib/theme"
+import { financeSummary, listInvoices, listQBSync } from "@/lib/fin-store"
+import { grossMargin, listClients, listDocuments, listOrders } from "@/lib/ops-store"
+import type { OrderDocument } from "@/lib/types"
+
+const aud = (n: number) =>
+  n >= 1000
+    ? `AUD ${(n / 1000).toLocaleString("en-AU", { maximumFractionDigits: 1 })}k`
+    : `AUD ${n}`
 
 interface SectionDef {
   title: string
-  kpis: Array<{ label: string; caption: string; icon: LucideIcon }>
+  kpis: KpiDefinition[]
 }
 
 /**
- * Management dashboard skeleton (Spec §12) in the premium dark-teal
- * reference style. Values stay skeleton until Day 2–4 wire real data —
- * no fake metrics are shown.
+ * Management dashboard (Spec §12) with LIVE values from the ops + finance
+ * stores. Still preview data until the backend + migration land.
  */
-const SECTIONS: SectionDef[] = [
-  {
-    title: "Sales & Collection",
-    kpis: [
-      { label: "Total Sales", icon: TrendingUp, caption: "All active orders" },
-      { label: "Collected", icon: Wallet, caption: "Allocated payments" },
-      { label: "Outstanding", icon: Hourglass, caption: "Unpaid balances" },
-      { label: "Overdue", icon: AlarmClock, caption: "Past-due instalments" },
-      { label: "Gross Margin", icon: PiggyBank, caption: "Price minus cost" },
-      { label: "Collection Rate", icon: BadgeCheck, caption: "Collected of invoiced" },
-    ],
-  },
-  {
-    title: "Documents & Evidence",
-    kpis: [
-      { label: "Waiting for Client", icon: Inbox, caption: "Requested, not received" },
-      { label: "Under Review", icon: FileClock, caption: "With document reviewers" },
-      { label: "Rejected", icon: FileX2, caption: "Needs resubmission" },
-    ],
-  },
-  {
-    title: "RTO · Workflow · Certificates",
-    kpis: [
-      { label: "Ready for RTO", icon: Send, caption: "Awaiting submission" },
-      { label: "Under Assessment", icon: FileCheck2, caption: "With provider / RTO" },
-      { label: "Certificates Pending", icon: CircleAlert, caption: "Issued, not delivered" },
-    ],
-  },
-  {
-    title: "Risk & Attention",
-    kpis: [
-      { label: "Orders On Hold", icon: CircleAlert, caption: "Exception queue" },
-      { label: "Overdue Invoices", icon: TrendingDown, caption: "Finance follow-up" },
-      { label: "Sync Errors", icon: AlarmClock, caption: "QuickBooks retries" },
-    ],
-  },
-]
-
 export function Dashboard() {
   const { theme, resolvedTheme } = useTheme()
+  const [sections, setSections] = useState<SectionDef[] | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      const [clients, orders, summary, invoices, qb] = await Promise.all([
+        listClients(),
+        listOrders(),
+        financeSummary(),
+        listInvoices(),
+        listQBSync(),
+      ])
+      const docs: OrderDocument[] = (
+        await Promise.all(orders.map((o) => listDocuments(o.id)))
+      ).flat()
+
+      const inQueue = (s: string[]) => docs.filter((d) => s.includes(d.status)).length
+      const inStatus = (s: string[]) => orders.filter((o) => s.includes(o.status)).length
+      const sales = orders.reduce((sum, o) => sum + o.sellingPrice, 0)
+      const margin = orders.reduce((sum, o) => sum + grossMargin(o), 0)
+      const rate = summary.invoiced > 0 ? Math.round((summary.paid / summary.invoiced) * 100) : 0
+      const overdueInv = invoices.filter((i) => i.status === "Overdue").length
+      const syncFails = qb.filter((q) => q.status === "Failed").length
+      const certPending = orders.filter((o) => o.certificateStatus !== "Delivered to Client").length
+
+      const k = (
+        label: string,
+        caption: string,
+        icon: LucideIcon,
+        value: string | number,
+      ): KpiDefinition => ({
+        label,
+        caption,
+        icon,
+        value: String(value),
+      })
+
+      setSections([
+        {
+          title: "Sales & Collection",
+          kpis: [
+            k("Total Sales", `${orders.length} active orders`, TrendingUp, aud(sales)),
+            k("Collected", "Allocated payments", Wallet, aud(summary.paid)),
+            k("Outstanding", "Unpaid balances", Hourglass, aud(summary.outstanding)),
+            k("Overdue", "Past-due instalments", AlarmClock, aud(summary.overdue)),
+            k("Gross Margin", "Price minus cost", PiggyBank, aud(margin)),
+            k("Collection Rate", "Collected of invoiced", BadgeCheck, `${rate}%`),
+          ],
+        },
+        {
+          title: "Documents & Evidence",
+          kpis: [
+            k("Waiting for Client", "Requested, not received", Inbox, inQueue(["Requested", "Not Received"])),
+            k("Under Review", "Received + under review", FileClock, inQueue(["Received", "Under Review"])),
+            k("Rejected", "Needs resubmission", FileX2, inQueue(["Rejected"])),
+          ],
+        },
+        {
+          title: "RTO · Workflow · Certificates",
+          kpis: [
+            k("Ready for RTO", "Awaiting submission", Send, inStatus(["Ready for Submission"])),
+            k("Under Assessment", "With provider / RTO", FileCheck2, inStatus(["Under Assessment", "Submitted to RTO", "RTO Acknowledged"])),
+            k("Certificates Pending", "Not yet delivered", CircleAlert, certPending),
+          ],
+        },
+        {
+          title: "Risk & Attention",
+          kpis: [
+            k("Active Clients", "Client records", Users, clients.length),
+            k("Orders On Hold", "Exception queue", CircleAlert, inStatus(["On Hold"])),
+            k("Overdue Invoices", "Finance follow-up", TrendingDown, overdueInv),
+            k("Sync Errors", "QuickBooks retries", AlarmClock, syncFails),
+          ],
+        },
+      ])
+    })()
+  }, [])
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
@@ -83,21 +130,20 @@ export function Dashboard() {
             {" · "}theme {theme} ({resolvedTheme})
           </p>
         </div>
-        <Badge variant="info">Preview shell</Badge>
+        <Badge variant="info">Preview data</Badge>
       </div>
 
-      {SECTIONS.map((section) => (
-        <DashboardSection
-          key={section.title}
-          title={section.title}
-          kpis={section.kpis}
-        />
-      ))}
-
-      <p className="pb-2 text-center text-xs text-muted-foreground">
-        Live metrics connect on Day 2–4 as Clients, Orders, Documents, Finance
-        and QuickBooks modules land.
-      </p>
+      {!sections ? (
+        <p className="text-sm text-muted-foreground">Loading metrics…</p>
+      ) : (
+        sections.map((section) => (
+          <DashboardSection
+            key={section.title}
+            title={section.title}
+            kpis={section.kpis}
+          />
+        ))
+      )}
     </div>
   )
 }

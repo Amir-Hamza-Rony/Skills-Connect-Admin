@@ -7,15 +7,15 @@ export interface KpiDefinition {
   label: string
   caption: string
   icon: LucideIcon
+  /** Live value. When omitted, a skeleton shows (data not connected yet). */
+  value?: string
 }
 
 /**
  * Premium KPI card in the Smart Hospital reference style:
  * tinted icon tile + label + value slot + muted caption.
- * Day-1 shows skeleton values (no fake business data — real metrics
- * wire up on Day 2–4). Structure, spacing, and theme are final.
  */
-export function KpiCard({ label, caption, icon: Icon }: KpiDefinition) {
+export function KpiCard({ label, caption, icon: Icon, value }: KpiDefinition) {
   return (
     <Card className="overflow-hidden transition-colors hover:border-primary/40">
       <CardContent className="flex items-start gap-3.5 p-4 sm:p-5">
@@ -29,7 +29,13 @@ export function KpiCard({ label, caption, icon: Icon }: KpiDefinition) {
           <span className="block truncate text-[13px] font-medium text-muted-foreground">
             {label}
           </span>
-          <Skeleton className="mt-1.5 h-7 w-20" aria-label={`${label}: waiting for data`} />
+          {value === undefined ? (
+            <Skeleton className="mt-1.5 h-7 w-20" aria-label={`${label}: waiting for data`} />
+          ) : (
+            <span className="mt-1 block truncate text-2xl font-bold tabular-nums" aria-label={`${label}: ${value}`}>
+              {value}
+            </span>
+          )}
           <span className="mt-1.5 block truncate text-xs text-muted-foreground">
             {caption}
           </span>

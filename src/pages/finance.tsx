@@ -7,6 +7,7 @@ import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import {
   addInstalment,
   createInvoice,
@@ -14,18 +15,27 @@ import {
   financeSummary,
   getPlan,
   listInvoices,
+  listPayments,
+  listQBSync,
   qbStatusFor,
+  recordPayment,
+  refundPayment,
+  retryQBSync,
   voidInvoice,
   type FinanceSummary,
 } from "@/lib/fin-store"
 import { listClients, listOrders } from "@/lib/ops-store"
-import type { Client, Invoice, Order, PaymentPlan } from "@/lib/types"
+import type { Client, Invoice, Order, Payment, PaymentMethod, QBSyncRecord } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
+import type { PaymentPlan } from "@/lib/types"
+
 const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
+
+const METHODS: PaymentMethod[] = ["Bank Transfer", "Card", "Cash", "Other"]
 
 function InvoiceBadge({ status }: { status: Invoice["status"] }) {
   if (status === "Paid") return <Badge variant="success">Paid</Badge>
@@ -43,11 +53,13 @@ function QBBadge({ status }: { status: string }) {
 }
 
 export function FinancePage() {
-  const { user } = useAuth()
+  const { user, permissions } = useAuth()
   const actor = user?.id ?? "preview-user"
   const [tab, setTab] = useState<"Invoices" | "Plans" | "Payments" | "QuickBooks">("Invoices")
 
   const [invoices, setInvoices] = useState<Invoice[] | null>(null)
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [qbRows, setQbRows] = useState<QBSyncRecord[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [summary, setSummary] = useState<FinanceSummary | null>(null)
@@ -66,18 +78,31 @@ export function FinancePage() {
   const [instDue, setInstDue] = useState("")
   const [instAmount, setInstAmount] = useState("")
 
+  const [recording, setRecording] = useState(false)
+  const [payOrder, setPayOrder] = useState("")
+  const [payInvoice, setPayInvoice] = useState("")
+  const [payAmount, setPayAmount] = useState("")
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("Bank Transfer")
+  const [payRef, setPayRef] = useState("")
+  const [payResult, setPayResult] = useState<string | null>(null)
+
   useEffect(() => {
     void (async () => {
-      const [inv, o, c, s] = await Promise.all([
+      const [inv, o, c, s, pay, q] = await Promise.all([
         listInvoices(),
         listOrders(),
         listClients(),
         financeSummary(),
+        listPayments(),
+        listQBSync(),
       ])
       setInvoices(inv)
       setOrders(o)
       setClients(c)
       setSummary(s)
+      setPayments(pay)
+      setQbRows(q)
       const m: Record<string, string> = {}
       for (const i of inv) m[i.id] = await qbStatusFor("invoice", i.id)
       setQbMap(m)
@@ -117,6 +142,64 @@ export function FinancePage() {
       setSaving(false)
     }
   }
+
+  async function onRecordPayment(e: FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+    setPayResult(null)
+    const amount = Number(payAmount)
+    if (!payOrder || !payDate || !payRef.trim()) {
+      setFormError("Order, date, and reference are required.")
+      return
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setFormError("Amount must be a positive number.")
+      return
+    }
+    setSaving(true)
+    try {
+      const created = await recordPayment(
+        {
+          orderId: payOrder,
+          invoiceId: payInvoice || null,
+          amount,
+          date: payDate,
+          method: payMethod,
+          reference: payRef.trim(),
+        },
+        actor,
+      )
+      setPayments((prev) => [created, ...prev])
+      setQbRows(await listQBSync())
+      setInvoices(await listInvoices())
+      setSummary(await financeSummary())
+      setPayResult(
+        `Recorded ${aud(created.amount)} — allocated ${aud(created.allocatedAmount)} (${created.status}).`,
+      )
+      setPayOrder("")
+      setPayInvoice("")
+      setPayAmount("")
+      setPayRef("")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not record payment.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onRefund(p: Payment) {
+    const updated = await refundPayment(p.id, actor)
+    setPayments((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+    setSummary(await financeSummary())
+  }
+
+  async function onRetryQB(r: QBSyncRecord) {
+    const updated = await retryQBSync(r.entityType, r.entityId, actor)
+    setQbRows((prev) => prev.map((x) => (x.entityType === updated.entityType && x.entityId === updated.entityId ? updated : x)))
+    setInvoices(await listInvoices())
+  }
+
+  const canRetryQB = hasPermission(permissions, "qb.retry")
 
   async function onVoid(inv: Invoice) {
     const updated = await voidInvoice(inv.id, actor)
@@ -299,12 +382,177 @@ export function FinancePage() {
           </TabPanel>
         )}
 
-        {(tab === "Payments" || tab === "QuickBooks") && (
-          <p className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-            {tab} lands in D4-T3 — recording, allocation, and idempotent sync with retry.
-          </p>
+        {tab === "Payments" && (
+          <TabPanel
+            action={
+              <Button size="sm" onClick={() => setRecording(true)}>
+                Record payment
+              </Button>
+            }
+          >
+            <DataTable<Payment>
+              rows={payments}
+              emptyMessage="No payments recorded yet."
+              rowLabel={(p) => `${p.reference} ${p.amount}`}
+              columns={[
+                { key: "date", label: "Date", render: (p) => <span className="tabular-nums">{p.date}</span> },
+                { key: "reference", label: "Reference" },
+                {
+                  key: "order",
+                  label: "Order",
+                  render: (p) => (
+                    <Link to={`/orders/${p.orderId}`} className="text-xs text-primary underline-offset-4 hover:underline">
+                      {clientById.get(orderById.get(p.orderId)?.clientId ?? "")?.legalName ?? p.orderId}
+                    </Link>
+                  ),
+                },
+                { key: "method", label: "Method" },
+                { key: "amount", label: "Amount", render: (p) => <span className="font-medium tabular-nums">{aud(p.amount)}</span> },
+                { key: "allocatedAmount", label: "Allocated", render: (p) => <span className="tabular-nums">{aud(p.allocatedAmount)}</span> },
+                {
+                  key: "status",
+                  label: "Status",
+                  render: (p) =>
+                    p.status === "Allocated" ? (
+                      <Badge variant="success">Allocated</Badge>
+                    ) : p.status === "Refunded" || p.status === "Void" ? (
+                      <Badge variant="outline">{p.status}</Badge>
+                    ) : (
+                      <Badge variant="warning">{p.status}</Badge>
+                    ),
+                },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  render: (p) =>
+                    p.status !== "Refunded" && p.status !== "Void" ? (
+                      <Button size="sm" variant="outline" onClick={() => void onRefund(p)}>
+                        Refund
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ),
+                },
+              ]}
+            />
+          </TabPanel>
+        )}
+
+        {tab === "QuickBooks" && (
+          <TabPanel>
+            <p className="pb-3 text-xs text-muted-foreground">
+              Async idempotent queue — retries reuse the same idempotency key, so a
+              retried job can never create a duplicate invoice or payment.
+            </p>
+            <DataTable
+              rows={qbRows.map((r) => ({ ...r, id: `${r.entityType}-${r.entityId}` }))}
+              emptyMessage="Nothing queued for sync."
+              rowLabel={(r) => `${r.entityType} ${r.entityId}`}
+              columns={[
+                { key: "entity", label: "Entity", render: (r) => <span className="text-xs">{r.entityType} · <code>{r.entityId}</code></span> },
+                { key: "idempotencyKey", label: "Idempotency key", render: (r) => <code className="text-xs">{r.idempotencyKey}</code> },
+                { key: "status", label: "Status", render: (r) => <QBBadge status={r.status} /> },
+                { key: "attempts", label: "Attempts", render: (r) => <span className="tabular-nums">{r.attempts}</span> },
+                { key: "syncError", label: "Last error", render: (r) => <span className="text-xs text-muted-foreground">{r.syncError ?? "—"}</span> },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  render: (r) =>
+                    r.status === "Failed" ? (
+                      canRetryQB ? (
+                        <Button size="sm" variant="outline" onClick={() => void onRetryQB(r)}>
+                          Retry
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No retry permission</span>
+                      )
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{r.qbReference ?? "—"}</span>
+                    ),
+                },
+              ]}
+            />
+          </TabPanel>
         )}
       </div>
+
+      <Dialog
+        open={recording}
+        onClose={() => setRecording(false)}
+        title="Record payment"
+        description="Actual money in — auto-allocated oldest-due-first across the plan."
+      >
+        <form onSubmit={onRecordPayment} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="pay-order" className="text-sm font-medium">Order</label>
+              <select
+                id="pay-order"
+                value={payOrder}
+                onChange={(e) => {
+                  setPayOrder(e.target.value)
+                  setPayInvoice("")
+                }}
+                className={inputCls}
+              >
+                <option value="">Select order…</option>
+                {orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {clientById.get(o.clientId)?.legalName ?? o.id} · {aud(o.sellingPrice)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="pay-inv" className="text-sm font-medium">Invoice (optional)</label>
+              <select id="pay-inv" value={payInvoice} onChange={(e) => setPayInvoice(e.target.value)} className={inputCls}>
+                <option value="">None</option>
+                {(invoices ?? []).filter((i) => !payOrder || i.orderId === payOrder).map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.invoiceNumber} · {aud(i.total)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <label htmlFor="pay-amt" className="text-sm font-medium">Amount (AUD)</label>
+              <input id="pay-amt" type="number" min="1" step="1" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="500" className={inputCls} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="pay-date" className="text-sm font-medium">Date</label>
+              <input id="pay-date" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={inputCls} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="pay-method" className="text-sm font-medium">Method</label>
+              <select id="pay-method" value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)} className={inputCls}>
+                {METHODS.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="pay-ref" className="text-sm font-medium">Reference</label>
+            <input id="pay-ref" value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="BT-0007 / receipt no." className={inputCls} />
+          </div>
+          {formError && (
+            <p role="alert" className="text-sm text-destructive">{formError}</p>
+          )}
+          {payResult && (
+            <p role="status" className="text-sm text-success">{payResult}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRecording(false)}>
+              Close
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Recording…" : "Record payment"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
 
       <Dialog
         open={creatingInv}
