@@ -6,6 +6,7 @@ import { RequireAuth, RequirePermission } from "@/components/require-auth"
 import { Dashboard } from "@/components/dashboard/dashboard"
 import { LoginPage } from "@/pages/login"
 import { PlaceholderPage } from "@/pages/placeholder"
+import { QualificationsPage } from "@/pages/qualifications"
 import { RolesPage } from "@/pages/roles"
 import { UsersPage } from "@/pages/users"
 
@@ -35,10 +36,7 @@ function ShellRoutes() {
           path="qualifications"
           element={
             <RequirePermission perm="qualifications.manage">
-              <PlaceholderPage
-                title="Qualifications"
-                note="Qualification catalogue and licensing references land in D2-T4."
-              />
+              <QualificationsPage />
             </RequirePermission>
           }
         />
