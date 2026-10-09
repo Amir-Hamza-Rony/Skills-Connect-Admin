@@ -1,27 +1,26 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ThemeToggle } from "@/components/theme-toggle"
-import { useTheme } from "@/lib/theme"
+import { AppShell } from "@/components/layout/app-shell"
+import { Skeleton } from "@/components/ui/skeleton"
 
-// Temporary Day-1 theme preview. T6 replaces this with the app shell + dashboard.
+// Temporary Day-1 shell preview with scrollable placeholder content so the
+// independent sidebar/content scrolling can be verified. T6 replaces this
+// with the premium dashboard.
 function App() {
-  const { theme, resolvedTheme } = useTheme()
-
   return (
-    <div className="flex min-h-full items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Skills Connect Admin</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <AppShell>
+      <div className="mx-auto w-full max-w-6xl space-y-4 p-4 sm:p-6">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
+            Dashboard
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Preference: <span className="font-semibold">{theme}</span>
-            {" · "}Resolved:{" "}
-            <span className="font-semibold">{resolvedTheme}</span>
+            Shell preview — dashboard content lands in T6.
           </p>
-          <ThemeToggle />
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+        {Array.from({ length: 12 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+    </AppShell>
   )
 }
 
