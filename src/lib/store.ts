@@ -1,4 +1,5 @@
 import { ROLE_PERMISSIONS } from "@/lib/permissions"
+import { auditLog } from "@/lib/fin-store"
 import type {
   Agent,
   Permission,
@@ -52,11 +53,14 @@ export async function listUsers(): Promise<User[]> {
 export async function updateUser(
   id: string,
   patch: Partial<Pick<User, "name" | "phone" | "roleIds" | "active">>,
+  actorId = "preview-user",
 ): Promise<User> {
   await latency()
   const i = users.findIndex((u) => u.id === id)
   if (i === -1) throw new Error("User not found")
+  const before = users[i]
   users[i] = { ...users[i], ...patch }
+  auditLog("user", id, "update", `roles=${before.roleIds.join(",")} active=${before.active}`, `roles=${users[i].roleIds.join(",")} active=${users[i].active}`, actorId)
   return users[i]
 }
 
@@ -80,10 +84,12 @@ export async function listQualifications(): Promise<Qualification[]> {
 
 export async function createQualification(
   q: Omit<Qualification, "id" | "licensingRefs">,
+  actorId = "preview-user",
 ): Promise<Qualification> {
   await latency()
   const created: Qualification = { ...q, id: uid("q"), licensingRefs: [] }
   qualifications = [created, ...qualifications]
+  auditLog("qualification", created.id, "create", "—", q.code, actorId)
   return created
 }
 
@@ -94,10 +100,11 @@ export async function listRtos(): Promise<Rto[]> {
   return [...rtos]
 }
 
-export async function createRto(r: Omit<Rto, "id">): Promise<Rto> {
+export async function createRto(r: Omit<Rto, "id">, actorId = "preview-user"): Promise<Rto> {
   await latency()
   const created: Rto = { ...r, id: uid("rto") }
   rtos = [created, ...rtos]
+  auditLog("rto", created.id, "create", "—", r.tradingName, actorId)
   return created
 }
 
@@ -108,21 +115,25 @@ export async function listAgents(): Promise<Agent[]> {
   return [...agents]
 }
 
-export async function createAgent(a: Omit<Agent, "id">): Promise<Agent> {
+export async function createAgent(a: Omit<Agent, "id">, actorId = "preview-user"): Promise<Agent> {
   await latency()
   const created: Agent = { ...a, id: uid("ag") }
   agents = [created, ...agents]
+  auditLog("agent", created.id, "create", "—", `${a.name} (${a.type})`, actorId)
   return created
 }
 
 export async function updateAgent(
   id: string,
   patch: Partial<Pick<Agent, "contact" | "commissionRule" | "active">>,
+  actorId = "preview-user",
 ): Promise<Agent> {
   await latency()
   const i = agents.findIndex((a) => a.id === id)
   if (i === -1) throw new Error("Agent not found")
+  const before = agents[i].active
   agents[i] = { ...agents[i], ...patch }
+  auditLog("agent", id, "update", `active=${before}`, `active=${agents[i].active}`, actorId)
   return agents[i]
 }
 
@@ -135,15 +146,17 @@ export async function listRoutes(): Promise<SupplierRoute[]> {
 
 export async function createRoute(
   r: Omit<SupplierRoute, "id">,
+  actorId = "preview-user",
 ): Promise<SupplierRoute> {
   await latency()
   const created: SupplierRoute = { ...r, id: uid("sr") }
   routes = [created, ...routes]
+  auditLog("supplier_route", created.id, "create", "—", `AUD ${r.wholesaleCost}`, actorId)
   return created
 }
 
 /** History is preserved: expiring sets status + effectiveTo, never deletes. */
-export async function expireRoute(id: string): Promise<SupplierRoute> {
+export async function expireRoute(id: string, actorId = "preview-user"): Promise<SupplierRoute> {
   await latency()
   const i = routes.findIndex((r) => r.id === id)
   if (i === -1) throw new Error("Route not found")
@@ -152,6 +165,7 @@ export async function expireRoute(id: string): Promise<SupplierRoute> {
     status: "expired",
     effectiveTo: new Date().toISOString().slice(0, 10),
   }
+  auditLog("supplier_route", id, "expire", "active", "expired", actorId)
   return routes[i]
 }
 

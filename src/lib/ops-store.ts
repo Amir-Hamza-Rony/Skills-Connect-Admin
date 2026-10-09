@@ -16,6 +16,7 @@ import {
   SEED_TASKS,
 } from "@/mocks/ops-seed"
 import { listRoutes } from "@/lib/store"
+import { auditLog } from "@/lib/fin-store"
 
 /**
  * Preview operations layer (Day-3). Same async, REST-shaped contract as
@@ -49,10 +50,12 @@ export async function getClient(id: string): Promise<Client | undefined> {
 
 export async function createClient(
   c: Omit<Client, "id" | "createdAt">,
+  actorId = "preview-user",
 ): Promise<Client> {
   await latency()
   const created: Client = { ...c, id: uid("c"), createdAt: nowIso() }
   clients = [created, ...clients]
+  auditLog("client", created.id, "create", "—", c.legalName, actorId)
   return created
 }
 
@@ -69,15 +72,18 @@ export async function getOrder(id: string): Promise<Order | undefined> {
 }
 
 /** Creates an order and SNAPSHOTS the current wholesale cost (Spec §8). */
-export async function createOrder(o: {
-  clientId: string
-  qualificationId: string
-  salesAgentId: string
-  sourceAgentId: string
-  rtoId: string
-  sellingPrice: number
-  otherCost?: number
-}): Promise<Order> {
+export async function createOrder(
+  o: {
+    clientId: string
+    qualificationId: string
+    salesAgentId: string
+    sourceAgentId: string
+    rtoId: string
+    sellingPrice: number
+    otherCost?: number
+  },
+  actorId = "preview-user",
+): Promise<Order> {
   await latency()
   const routes = await listRoutes()
   const route = routes.find(
@@ -106,10 +112,11 @@ export async function createOrder(o: {
     updatedAt: nowIso(),
     completedAt: null,
     history: [
-      { timestamp: nowIso(), actorId: "preview-user", field: "status", before: "—", after: "New" },
+      { timestamp: nowIso(), actorId, field: "status", before: "—", after: "New" },
     ],
   }
   orders = [created, ...orders]
+  auditLog("order", created.id, "create", "—", `Client ${o.clientId} · AUD ${o.sellingPrice}`, actorId)
   // Auto-create the onboarding task for the new order.
   tasks = [
     {
@@ -147,6 +154,7 @@ export async function transitionOrder(
       { timestamp: nowIso(), actorId, field: "status", before, after: to },
     ],
   }
+  auditLog("order", id, "status-change", before, to, actorId)
   return orders[i]
 }
 
@@ -173,6 +181,7 @@ export async function updateOrderDimensions(
     updatedAt: nowIso(),
     history: [...orders[i].history, ...changes],
   }
+  for (const c of changes) auditLog("order", id, `${c.field}-change`, c.before, c.after, actorId)
   return orders[i]
 }
 
@@ -193,6 +202,7 @@ export async function listDocuments(orderId: string): Promise<OrderDocument[]> {
 /** New version supersedes — the old approved version is never overwritten. */
 export async function addDocumentVersion(
   d: Omit<OrderDocument, "id" | "version" | "storageKey">,
+  actorId = "preview-user",
 ): Promise<OrderDocument> {
   await latency()
   const prior = documents.filter(
@@ -206,6 +216,7 @@ export async function addDocumentVersion(
     storageKey: `/clients/${d.clientId}/orders/${d.orderId}/${encodeURIComponent(d.type)}/${version}`,
   }
   documents = [created, ...documents]
+  auditLog("document", created.id, "new-version", "—", `${d.type} v${version}`, actorId)
   return created
 }
 
@@ -218,6 +229,7 @@ export async function reviewDocument(
   await latency()
   const i = documents.findIndex((d) => d.id === id)
   if (i === -1) throw new Error("Document not found")
+  const before = documents[i].status
   documents[i] = {
     ...documents[i],
     status: verdict,
@@ -225,6 +237,7 @@ export async function reviewDocument(
     reviewedBy: reviewerId,
     rejectionReason: verdict === "Rejected" ? (rejectionReason ?? "No reason given.") : null,
   }
+  auditLog("document", id, `review-${verdict.toLowerCase()}`, before, verdict, reviewerId)
   return documents[i]
 }
 
@@ -238,11 +251,14 @@ export async function listTasks(orderId?: string): Promise<WorkflowTask[]> {
 export async function updateTaskStatus(
   id: string,
   status: TaskStatus,
+  actorId = "preview-user",
 ): Promise<WorkflowTask> {
   await latency()
   const i = tasks.findIndex((t) => t.id === id)
   if (i === -1) throw new Error("Task not found")
+  const before = tasks[i].status
   tasks[i] = { ...tasks[i], status }
+  auditLog("task", id, "status-change", before, status, actorId)
   return tasks[i]
 }
 

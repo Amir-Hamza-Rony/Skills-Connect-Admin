@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/lib/auth"
 import { OrderStatusBadge } from "@/components/status-badge"
 import { createOrder, grossMargin, listClients, listOrders } from "@/lib/ops-store"
 import {
@@ -30,6 +31,8 @@ const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
  * and snapshots wholesale cost at creation (Spec §4C, §8).
  */
 export function OrdersPage() {
+  const { user: me } = useAuth()
+  const actor = me?.id ?? "preview-user"
   const [searchParams, setSearchParams] = useSearchParams()
   const [orders, setOrders] = useState<Order[] | null>(null)
   const [clients, setClients] = useState<Client[]>([])
@@ -117,7 +120,7 @@ export function OrdersPage() {
         rtoId,
         sellingPrice: amount,
         otherCost: Number(otherCost) || 0,
-      })
+      }, actor)
       setOrders((prev) => (prev ? [created, ...prev] : [created]))
       closeCreate()
     } finally {

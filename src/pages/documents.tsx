@@ -148,7 +148,7 @@ export function DocumentsPage() {
       reviewedAt: null,
       reviewedBy: null,
       rejectionReason: null,
-    })
+    }, user?.id ?? "preview-user")
     setDocs((prev) => (prev ? [created, ...prev] : [created]))
   }
 

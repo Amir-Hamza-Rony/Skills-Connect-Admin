@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/lib/auth"
 import { listRoles, listUsers, updateUser } from "@/lib/store"
 import type { Role, User } from "@/lib/types"
 
@@ -24,6 +25,7 @@ function PageHeader({ count }: { count: number | null }) {
 }
 
 export function UsersPage() {
+  const { user: me } = useAuth()
   const [users, setUsers] = useState<User[] | null>(null)
   const [roles, setRoles] = useState<Role[]>([])
   const [editing, setEditing] = useState<User | null>(null)
@@ -53,7 +55,7 @@ export function UsersPage() {
       const updated = await updateUser(editing.id, {
         roleIds: draftRoles,
         active: draftActive,
-      })
+      }, me?.id ?? "preview-user")
       setUsers((prev) => prev?.map((u) => (u.id === updated.id ? updated : u)) ?? null)
       setEditing(null)
     } finally {

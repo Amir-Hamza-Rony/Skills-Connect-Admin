@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/lib/auth"
 import {
   listClients,
   listOrders,
@@ -22,6 +23,7 @@ const STATUS_VARIANT: Record<TaskStatus, "secondary" | "info" | "success" | "des
 
 /** Operations task board — auto-created on stage entry, updated here. */
 export function TasksPage() {
+  const { user: me } = useAuth()
   const [tasks, setTasks] = useState<WorkflowTask[] | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -47,7 +49,7 @@ export function TasksPage() {
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users])
 
   async function onStatus(t: WorkflowTask, s: TaskStatus) {
-    const updated = await updateTaskStatus(t.id, s)
+    const updated = await updateTaskStatus(t.id, s, me?.id ?? "preview-user")
     setTasks((prev) => prev?.map((x) => (x.id === updated.id ? updated : x)) ?? null)
   }
 

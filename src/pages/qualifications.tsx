@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/lib/auth"
 import { createQualification, listQualifications, qualificationLabel } from "@/lib/store"
 import type { Qualification, QualificationStatus } from "@/lib/types"
 
@@ -12,6 +13,7 @@ const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
 export function QualificationsPage() {
+  const { user: me } = useAuth()
   const [rows, setRows] = useState<Qualification[] | null>(null)
   const [viewing, setViewing] = useState<Qualification | null>(null)
   const [creating, setCreating] = useState(false)
@@ -42,7 +44,7 @@ export function QualificationsPage() {
         trainingPackage: pkg.trim(),
         industry: industry.trim(),
         status,
-      })
+      }, me?.id ?? "preview-user")
       setRows((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
       setCode("")

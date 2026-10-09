@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuth } from "@/lib/auth"
 import { createClient, listClients } from "@/lib/ops-store"
 import { listAgents, agentLabel } from "@/lib/store"
 import type { Agent, Client } from "@/lib/types"
@@ -15,6 +16,7 @@ const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
 export function ClientsPage() {
+  const { user: me } = useAuth()
   const [rows, setRows] = useState<Client[] | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [creating, setCreating] = useState(false)
@@ -59,7 +61,7 @@ export function ClientsPage() {
         status: "Active",
         sourceAgentId: sourceAgentId || null,
         notes: notes.trim(),
-      })
+      }, me?.id ?? "preview-user")
       setRows((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
       setLegalName("")

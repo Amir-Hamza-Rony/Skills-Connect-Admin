@@ -14,6 +14,7 @@ import {
 import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
 import { getClient, grossMargin, listDocuments, listOrders } from "@/lib/ops-store"
+import { financeSummary, listInvoices, listPayments } from "@/lib/fin-store"
 import {
   listAgents,
   listQualifications,
@@ -24,8 +25,10 @@ import {
 import type {
   Agent,
   Client,
+  Invoice,
   Order,
   OrderDocument,
+  Payment,
   Qualification,
   Rto,
   User,
@@ -60,6 +63,10 @@ export function ClientProfilePage() {
   const [rtos, setRtos] = useState<Rto[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [tab, setTab] = useState<Tab>("Orders")
+  const [finPaid, setFinPaid] = useState<number | null>(null)
+  const [finInvoiced, setFinInvoiced] = useState<number | null>(null)
+  const [finInvoices, setFinInvoices] = useState<Invoice[]>([])
+  const [finPayments, setFinPayments] = useState<Payment[]>([])
 
   useEffect(() => {
     void (async () => {
@@ -82,6 +89,15 @@ export function ClientProfilePage() {
         await Promise.all(o.map((ord) => listDocuments(ord.id)))
       ).flat()
       setDocs(allDocs)
+      const sums = await Promise.all(o.map((ord) => financeSummary(ord.id)))
+      setFinPaid(sums.reduce((s, x) => s + x.paid, 0))
+      setFinInvoiced(sums.reduce((s, x) => s + x.invoiced, 0))
+      const [invs, pays] = await Promise.all([
+        Promise.all(o.map((ord) => listInvoices(ord.id))).then((r) => r.flat()),
+        Promise.all(o.map((ord) => listPayments(ord.id))).then((r) => r.flat()),
+      ])
+      setFinInvoices(invs)
+      setFinPayments(pays)
     })()
   }, [id])
 
@@ -145,19 +161,23 @@ export function ClientProfilePage() {
         {[
           { label: "Orders value", value: aud(quoted) },
           { label: "Est. margin", value: aud(margin) },
+          { label: "Invoiced", value: finInvoiced === null ? "…" : aud(finInvoiced) },
+          { label: "Paid", value: finPaid === null ? "…" : aud(finPaid) },
         ].map((k) => (
           <div key={k.label} className="rounded-xl border bg-card p-4">
             <p className="text-xs text-muted-foreground">{k.label}</p>
             <p className="mt-1 text-lg font-bold tabular-nums">{k.value}</p>
           </div>
         ))}
-        {["Paid", "Outstanding"].map((k) => (
-          <div key={k} className="rounded-xl border bg-card p-4">
-            <p className="text-xs text-muted-foreground">{k}</p>
-            <p className="mt-1 text-sm text-muted-foreground">Connects Day 4</p>
-          </div>
-        ))}
       </div>
+      {finInvoiced !== null && finPaid !== null && (
+        <p className="pt-2 text-xs text-muted-foreground">
+          Outstanding across {orders.length} order{orders.length === 1 ? "" : "s"}:{" "}
+          <span className="font-semibold text-foreground tabular-nums">
+            {aud(Math.max(0, finInvoiced - finPaid))}
+          </span>
+        </p>
+      )}
 
       {/* Tabs */}
       <div role="tablist" aria-label="Client sections" className="flex gap-1 overflow-x-auto border-b pt-4">
@@ -244,10 +264,50 @@ export function ClientProfilePage() {
           </div>
         )}
 
-        {(tab === "Payments" || tab === "Invoices") && (
-          <p className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
-            {tab} connect on Day 4 with invoices, plans, and allocations.
-          </p>
+        {tab === "Payments" && (
+          <div className="space-y-2">
+            {finPayments.length === 0 && (
+              <p className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+                No payments recorded yet.
+              </p>
+            )}
+            {finPayments.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-3.5 text-sm">
+                <div>
+                  <p className="font-medium tabular-nums">{aud(p.amount)} · {p.method}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {p.date} · {p.reference} · order {p.orderId}
+                  </p>
+                </div>
+                <Badge variant={p.status === "Allocated" ? "success" : "warning"}>
+                  {p.status} · {aud(p.allocatedAmount)}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "Invoices" && (
+          <div className="space-y-2">
+            {finInvoices.length === 0 && (
+              <p className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+                No invoices yet.
+              </p>
+            )}
+            {finInvoices.map((i) => (
+              <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card p-3.5 text-sm">
+                <div>
+                  <p className="font-medium tabular-nums">{i.invoiceNumber} · {aud(i.total)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Due {i.dueDate} · order {i.orderId}
+                  </p>
+                </div>
+                <Badge variant={i.status === "Paid" ? "success" : i.status === "Void" ? "outline" : "info"}>
+                  {i.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
         )}
 
         {tab === "Timeline" && (

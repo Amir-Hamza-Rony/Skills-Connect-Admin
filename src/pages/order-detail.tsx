@@ -20,6 +20,7 @@ import {
   transitionOrder,
   updateOrderDimensions,
 } from "@/lib/ops-store"
+import { listInvoices, listPayments } from "@/lib/fin-store"
 import {
   listAgents,
   listQualifications,
@@ -32,9 +33,11 @@ import {
   type Agent,
   type Client,
   type EvidenceStatus,
+  type Invoice,
   type Order,
   type OrderDocument,
   type OrderStatus,
+  type Payment,
   type Qualification,
   type Rto,
   type RtoSubmissionStatus,
@@ -65,6 +68,8 @@ export function OrderDetailPage() {
   const [users, setUsers] = useState<User[]>([])
   const [docs, setDocs] = useState<OrderDocument[]>([])
   const [tasks, setTasks] = useState<WorkflowTask[]>([])
+  const [orderInvoices, setOrderInvoices] = useState<Invoice[]>([])
+  const [orderPayments, setOrderPayments] = useState<Payment[]>([])
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("")
   const [busy, setBusy] = useState(false)
 
@@ -74,7 +79,7 @@ export function OrderDetailPage() {
       const o = await getOrder(id)
       setOrder(o ?? null)
       if (!o) return
-      const [c, q, a, r, u, d, t] = await Promise.all([
+      const [c, q, a, r, u, d, t, inv, pay] = await Promise.all([
         getClient(o.clientId),
         listQualifications(),
         listAgents(),
@@ -82,6 +87,8 @@ export function OrderDetailPage() {
         listUsers(),
         listDocuments(o.id),
         listTasks(o.id),
+        listInvoices(o.id),
+        listPayments(o.id),
       ])
       setClient(c ?? null)
       setQuals(q)
@@ -90,6 +97,8 @@ export function OrderDetailPage() {
       setUsers(u)
       setDocs(d)
       setTasks(t)
+      setOrderInvoices(inv)
+      setOrderPayments(pay.filter((p) => p.status !== "Void" && p.status !== "Refunded"))
     })()
   }, [id])
 
@@ -196,8 +205,44 @@ export function OrderDetailPage() {
       </div>
       <p className="text-xs text-muted-foreground">
         Snapshots are frozen at order creation — later pricing-matrix edits never rewrite them.
-        Invoices and payments connect on Day 4.
       </p>
+
+      {/* Invoices & payments */}
+      <div className="rounded-xl border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3">
+          <h2 className="text-sm font-semibold">
+            Invoices & payments (
+            {orderInvoices.filter((i) => i.status !== "Void").reduce((s, i) => s + i.total, 0) > 0
+              ? aud(orderInvoices.filter((i) => i.status !== "Void").reduce((s, i) => s + i.total, 0))
+              : "none invoiced"}
+            {" · "}
+            paid {aud(orderPayments.reduce((s, p) => s + p.allocatedAmount, 0))})
+          </h2>
+          <Link to="/finance" className="text-xs text-primary underline-offset-4 hover:underline">
+            Open Finance →
+          </Link>
+        </div>
+        {orderInvoices.length === 0 && orderPayments.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nothing invoiced or paid yet — create the invoice in Finance.
+          </p>
+        ) : (
+          <div className="space-y-2 text-sm">
+            {orderInvoices.map((i) => (
+              <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
+                <span className="font-medium tabular-nums">{i.invoiceNumber} · {aud(i.total)}</span>
+                <Badge variant={i.status === "Paid" ? "success" : i.status === "Void" ? "outline" : "info"}>{i.status}</Badge>
+              </div>
+            ))}
+            {orderPayments.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-2.5">
+                <span className="tabular-nums">{aud(p.amount)} · {p.method} · {p.date}</span>
+                <Badge variant="secondary">{p.status}</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Workflow controls */}
       <div className="rounded-xl border bg-card p-4">
