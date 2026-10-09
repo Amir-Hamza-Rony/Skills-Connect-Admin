@@ -4,10 +4,13 @@ import { AuthProvider } from "@/lib/auth"
 import { AppShell } from "@/components/layout/app-shell"
 import { RequireAuth, RequirePermission } from "@/components/require-auth"
 import { Dashboard } from "@/components/dashboard/dashboard"
+import { AgentsPage } from "@/pages/agents"
 import { LoginPage } from "@/pages/login"
 import { PlaceholderPage } from "@/pages/placeholder"
+import { PricingPage } from "@/pages/pricing"
 import { QualificationsPage } from "@/pages/qualifications"
 import { RolesPage } from "@/pages/roles"
+import { RtosPage } from "@/pages/rtos"
 import { UsersPage } from "@/pages/users"
 
 function ShellRoutes() {
@@ -44,10 +47,7 @@ function ShellRoutes() {
           path="rtos"
           element={
             <RequirePermission perm="rto.manage">
-              <PlaceholderPage
-                title="RTOs & Colleges"
-                note="RTO directory and contacts land in D2-T5."
-              />
+              <RtosPage />
             </RequirePermission>
           }
         />
@@ -55,10 +55,7 @@ function ShellRoutes() {
           path="agents"
           element={
             <RequirePermission perm="agents.manage">
-              <PlaceholderPage
-                title="Agents"
-                note="Sales, certificate-source, and RTO-contact agents land in D2-T5."
-              />
+              <AgentsPage />
             </RequirePermission>
           }
         />
@@ -66,10 +63,7 @@ function ShellRoutes() {
           path="pricing"
           element={
             <RequirePermission perm="pricing.manage">
-              <PlaceholderPage
-                title="Supplier Pricing"
-                note="Qualification → agent → RTO pricing matrix lands in D2-T5."
-              />
+              <PricingPage />
             </RequirePermission>
           }
         />
