@@ -1,7 +1,8 @@
-import { Bell, Menu, Search } from "lucide-react"
+import { Bell, Menu } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth"
+import { GlobalSearch } from "@/components/global-search"
 import { initialsOf } from "@/components/layout/sidebar"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -53,15 +54,7 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
 
       <div className="flex-1" />
 
-      <button
-        type="button"
-        aria-label="Search (coming soon)"
-        title="Search — coming soon"
-        className="hidden h-9 items-center gap-2 rounded-lg border border-input bg-muted/50 px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex md:w-64"
-      >
-        <Search className="size-4 shrink-0" aria-hidden />
-        <span className="truncate">Search clients, orders…</span>
-      </button>
+      <GlobalSearch />
 
       <ThemeToggle />
 

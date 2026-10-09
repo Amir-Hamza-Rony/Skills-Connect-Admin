@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/app-shell"
 import { RequireAuth, RequirePermission } from "@/components/require-auth"
 import { Dashboard } from "@/components/dashboard/dashboard"
 import { AgentsPage } from "@/pages/agents"
+import { AuditPage } from "@/pages/audit"
 import { ClientProfilePage } from "@/pages/client-profile"
 import { ClientsPage } from "@/pages/clients"
 import { DocumentsPage } from "@/pages/documents"
@@ -18,6 +19,7 @@ import { QualificationsPage } from "@/pages/qualifications"
 import { ReportsPage } from "@/pages/reports"
 import { RolesPage } from "@/pages/roles"
 import { RtosPage } from "@/pages/rtos"
+import { SettingsPage } from "@/pages/settings"
 import { TasksPage } from "@/pages/tasks"
 import { UsersPage } from "@/pages/users"
 
@@ -142,13 +144,17 @@ function ShellRoutes() {
         <Route
           path="audit"
           element={
-            <PlaceholderPage title="Audit" note="Audit log viewer lands on Day 4." />
+            <RequirePermission perm="audit.view">
+              <AuditPage />
+            </RequirePermission>
           }
         />
         <Route
           path="settings"
           element={
-            <PlaceholderPage title="Settings" note="Settings land on Day 4." />
+            <RequirePermission perm="settings.manage">
+              <SettingsPage />
+            </RequirePermission>
           }
         />
         <Route
