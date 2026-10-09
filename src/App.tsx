@@ -1,121 +1,193 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
+
+import { AuthProvider } from "@/lib/auth"
+import { AppShell } from "@/components/layout/app-shell"
+import { ErrorBoundary } from "@/components/error-boundary"
+import { RequireAuth, RequirePermission } from "@/components/require-auth"
+import { Dashboard } from "@/components/dashboard/dashboard"
+import { AgentsPage } from "@/pages/agents"
+import { AuditPage } from "@/pages/audit"
+import { ClientProfilePage } from "@/pages/client-profile"
+import { ClientsPage } from "@/pages/clients"
+import { DocumentsPage } from "@/pages/documents"
+import { FinancePage } from "@/pages/finance"
+import { LoginPage } from "@/pages/login"
+import { OrderDetailPage } from "@/pages/order-detail"
+import { OrdersPage } from "@/pages/orders"
+import { PlaceholderPage } from "@/pages/placeholder"
+import { PricingPage } from "@/pages/pricing"
+import { QualificationsPage } from "@/pages/qualifications"
+import { ReportsPage } from "@/pages/reports"
+import { RolesPage } from "@/pages/roles"
+import { RtosPage } from "@/pages/rtos"
+import { SettingsPage } from "@/pages/settings"
+import { TasksPage } from "@/pages/tasks"
+import { UsersPage } from "@/pages/users"
+
+function ShellRoutes() {
+  return (
+    <AppShell>
+      <Routes>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route
+          path="users"
+          element={
+            <RequirePermission perm="users.manage">
+              <UsersPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="roles"
+          element={
+            <RequirePermission perm="roles.manage">
+              <RolesPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="qualifications"
+          element={
+            <RequirePermission perm="qualifications.manage">
+              <QualificationsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="rtos"
+          element={
+            <RequirePermission perm="rto.manage">
+              <RtosPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="agents"
+          element={
+            <RequirePermission perm="agents.manage">
+              <AgentsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="pricing"
+          element={
+            <RequirePermission perm="pricing.manage">
+              <PricingPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="clients"
+          element={
+            <RequirePermission perm="clients.view">
+              <ClientsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="clients/:id"
+          element={
+            <RequirePermission perm="clients.view">
+              <ClientProfilePage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="orders"
+          element={
+            <RequirePermission perm="orders.view">
+              <OrdersPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="orders/:id"
+          element={
+            <RequirePermission perm="orders.view">
+              <OrderDetailPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="documents"
+          element={
+            <RequirePermission perm="documents.view">
+              <DocumentsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="workflow"
+          element={
+            <RequirePermission perm="orders.view">
+              <TasksPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="finance"
+          element={
+            <RequirePermission perm="finance.view">
+              <FinancePage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <RequirePermission perm="reports.view">
+              <ReportsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="audit"
+          element={
+            <RequirePermission perm="audit.view">
+              <AuditPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <RequirePermission perm="settings.manage">
+              <SettingsPage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="*"
+          element={
+            <PlaceholderPage title="Not found" note="This route does not exist." />
+          }
+        />
+      </Routes>
+    </AppShell>
+  )
+}
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/*"
+            element={
+              <RequireAuth>
+                <ShellRoutes />
+              </RequireAuth>
+            }
+          />
+        </Routes>
+      </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 
