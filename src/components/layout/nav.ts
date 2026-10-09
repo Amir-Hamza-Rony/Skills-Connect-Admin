@@ -9,6 +9,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Tags,
   UserCog,
   Users,
   Wallet,
@@ -45,6 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Qualifications", icon: GraduationCap, href: "/qualifications" },
       { label: "RTOs & Colleges", icon: Building2, href: "/rtos" },
       { label: "Agents", icon: Briefcase, href: "/agents" },
+      { label: "Pricing", icon: Tags, href: "/pricing" },
     ],
   },
   {
