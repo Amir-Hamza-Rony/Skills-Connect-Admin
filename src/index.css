@@ -114,8 +114,11 @@
   #root {
     height: 100%;
   }
+  /* The app shell owns scrolling (sidebar + content regions);
+     the page itself must never scroll sideways. */
   body {
     @apply bg-background text-foreground antialiased;
+    overflow-x: clip;
     font-feature-settings:
       "rlig" 1,
       "calt" 1;

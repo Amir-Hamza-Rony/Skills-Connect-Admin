@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 
 import { AuthProvider } from "@/lib/auth"
 import { AppShell } from "@/components/layout/app-shell"
+import { ErrorBoundary } from "@/components/error-boundary"
 import { RequireAuth, RequirePermission } from "@/components/require-auth"
 import { Dashboard } from "@/components/dashboard/dashboard"
 import { AgentsPage } from "@/pages/agents"
@@ -170,8 +171,9 @@ function ShellRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
@@ -184,7 +186,8 @@ function App() {
           />
         </Routes>
       </AuthProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 
