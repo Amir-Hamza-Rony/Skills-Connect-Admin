@@ -7,6 +7,7 @@ import { Dashboard } from "@/components/dashboard/dashboard"
 import { AgentsPage } from "@/pages/agents"
 import { ClientProfilePage } from "@/pages/client-profile"
 import { ClientsPage } from "@/pages/clients"
+import { DocumentsPage } from "@/pages/documents"
 import { LoginPage } from "@/pages/login"
 import { OrderDetailPage } from "@/pages/order-detail"
 import { OrdersPage } from "@/pages/orders"
@@ -15,6 +16,7 @@ import { PricingPage } from "@/pages/pricing"
 import { QualificationsPage } from "@/pages/qualifications"
 import { RolesPage } from "@/pages/roles"
 import { RtosPage } from "@/pages/rtos"
+import { TasksPage } from "@/pages/tasks"
 import { UsersPage } from "@/pages/users"
 
 function ShellRoutes() {
@@ -106,13 +108,17 @@ function ShellRoutes() {
         <Route
           path="documents"
           element={
-            <PlaceholderPage title="Documents" note="Document workspace lands on Day 3." />
+            <RequirePermission perm="documents.view">
+              <DocumentsPage />
+            </RequirePermission>
           }
         />
         <Route
           path="workflow"
           element={
-            <PlaceholderPage title="Workflow" note="Workflow engine lands on Day 3." />
+            <RequirePermission perm="orders.view">
+              <TasksPage />
+            </RequirePermission>
           }
         />
         <Route
