@@ -1,0 +1,17 @@
+# Minimal protection for Day 1 — Task 1. Extends as scaffolding lands.
+# Confidential source spec must never be committed:
+*.docx
+*.xlsx
+# Secrets / local env:
+.env
+.env.*
+!.env.example
+# Dependencies / build:
+node_modules/
+.next/
+dist/
+build/
+coverage/
+# OS / editor:
+.DS_Store
+Thumbs.db
