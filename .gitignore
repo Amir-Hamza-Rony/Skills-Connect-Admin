@@ -15,3 +15,9 @@ coverage/
 # OS / editor:
 .DS_Store
 Thumbs.db
+
+# Vite template extras
+dist-ssr
+*.local
+logs
+*.log
