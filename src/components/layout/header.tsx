@@ -1,4 +1,4 @@
-import { Bell, Menu } from "lucide-react"
+import { Bell, Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth"
@@ -28,10 +28,19 @@ const CRUMBS: Record<string, [string, string]> = {
  * Fixed top header: drawer trigger (mobile) + breadcrumb + search trigger
  * + theme switcher + notifications + user chip.
  */
-export function Header({ onOpenNav }: { onOpenNav: () => void }) {
+export function Header({
+  onOpenNav,
+  onToggleCollapse,
+  collapsed,
+}: {
+  onOpenNav: () => void
+  onToggleCollapse: () => void
+  collapsed?: boolean
+}) {
   const { pathname } = useLocation()
   const { user } = useAuth()
   const [parent, current] = CRUMBS[pathname] ?? ["Overview", "Dashboard"]
+  const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 border-b bg-background px-3 sm:gap-3 sm:px-5">
@@ -42,6 +51,17 @@ export function Header({ onOpenNav }: { onOpenNav: () => void }) {
         className="rounded-md p-2 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
       >
         <Menu className="size-5" aria-hidden />
+      </button>
+
+      <button
+        type="button"
+        onClick={onToggleCollapse}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-pressed={collapsed}
+        className="hidden rounded-md border p-2 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:flex"
+      >
+        <CollapseIcon className="size-5" aria-hidden />
       </button>
 
       <nav aria-label="Breadcrumb" className="hidden min-w-0 items-center gap-1.5 text-sm md:flex">

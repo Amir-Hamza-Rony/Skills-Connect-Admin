@@ -17,28 +17,44 @@ export function initialsOf(name: string): string {
     .toUpperCase()
 }
 
-function Brand() {
+function Brand({ collapsed }: { collapsed?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5 px-4">
+    <div
+      className={cn(
+        "flex items-center gap-2.5",
+        collapsed ? "justify-center px-0" : "px-4",
+      )}
+    >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
         S
       </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold leading-tight">
-          Skills Connect
+      {!collapsed && (
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold leading-tight">
+            Skills Connect
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">
+            Admin Portal
+          </span>
         </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          Admin Portal
-        </span>
-      </span>
+      )}
     </div>
   )
 }
 
-function NavList({ onNavigate }: { onNavigate?: () => void }) {
+function NavList({
+  onNavigate,
+  collapsed,
+}: {
+  onNavigate?: () => void
+  collapsed?: boolean
+}) {
   const { permissions } = useAuth()
   return (
-    <nav aria-label="Primary" className="space-y-5 px-2">
+    <nav
+      aria-label="Primary"
+      className={cn("space-y-5", collapsed ? "px-1.5" : "px-2")}
+    >
       {NAV_SECTIONS.map((section) => {
         const visible = section.items.filter((item) => {
           const required = ROUTE_PERMISSIONS[item.href]
@@ -47,9 +63,11 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
         if (visible.length === 0) return null
         return (
           <div key={section.title}>
-            <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {section.title}
-            </p>
+            {!collapsed && (
+              <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {section.title}
+              </p>
+            )}
             <ul className="space-y-0.5">
               {visible.map((item) => {
                 const Icon = item.icon
@@ -58,10 +76,13 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                     <NavLink
                       to={item.href}
                       onClick={() => onNavigate?.()}
+                      title={collapsed ? item.label : undefined}
+                      aria-label={collapsed ? item.label : undefined}
                       className={({ isActive }) =>
                         cn(
                           "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors outline-none",
                           "focus-visible:ring-2 focus-visible:ring-ring",
+                          collapsed && "justify-center px-0",
                           isActive
                             ? "bg-accent text-accent-foreground"
                             : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -69,7 +90,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
                       }
                     >
                       <Icon className="size-4 shrink-0" aria-hidden />
-                      {item.label}
+                      {!collapsed && item.label}
                     </NavLink>
                   </li>
                 )
@@ -82,9 +103,30 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-function UserCard() {
+function UserCard({ collapsed }: { collapsed?: boolean }) {
   const { user, logout } = useAuth()
   if (!user) return null
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <span
+          title={`${user.name} — ${user.email}`}
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary"
+        >
+          {initialsOf(user.name)}
+        </span>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Sign out"
+          title="Sign out"
+          className="rounded-md p-1.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <LogOut className="size-4" aria-hidden />
+        </button>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
@@ -110,22 +152,27 @@ function UserCard() {
 }
 
 /**
- * Desktop sidebar: fixed full-height column.
+ * Desktop sidebar: fixed full-height column, collapsible to icon-only.
  * Brand (top, static) + nav (middle, OWN scroll) + user card (bottom, static).
  */
-export function Sidebar() {
+export function Sidebar({ collapsed }: { collapsed?: boolean }) {
   return (
-    <aside className="hidden h-dvh w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+    <aside
+      className={cn(
+        "hidden h-dvh shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 lg:flex",
+        collapsed ? "w-[68px]" : "w-72",
+      )}
+    >
       <div className="shrink-0 pt-5">
-        <Brand />
+        <Brand collapsed={collapsed} />
       </div>
       <Separator className="mx-4 my-4 w-auto shrink-0" />
       {/* Independent scroll container #1 — sidebar nav only. */}
       <div className="min-h-0 flex-1 overflow-y-auto pb-4">
-        <NavList />
+        <NavList collapsed={collapsed} />
       </div>
       <div className="shrink-0 border-t border-sidebar-border p-3">
-        <UserCard />
+        <UserCard collapsed={collapsed} />
       </div>
     </aside>
   )
