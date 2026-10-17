@@ -123,6 +123,77 @@ export async function seedRoles(): Promise<void> {
   );
 }
 
+/**
+ * Seeds the masters an order needs: one sales agent, one source agent, one RTO,
+ * one qualification, and an active supplier route joining them.
+ *
+ * Returns the created ids so a test can build clients and orders against them
+ * without re-querying.
+ */
+export async function seedOrderMasters(): Promise<{
+  salesAgentId: string;
+  sourceAgentId: string;
+  rtoId: string;
+  qualificationId: string;
+  routeId: string;
+}> {
+  const { Agent } = await import("../../src/models/agent.model.js");
+  const { Qualification } = await import("../../src/models/qualification.model.js");
+  const { Rto } = await import("../../src/models/rto.model.js");
+  const { SupplierRoute } = await import("../../src/models/supplier-route.model.js");
+
+  const salesAgent = await Agent.create({
+    name: "Test Sales Agent",
+    type: "sales_closing",
+    contact: "0400 000 000",
+    commissionRule: "5% of selling price",
+    active: true,
+  });
+  const sourceAgent = await Agent.create({
+    name: "Test Source Agent",
+    type: "certificate_source",
+    contact: "0400 000 001",
+    commissionRule: "Fixed",
+    active: true,
+  });
+  const rto = await Rto.create({
+    legalName: "Test RTO",
+    tradingName: "Test RTO",
+    rtoCode: "RTO-TEST",
+    cricosCode: "00000",
+    contacts: [],
+    status: "active",
+    complianceNote: "",
+    website: "",
+  });
+  const qualification = await Qualification.create({
+    code: "AUR32120",
+    title: "Certificate III in Individual Support",
+    trainingPackage: "AUR",
+    industry: "Individual Support",
+    status: "current",
+    licensingRefs: [],
+  });
+  const route = await SupplierRoute.create({
+    qualificationId: qualification._id,
+    sourceAgentId: sourceAgent._id,
+    rtoId: rto._id,
+    wholesaleCost: 700,
+    currency: "AUD",
+    effectiveFrom: new Date(),
+    effectiveTo: null,
+    status: "active",
+  });
+
+  return {
+    salesAgentId: String(salesAgent._id),
+    sourceAgentId: String(sourceAgent._id),
+    rtoId: String(rto._id),
+    qualificationId: String(qualification._id),
+    routeId: String(route._id),
+  };
+}
+
 export async function createUser(options: {
   email: string;
   name?: string;

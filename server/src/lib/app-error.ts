@@ -36,6 +36,11 @@ export class AppError extends Error {
   static conflict(message: string): AppError {
     return new AppError(409, "CONFLICT", message);
   }
+
+  /** Semantic rejection — the request was understood but cannot be honoured. */
+  static unprocessable(code: string, message: string, details?: unknown): AppError {
+    return new AppError(422, code, message, details);
+  }
 }
 
 /** Single response envelope so clients never have to guess the shape. */

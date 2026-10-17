@@ -320,6 +320,65 @@ console.log("\naudit trail");
   check("permission matrix served from the server", perms.json?.permissions?.length === 18);
 }
 
+// ---------------------------------------------------------- B3: clients & orders
+console.log("\nB3 — clients, orders, workflow");
+{
+  const login = await call("/auth/login", { method: "POST", body: { email: ADMIN, password: PASSWORD } });
+  const admin = login.json.accessToken;
+
+  // Unique per run so the script is re-runnable against a persistent database.
+  const email = `smoke-b3-${Date.now()}@example.com`;
+  const created = await call("/clients", {
+    method: "POST",
+    token: admin,
+    body: { legalName: "Smoke B3 Client", email, phone: "0411 000 000" },
+  });
+  check("client can be created (201)", created.status === 201, `got ${created.status}`);
+  check("new client starts as Prospect", created.json?.client?.status === "Prospect");
+
+  const dupe = await call("/clients", {
+    method: "POST",
+    token: admin,
+    body: { legalName: "Smoke B3 Dupe", email },
+  });
+  check("duplicate email is rejected (409)", dupe.status === 409, `got ${dupe.status}`);
+
+  const clientId = created.json?.client?.id;
+  const list = await call(`/clients?search=${encodeURIComponent(email)}`, { token: admin });
+  check("client search finds the new client", list.json?.clients?.length === 1);
+
+  const fetched = await call(`/clients/${clientId}`, { token: admin });
+  check("client can be fetched by id", fetched.status === 200, `got ${fetched.status}`);
+
+  const patched = await call(`/clients/${clientId}`, {
+    method: "PATCH",
+    token: admin,
+    body: { status: "Active" },
+  });
+  check("client can be updated", patched.json?.client?.status === "Active");
+
+  // Valid-but-nonexistent master ids: no supplier route matches, so the order
+  // must be refused rather than created with a zero cost snapshot.
+  const missing = "000000000000000000000000";
+  const noRoute = await call("/orders", {
+    method: "POST",
+    token: admin,
+    body: { clientId, qualificationId: missing, salesAgentId: missing, sourceAgentId: missing, rtoId: missing, sellingPrice: 2500 },
+  });
+  check("order without an active route is refused (422)", noRoute.status === 422, `got ${noRoute.status}`);
+  check("refusal names the reason", noRoute.json?.error?.code === "NO_ACTIVE_ROUTE", noRoute.json?.error?.code);
+
+  const badId = await call("/orders", {
+    method: "POST",
+    token: admin,
+    body: { clientId: "not-an-object-id", qualificationId: "x", salesAgentId: "x", sourceAgentId: "x", rtoId: "x", sellingPrice: 2500 },
+  });
+  check("order with a malformed id is refused (400)", badId.status === 400, `got ${badId.status}`);
+
+  const anonClient = await call("/clients");
+  check("anonymous /clients -> 401", anonClient.status === 401, `got ${anonClient.status}`);
+}
+
 // ---------------------------------------------------------------- result
 console.log(`\n${"=".repeat(46)}`);
 console.log(`  ${pass} passed, ${fail} failed`);

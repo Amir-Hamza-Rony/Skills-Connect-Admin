@@ -8,9 +8,12 @@ import { errorHandler } from "./middleware/error-handler.js";
 import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-log.js";
 import { authRouter } from "./routes/auth.routes.js";
+import { clientsRouter } from "./routes/clients.routes.js";
 import { healthRouter } from "./routes/health.js";
+import { ordersRouter } from "./routes/orders.routes.js";
 import { rolesRouter } from "./routes/roles.routes.js";
 import { usersRouter } from "./routes/users.routes.js";
+import { workflowRouter } from "./routes/workflow.routes.js";
 
 /**
  * Builds the Express app. Kept separate from `server.ts` so integration tests
@@ -48,8 +51,11 @@ export function createApp(): Express {
 
   app.use(healthRouter);
   app.use("/auth", authRouter);
+  app.use("/clients", clientsRouter);
+  app.use("/orders", ordersRouter);
   app.use("/roles", rolesRouter);
   app.use("/users", usersRouter);
+  app.use("/workflow", workflowRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

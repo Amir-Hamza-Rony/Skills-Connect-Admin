@@ -1,7 +1,7 @@
 # BACKEND PLAN — Skills Connect Admin (Phase B1–B6)
 
 > Companion to `architecture.md` (§1 target) and `workflow.md` (§15 roadmap).
-> Status: **B2 complete** (see §1.2). Front-end shell (Day 1–5, 19 commits on
+> Status: **B3 complete** (see §1.3). Front-end shell (Day 1–5, 19 commits on
 > `rony-dev`) is complete with an in-memory preview store; this document
 > defines how the real backend replaces it.
 > Source of truth for requirements: `Skills_Connect_Admin_Software_Developer_Specification.docx`.
@@ -94,6 +94,42 @@ permissions served from the server.
   the next refresh.
 - **Rate limiting is in-process** until B5 swaps it for Redis; with more than one
   replica the effective limit would otherwise multiply by the replica count.
+
+### B3 — Masters + Clients/Orders · ✅ COMPLETE
+
+| Item | State |
+|---|---|
+| Master collections: `agents`, `qualifications` (licensing refs embedded), `rtos`, `supplier_routes` | done |
+| `clients` collection + `GET/POST/PATCH /clients`, `GET /clients/:id` | done |
+| Duplicate-client report (`certain` by email, `possible` by phone) | done |
+| `orders` collection with **immutable** `supplierCostSnapshot` | done |
+| Snapshot enforced 3 ways: `immutable: true`, pre-update hooks, server reads the route | done |
+| Order create refuses when no active route matches (no zero-cost orders) | done |
+| Status transition writes history **and** stage task in one transaction | done |
+| `PATCH /orders/:id/dimensions` with per-field history rows | done |
+| `GET /orders/:id/timeline` — status + task events, oldest first | done |
+| `workflow_tasks` collection + `GET/POST/PATCH` | done |
+| `certificates` collection (new — not in the 17 spec §7 collections) | done |
+| `document_requirements` collection + checklist template | done |
+| Transaction helper with standalone fallback (Atlas M0 has no transactions) | done |
+| Frontend: `ops-store.ts` clients/orders/tasks → real API | done |
+| **55/55 live smoke** (45 B2 + 10 B3) · **91/91 automated** | done |
+
+**The three B3 acceptance criteria, verified:**
+1. **Multi-order client** — one client holds several orders (`orders?clientId=`).
+2. **Snapshot survives a matrix edit** — repricing and expiring the route leaves
+   the order's snapshot at its original value; a direct `updateOne` cannot
+   rewrite it.
+3. **Transition writes history + task in one transaction** — a status change
+   appends the history row *and* upserts the stage task atomically on a replica
+   set (and sequentially, visibly, on a standalone).
+
+**Transactions and the standalone caveat.** Multi-document transactions need a
+replica set. Atlas free tier (M0) and the test in-memory server are single-node,
+so `lib/transaction.ts` detects the "retryable writes not supported" error and
+runs the same callback without a session. On a replica set — what production
+should be — the writes are atomic. The difference is deliberate and documented
+in the file rather than hidden.
 
 ### B1 — Server foundation · ✅ COMPLETE
 

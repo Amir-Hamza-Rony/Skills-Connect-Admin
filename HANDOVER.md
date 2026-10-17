@@ -18,7 +18,7 @@ Sign in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `server/.env`.
 `npm run server:smoke` re-runs the 45-check live acceptance suite against the
 running API and the real Atlas database.
 
-## What is real now (B2)
+## What is real now (B2 + B3)
 
 - **Auth** — argon2id password hashing, 15-min access JWT in memory only,
   rotating opaque refresh token in an httpOnly cookie, reuse detection that
@@ -33,14 +33,24 @@ running API and the real Atlas database.
 - **Users & Roles** — real CRUD against Atlas. `GET /users/directory` serves a
   name-only list so screens that merely render an actor (tasks, documents,
   audit, timelines) work for roles that cannot administer users.
+- **Clients & Orders** — real CRUD against Atlas. An order snapshots the
+  supplier route's wholesale cost at creation and that snapshot is immutable:
+  repricing the route never rewrites history. A status transition writes the
+  history row and the workflow task together.
+- **Workflow tasks** — real collection, filterable by order, assignee and
+  status, so the board works for every role that can see orders.
+- **Masters** — `agents`, `qualifications`, `rtos` and `supplier_routes` now
+  exist as real collections, which is what an order needs in order to be
+  created.
 
-## Still preview (B3+)
+## Still preview (B4+)
 
-- Clients, orders, documents, tasks, invoices, payments, QuickBooks sync and
-  the audit *viewer* still read the in-memory stores (`ops-store.ts`,
-  `fin-store.ts`). They are async and REST-shaped, so pages do not change when
+- Documents and tasks still read the in-memory preview store until B4 lands
+  the storage adapter and signed URLs — a document row is only useful once
+  there is a real file behind it.
+- Invoices, payments, QuickBooks sync and the audit *viewer* still read
+  `fin-store.ts`. They are async and REST-shaped, so pages do not change when
   the real endpoints land.
-- Agents, qualifications, RTOs and supplier routes are still preview data.
 
 ## What was built
 
@@ -83,6 +93,17 @@ running API and the real Atlas database.
     (Now a real 403 from the API, not just the UI card.)
 14. Every mutation above appears in Audit Log with actor.
 15. Finance totals reconcile across dashboard, reports, profile, order detail.
+
+## B3 acceptance — verified (55/55 live, 91/91 automated)
+
+`npm run server:smoke` against the running API + Atlas now also covers B3:
+client create / fetch / update · duplicate email rejected · client search ·
+order refused when no active supplier route matches (422 `NO_ACTIVE_ROUTE`) ·
+malformed id refused (400) · anonymous `/clients` → 401.
+
+The automated suite proves the three B3 criteria against a real MongoDB:
+a client with multiple orders · the cost snapshot surviving a route repricing ·
+a status transition writing its history row and its stage task together.
 
 ## B2 acceptance — verified live (45/45)
 
