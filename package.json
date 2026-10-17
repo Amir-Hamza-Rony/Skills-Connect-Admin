@@ -14,6 +14,8 @@
     "server:dev": "npm run dev --workspace=@sc/server",
     "server:build": "npm run build --workspace=@sc/server",
     "server:start": "npm run start --workspace=@sc/server",
+    "server:seed": "npm run seed --workspace=@sc/server",
+    "server:smoke": "npm run smoke --workspace=@sc/server",
     "server:test": "npm run test --workspace=@sc/server",
     "server:typecheck": "npm run typecheck --workspace=@sc/server",
     "typecheck": "tsc -b && npm run server:typecheck"

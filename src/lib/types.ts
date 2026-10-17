@@ -24,9 +24,25 @@ export interface User {
   name: string
   email: string
   phone: string
-  roleIds: string[]
+  /**
+   * Role NAMES, not ids — matches the API. The matrix is server-owned
+   * (`server/src/services/permissions.ts`), so the SPA never needs role ids.
+   */
+  roleNames: RoleName[]
   active: boolean
   lastLoginAt: string | null
+}
+
+/**
+ * Name-only staff reference, from `GET /users/directory`.
+ *
+ * Screens that merely render an actor (task assignees, document reviewers,
+ * audit rows, order timelines) need a name and nothing else — and most roles
+ * cannot call the `GET /users` admin route, which stays `users.manage`-gated.
+ */
+export interface UserRef {
+  id: string
+  name: string
 }
 
 export type AgentType = "sales_closing" | "certificate_source" | "rto_contact"

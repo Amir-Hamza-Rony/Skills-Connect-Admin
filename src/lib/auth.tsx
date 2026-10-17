@@ -8,14 +8,25 @@ import {
   type ReactNode,
 } from "react"
 
-import { permissionsFor } from "@/lib/store"
-import type { Permission, User } from "@/lib/types"
-import { listUsers } from "@/lib/store"
+import { ApiError, api, onSessionLost, setAccessToken, type AuthUser } from "@/lib/api"
+import type { Permission } from "@/lib/types"
 
-const SESSION_KEY = "sc-session"
+/**
+ * Real auth (Phase B2).
+ *
+ * Replaces the Day-2 preview that accepted any password and parked a user id in
+ * localStorage:
+ * - Credentials are verified by `POST /auth/login`; a wrong password is a 401
+ *   from the server, not a client-side guess.
+ * - The access token lives in `lib/api.ts` module memory only — never in
+ *   localStorage/sessionStorage.
+ * - The refresh token is an httpOnly cookie the browser attaches by itself, so a
+ *   reload restores the session without the SPA ever handling a credential.
+ * - Permissions come from the server, which is the single source of truth.
+ */
 
 interface AuthContextValue {
-  user: User | null
+  user: AuthUser | null
   permissions: Permission[]
   authLoading: boolean
   authError: string | null
@@ -25,81 +36,82 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-/**
- * Preview auth (Day-2). Session holds ONLY the user id; the future
- * backend will issue short-lived credentials + rotated refresh tokens
- * via httpOnly cookies — never localStorage tokens.
- */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [permissions, setPermissions] = useState<Permission[]>([])
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
 
+  // When a refresh fails the session is unrecoverable; drop the principal
+  // rather than leaving a signed-out UI that still believes it is signed in.
+  useEffect(() => onSessionLost(() => setUser(null)), [])
+
+  /**
+   * Restore on load. `GET /auth/me` needs an access token, and there is none
+   * yet, so this is where the silent-refresh path in `apiFetch` earns its keep:
+   * the first call 401s, the refresh cookie rotates a new token, and the retry
+   * succeeds — all inside one call. A failure just means "signed out".
+   */
   useEffect(() => {
     let cancelled = false
-    async function restore() {
+
+    void (async () => {
       try {
-        const id = localStorage.getItem(SESSION_KEY)
-        if (id) {
-          const all = await listUsers()
-          const found = all.find((u) => u.id === id && u.active)
-          if (found && !cancelled) {
-            setUser(found)
-            setPermissions(await permissionsFor(found))
-          } else {
-            localStorage.removeItem(SESSION_KEY)
-          }
-        }
+        const data = await api.get<{ user: AuthUser }>("/auth/me")
+        if (!cancelled) setUser(data.user)
       } catch {
-        /* preview store unavailable — stay logged out */
+        /* no cookie, expired session, or API down — all mean signed out */
       } finally {
         if (!cancelled) setAuthLoading(false)
       }
-    }
-    void restore()
+    })()
+
     return () => {
       cancelled = true
     }
   }, [])
 
-  const login = useCallback(async (email: string, _password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     setAuthError(null)
-    const all = await listUsers()
-    const found = all.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
-    )
-    if (!found) {
-      setAuthError("No account found for this email (preview accounts only).")
-      throw new Error("unknown-account")
-    }
-    if (!found.active) {
-      setAuthError("This account is deactivated. Contact an administrator.")
-      throw new Error("inactive-account")
-    }
-    // Preview accepts any password; real backend verifies credentials.
-    setUser({ ...found, lastLoginAt: new Date().toISOString() })
-    setPermissions(await permissionsFor(found))
     try {
-      localStorage.setItem(SESSION_KEY, found.id)
-    } catch {
-      /* session stays in memory only */
+      // `anonymous`: a 401 here is a real credential failure and must surface
+      // as-is, not trigger a pointless refresh-and-retry.
+      const result = await api.post<{ user: AuthUser; accessToken: string }>(
+        "/auth/login",
+        { email, password },
+        { anonymous: true },
+      )
+      setAccessToken(result.accessToken)
+      setUser(result.user)
+    } catch (err) {
+      // The server already phrases these well: "Invalid email or password",
+      // "This account is deactivated", "locked after repeated failed sign-ins".
+      setAuthError(
+        err instanceof ApiError ? err.message : "Could not reach the server. Is the API running?",
+      )
+      throw err
     }
   }, [])
 
   const logout = useCallback(() => {
+    // `anonymous` so the cookie is still cleared server-side even when the
+    // access token has already expired.
+    void api.post("/auth/logout", undefined, { anonymous: true }).catch(() => {
+      /* the local session is dropped regardless */
+    })
+    setAccessToken(null)
     setUser(null)
-    setPermissions([])
-    try {
-      localStorage.removeItem(SESSION_KEY)
-    } catch {
-      /* noop */
-    }
   }, [])
 
   const value = useMemo(
-    () => ({ user, permissions, authLoading, authError, login, logout }),
-    [user, permissions, authLoading, authError, login, logout],
+    () => ({
+      user,
+      permissions: user?.permissions ?? [],
+      authLoading,
+      authError,
+      login,
+      logout,
+    }),
+    [user, authLoading, authError, login, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

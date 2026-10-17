@@ -1,7 +1,7 @@
 # BACKEND PLAN — Skills Connect Admin (Phase B1–B6)
 
 > Companion to `architecture.md` (§1 target) and `workflow.md` (§15 roadmap).
-> Status: **B1 in progress** (see §1.1). Front-end shell (Day 1–5, 19 commits on
+> Status: **B2 complete** (see §1.2). Front-end shell (Day 1–5, 19 commits on
 > `rony-dev`) is complete with an in-memory preview store; this document
 > defines how the real backend replaces it.
 > Source of truth for requirements: `Skills_Connect_Admin_Software_Developer_Specification.docx`.
@@ -38,7 +38,64 @@ on the choice, which is why B1–B3 were never blocked waiting for it.
 
 Atlas URL is consumed as `MONGODB_URI` from `server/.env` only — never in chat, code, or git.
 
-### 1.1 B1 status — ✅ COMPLETE
+### B2 — Auth + RBAC · ✅ COMPLETE
+
+| Item | State |
+|---|---|
+| `users` + `roles` Mongoose models (argon2id, `select:false` on secrets) | done |
+| `refresh_tokens` collection (SHA-256 hashed, TTL index, rotation families) | done |
+| `audit_logs` collection — append-only, enforced by pre-hooks | done |
+| RBAC matrix moved to `server/src/services/permissions.ts` (single source) | done |
+| Access JWT (15 min) + opaque rotating refresh in httpOnly cookie | done |
+| Refresh rotation + **reuse detection revokes the whole family** | done |
+| Logout (family) · logout-all · admin reset-password · account unlock | done |
+| `requireAuth` + `requirePermission` on every non-public route | done |
+| `tokenVersion` invalidation — deactivation/reset kills live access tokens instantly | done |
+| Login rate limit (per IP+email) + per-account lockout | done |
+| `/auth/login` `/auth/refresh` `/auth/logout` `/auth/logout-all` `/auth/me` `/auth/permissions` | done |
+| `/users` CRUD + `/users/:id/reset-password` + `/users/:id/unlock` | done |
+| `/roles` list + `/roles/:id` permission edit | done |
+| Seed script (`npm run server:seed`) — 7 roles + Super Admin, idempotent | done |
+| **Frontend cutover**: `src/lib/api.ts` (memory token, single-flight refresh) + real `auth.tsx` | done |
+| Frontend `listUsers`/`updateUser`/`listRoles` → real API; `User.roleIds` → `roleNames` | done |
+
+**Deviation from the 17-collection list:** `refresh_tokens` was added. D1 (rotating
+refresh with server-side revocation and reuse detection) cannot work statelessly;
+the 17 spec §7 collections are business entities and do not include auth session
+state. It is infrastructure, documented here rather than silently introduced.
+
+**Verification:** `server:typecheck` clean · `server:test` **68/68** (real MongoDB via
+`mongodb-memory-server`, real argon2id, real JWT — no database mocking) ·
+`server:build` clean · frontend `npm run build` clean (1958 modules) ·
+`npm run server:smoke` **45/45** against the live Atlas database over real HTTP, and
+re-runnable.
+
+Live-smoke coverage: health/readiness · wrong password rejected · correct password
+accepted · argon2 hash never returned · httpOnly refresh cookie · `/auth/me` ·
+refresh rotation issues a new cookie · replaying a used token returns
+`REFRESH_REUSE_DETECTED` and revokes the family · logout kills the session ·
+Sales user gets **403 on `/users` and `/roles`** while `/auth/me` still returns 200 ·
+anonymous `/users` returns 401 (not 403) · deactivation kills live access immediately ·
+password reset invalidates a token minted in the *same second* · 7 roles / 18
+permissions served from the server.
+
+### B2 design notes worth keeping
+
+- **`tokenVersion`, not timestamps.** A JWT `iat` has one-second resolution, so
+  comparing `passwordChangedAt` against it leaves a ~1 s window where a
+  reset-in-the-same-second token stays valid. A monotonic counter is exact; a
+  regression test covers that specific case.
+- **Single-flight refresh on the client.** Refresh tokens rotate, so two parallel
+  `POST /auth/refresh` calls would present the same token twice and the server
+  would correctly flag the second as replay and revoke the session. `lib/api.ts`
+  shares one in-flight promise across concurrent 401s.
+- **Permissions are recomputed per request** from database roles rather than read
+  from the token, so a matrix change takes effect on the next call instead of at
+  the next refresh.
+- **Rate limiting is in-process** until B5 swaps it for Redis; with more than one
+  replica the effective limit would otherwise multiply by the replica count.
+
+### B1 — Server foundation · ✅ COMPLETE
 
 | Item | State |
 |---|---|
@@ -51,7 +108,7 @@ Atlas URL is consumed as `MONGODB_URI` from `server/.env` only — never in chat
 | Helmet, CORS allowlist, JSON body limit, `x-powered-by` disabled | done — `src/app.ts` |
 | `GET /health` (liveness) + `GET /health/ready` (503 without Mongo) | done |
 | Graceful shutdown (SIGTERM/SIGINT with 10s cap) | done — `server.ts` |
-| Vitest + Supertest harness — 18 tests | done, green |
+| Vitest + Supertest harness | done, green (18 B1 tests, 68 total after B2) |
 | Server typecheck + build | done, clean |
 | `docker-compose.yml` — redis + minio + bucket init (**no mongo**, per D3) | written — **unverified: Docker Desktop not installed on this machine** |
 | `server/Dockerfile` + `.dockerignore` | written — **unverified: Docker Desktop not installed** |
@@ -108,14 +165,16 @@ between packages.
 
 | Phase | Work | Days | Done when |
 |---|---|---|---|
-| **B1** Server foundation | Express+TS app, zod env config, Mongo connect, Redis client, error handler, request log, docker-compose (mongo/redis/minio), Vitest+Supertest harness, npm workspaces | 3–4 | `GET /health` green; `docker compose up` gives mongo+redis+minio; CI runs `build+lint+test` |
-| **B2** Auth + RBAC | User/Role models, argon2id hashing, access JWT + rotating httpOnly refresh, revoke/logout, login rate-limit, `requirePermission` on every route, audit middleware. Frontend: real login via `api.ts` | 3–4 | Wrong password rejected; refresh rotation + reuse detection tested; Sales user gets 403 on `/users`; decisions D1–D3 locked |
+| **B1** Server foundation | Express+TS app, zod env config, Mongo connect, Redis client, error handler, request log, docker-compose (redis/minio), Vitest+Supertest harness, npm workspaces | 3–4 | ✅ **done** — typecheck clean, tests green, Atlas connected, `/health/ready` → 200 |
+| **B2** Auth + RBAC | User/Role models, argon2id hashing, access JWT + rotating httpOnly refresh, revoke/logout, login rate-limit, `requirePermission` on every route, audit middleware. Frontend: real login via `api.ts` | 3–4 | ✅ **done** — wrong password rejected; refresh rotation + reuse detection tested; Sales gets 403 on `/users`; 68/68 unit + 45/45 live smoke |
 | **B3** Masters + Clients/Orders | Remaining collections (incl. new `certificates`, `document_requirements`), client CRUD + dedupe report, order CRUD with **immutable price snapshots** + transactional transitions + history, tasks. Frontend stores → API calls | 4–5 | Multi-order client, snapshot survives matrix edit, transition writes history+task in one transaction |
 | **B4** Documents + storage | S3 adapter (MinIO dev), **15-min signed upload/download URLs**, checklist templates, version-supersede, approve/reject, **document access logging**. Decision D4 locked | 3–4 | Upload→review→v2 flow; raw storage key never reaches client; access log rows exist |
 | **B5** Finance + QuickBooks | Invoices, plans, instalments, payments, **server-authoritative allocation + overdue calc**, QB idempotent sync via BullMQ worker (same key = no duplicates), webhook/import, permission-gated retry | 4–5 | Payment→balance math matches frontend; failed sync→retry→Synced with one QB record; needs QB sandbox creds |
 | **B6** Reports + Audit + Migration + Deploy | Aggregation pipelines (dashboard/reports), audit viewer indexes, Excel import scripts + reconciliation report, Docker prod image, staging deploy, UAT on migrated data | 5–7 | Dashboard numbers equal DB aggregations; import totals reconcile workbook vs DB vs QB; needs workbook + QB export + hosting |
 
-**Total ≈ 22–30 working days.** B1–B3 (≈10–13 days) gets the frontend running on real data — the fastest path to "real product" feel.
+**Progress:** B1 and B2 are complete — roughly 6–8 of the 22–30 working days.
+**Remaining ≈ 18–24 working days** (B3–B6). B3 is the next phase and is what moves the
+bulk of the UI onto real data.
 
 ## 4. API contract (store function → endpoint)
 
@@ -184,6 +243,7 @@ When a new session starts, read in order: `BACKEND-PLAN.md` → `workflow.md` §
 status is not `completed`. Track work with the todo list; user runs all git
 operations (no auto commit/push).
 
-**B1 is complete. Next phase is B2 (Auth + RBAC)** — it consumes the generated
-`JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` already present in `server/.env`, adds them to the
-zod schema as required, and switches the frontend from preview auth to real login.
+**B1 is complete. B2 is complete. Next phase is B3 (Masters + Clients/Orders)** —
+it builds the remaining spec §7 collections, moves agents/qualifications/RTOs/supplier
+routes plus clients/orders/documents/tasks off the preview stores, and adds the
+`certificates` entity the spec requires.

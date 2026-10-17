@@ -65,6 +65,16 @@ const optionalText = z.preprocess(blankToUndefined, z.string().min(1).optional()
 const MONGO_URI_REQUIRED =
   "MONGODB_URI is required — use the mongodb+srv:// connection string from MongoDB Atlas";
 
+const JWT_SECRET_REQUIRED =
+  "JWT_ACCESS_SECRET is required — generate one with 32+ random bytes (see server/.env.example)";
+
+const JWT_REFRESH_SECRET_REQUIRED =
+  "JWT_REFRESH_SECRET is required — generate a DIFFERENT random secret from JWT_ACCESS_SECRET";
+
+/** `"true"` -> true, anything else -> false; blank -> the fallback. */
+const booleanFromEnv = (fallback: boolean) =>
+  z.preprocess(blankToUndefined, z.string().default(String(fallback)).transform((v) => v === "true"));
+
 const logLevel = z.preprocess(
   blankToUndefined,
   z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -108,17 +118,55 @@ const schema = z.object({
   S3_BUCKET: optionalText,
   S3_ACCESS_KEY: optionalText,
   S3_SECRET_KEY: optionalText,
-  S3_FORCE_PATH_STYLE: z.preprocess(
-    blankToUndefined,
-    z
-      .enum(["true", "false"])
-      .default("true")
-      .transform((value) => value === "true"),
-  ),
+  S3_FORCE_PATH_STYLE: booleanFromEnv(true),
 
   // ---- HTTP ----
   CORS_ORIGINS: csv("http://localhost:5173,http://127.0.0.1:5173"),
   JSON_BODY_LIMIT: z.preprocess(blankToUndefined, z.string().min(1).default("1mb")),
+
+  // ---- Auth (D1: JWT access + rotating refresh) ----
+  // Both required from B2 onward. They are generated locally — never issued by a
+  // provider. They MUST differ; `refuseBootIfSecretsMatch` enforces that below.
+  JWT_ACCESS_SECRET: z
+    .string({ error: JWT_SECRET_REQUIRED })
+    .min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
+  JWT_REFRESH_SECRET: z
+    .string({ error: JWT_REFRESH_SECRET_REQUIRED })
+    .min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
+  JWT_ISSUER: z.preprocess(blankToUndefined, z.string().min(1).default("skills-connect-admin")),
+  JWT_AUDIENCE: z.preprocess(
+    blankToUndefined,
+    z.string().min(1).default("skills-connect-admin-web"),
+  ),
+  ACCESS_TOKEN_TTL_MIN: positiveInt(15),
+  REFRESH_TOKEN_TTL_DAYS: positiveInt(7),
+
+  // ---- Refresh cookie ----
+  /** `false` in dev (http on localhost); production must be `true`. */
+  COOKIE_SECURE: booleanFromEnv(false),
+  /** `lax` works when API and SPA share a site; cross-site hosting needs `none`. */
+  COOKIE_SAME_SITE: z.preprocess(
+    blankToUndefined,
+    z.enum(["lax", "strict", "none"]).default("lax"),
+  ),
+
+  // ---- Argon2id (password hashing) ----
+  ARGON2_MEMORY_COST: positiveInt(19_456),
+  ARGON2_TIME_COST: positiveInt(2),
+  ARGON2_PARALLELISM: positiveInt(1),
+
+  // ---- Rate limiting ----
+  /** Per IP+route attempts allowed inside the window. */
+  LOGIN_RATE_LIMIT_MAX: positiveInt(5),
+  LOGIN_RATE_LIMIT_WINDOW_MIN: positiveInt(15),
+  /** Consecutive failures before the account itself is locked. */
+  ACCOUNT_LOCK_MAX_FAILURES: positiveInt(10),
+  ACCOUNT_LOCK_MINUTES: positiveInt(15),
+
+  // ---- Seed admin (first-run only; used by `npm run server:seed`) ----
+  SEED_ADMIN_EMAIL: z.preprocess(blankToUndefined, z.string().email().optional()),
+  SEED_ADMIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(12).optional()),
+  SEED_ADMIN_NAME: z.preprocess(blankToUndefined, z.string().min(1).optional()),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -140,3 +188,24 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export type Env = typeof env;
+
+/**
+ * Using one secret for both token types would let a stolen refresh token be
+ * replayed as an access token, defeating the 15-minute access window. Fail at
+ * boot rather than ship that.
+ */
+if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+  throw new Error(
+    "Invalid environment configuration — refusing to boot:\n" +
+      "  • JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET.\n" +
+      "    Generate two separate secrets (see server/.env.example).",
+  );
+}
+
+/** Production must not ship without TLS on the refresh cookie. */
+if (env.NODE_ENV === "production" && !env.COOKIE_SECURE) {
+  throw new Error(
+    "Invalid environment configuration — refusing to boot:\n" +
+      "  • COOKIE_SECURE must be true in production (the refresh token is a bearer credential).",
+  );
+}

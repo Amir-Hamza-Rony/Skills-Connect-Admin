@@ -17,14 +17,14 @@ import {
   listOrders,
   reviewDocument,
 } from "@/lib/ops-store"
-import { listQualifications, listUsers, qualificationLabel } from "@/lib/store"
+import { listQualifications, listUserDirectory, qualificationLabel } from "@/lib/store"
 import type {
   Client,
   DocumentStatus,
   Order,
   OrderDocument,
   Qualification,
-  User,
+  UserRef,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -65,7 +65,7 @@ export function DocumentsPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [quals, setQuals] = useState<Qualification[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
   const [docs, setDocs] = useState<OrderDocument[] | null>(null)
   const [queue, setQueue] = useState<Queue>("Missing")
 
@@ -83,7 +83,7 @@ export function DocumentsPage() {
         listOrders(),
         listClients(),
         listQualifications(),
-        listUsers(),
+        listUserDirectory(),
       ])
       setOrders(o)
       setClients(c)

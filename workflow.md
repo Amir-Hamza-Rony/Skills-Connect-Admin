@@ -208,12 +208,12 @@ All 15 acceptance criteria (C1–C3, F1–F3, E1–E3, G1–G2, H1–H2, permiss
 
 ---
 
-## 15. Backend roadmap (Phase B1–B6) — B1 ✅ complete
+## 15. Backend roadmap (Phase B1–B6) — B1 ✅ · B2 ✅
 
 Full detail: `BACKEND-PLAN.md`. Front-end shell (Day 1–5) is complete with a
 preview in-memory store (57 REST-shaped functions); these phases replace it
 with Node + Express + TypeScript + MongoDB/Mongoose. Estimate ≈ 22–30 working
-days (not 5 days).
+days (not 5 days); ~6–8 spent.
 
 **Decisions D1–D4 confirmed by owner:** JWT access + rotating httpOnly refresh (D1) ·
 same-repo `server/` with npm workspaces (D2) · **MongoDB Atlas only, no local
@@ -222,11 +222,16 @@ switch, since all three are S3-compatible)**.
 
 | Phase | Work | Days | Key dependencies | Done when |
 |---|---|---|---|---|
-| **B1** Server foundation | Express+TS app, zod env, Mongo/Redis connect, error/log middleware, docker-compose (redis+minio), Vitest+Supertest harness | 3–4 | Docker Desktop | ✅ **done** — typecheck clean, 18/18 tests, Atlas connected, `GET /health/ready` → 200 |
+| **B1** Server foundation | Express+TS app, zod env, Mongo/Redis connect, error/log middleware, docker-compose (redis+minio), Vitest+Supertest harness | 3–4 | Docker Desktop | ✅ **done** — typecheck clean, Atlas connected, `/health/ready` → 200 |
+| **B2** Auth + RBAC | argon2id, access JWT + rotating refresh, reuse detection, `requirePermission` everywhere, audit log, real frontend login | 3–4 | D1–D3 locked | ✅ **done** — wrong password rejected · rotation + reuse tested · Sales 403 on `/users` · 68/68 unit · 45/45 live smoke |
 
-**B1 verified:** boot fails fast without `MONGODB_URI`; unreachable DB never silently listens;
-frontend build unaffected. Only gap: Docker Desktop is not installed, so `docker-compose.yml`
-and the `Dockerfile` are written but unexecuted — neither blocks B2.
+**B2 verified against the live Atlas database over real HTTP:** access token stays in
+browser memory only, refresh token is an httpOnly cookie, a replayed refresh token revokes
+the whole session family, deactivating or resetting a password kills live access tokens
+immediately, and permissions are re-read from the database on every request. The RBAC
+matrix now lives in `server/src/services/permissions.ts` as the single source; the frontend
+copy is UI-only. Frontend cutover so far covers auth + users + roles — the master data
+stores switch over in B3.
 | **B2** Auth + RBAC | User/Role models, argon2id, access+refresh rotation, revoke/logout, rate-limit, `requirePermission` everywhere, audit middleware, real frontend login | 3–4 | D1–D3 locked | Wrong password rejected; Sales gets 403 on `/users` |
 | **B3** Masters + Clients/Orders | 17 collections (incl. new `certificates`), dedupe report, immutable snapshots, transactional transitions + history + tasks, stores → API calls | 4–5 | Mongo access | Multi-order + snapshot + history in one transaction |
 | **B4** Documents + storage | S3 adapter, 15-min signed URLs, checklist templates, version-supersede, review, access logging | 3–4 | D4 locked, bucket creds | Raw storage key never reaches client |
