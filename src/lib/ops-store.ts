@@ -1,4 +1,4 @@
-import { api, apiFetch } from "@/lib/api"
+import { api } from "@/lib/api"
 import {
   DOC_CHECKLISTS,
   type Client,
@@ -10,22 +10,19 @@ import {
   type TaskStatus,
   type WorkflowTask,
 } from "@/lib/types"
-import { SEED_DOCUMENTS } from "@/mocks/ops-seed"
-import { auditLog } from "@/lib/fin-store"
 
 /**
  * Operations data-access layer.
  *
- * CUTOVER STATE (Phase B3): clients, orders and workflow tasks now come from
- * the real API. Documents stay on the in-memory preview store until B4 lands
- * the storage adapter and signed URLs — a document row is only useful once
- * there is a real file behind it.
+ * CUTOVER STATE (Phase B4): clients, orders, workflow tasks and documents all
+ * come from the real API now. Every function keeps its original async
+ * signature, so pages never change — only the body behind it does.
  *
- * Every function keeps its original async signature, so pages never change —
- * only the body behind it does.
+ * Documents no longer carry a `storageKey`: files live in object storage and
+ * are fetched with a short-lived presigned URL, so the raw key never reaches
+ * the browser. Uploading is a two-step dance — `requestUploadUrl` then
+ * `confirmUpload` — rather than a single call.
  */
-
-const latency = () => new Promise((r) => setTimeout(r, 120))
 
 /* ---------- Clients (real API) ---------- */
 
@@ -111,59 +108,58 @@ export async function updateOrderDimensions(
 export const grossMargin = (o: Order) =>
   o.sellingPrice - o.supplierCostSnapshot - o.otherCost
 
-/* ---------- Documents (preview until B4) ---------- */
+/* ---------- Documents (real API) ---------- */
 
-let documents: OrderDocument[] = structuredClone(SEED_DOCUMENTS)
-
+/** The per-order document checklist template. Static, so it stays client-side. */
 export function checklistFor(_qualificationId: string): string[] {
   return DOC_CHECKLISTS.default
 }
 
 export async function listDocuments(orderId: string): Promise<OrderDocument[]> {
-  await latency()
-  return documents.filter((d) => d.orderId === orderId)
+  const data = await api.get<{ documents: OrderDocument[] }>(`/orders/${orderId}/documents`)
+  return data.documents
 }
 
-/** New version supersedes — the old approved version is never overwritten. */
-export async function addDocumentVersion(
-  d: Omit<OrderDocument, "id" | "version" | "storageKey">,
-  actorId = "preview-user",
+/**
+ * Step 1 of an upload: ask the server for a presigned PUT URL.
+ *
+ * The server picks the version and the storage key; the client only learns the
+ * signed URL. The file bytes go straight to storage, never through the API.
+ */
+export async function requestUploadUrl(
+  orderId: string,
+  type: string,
+  contentType: string,
+  _actorId = "preview-user",
+): Promise<{ uploadUrl: string; document: OrderDocument }> {
+  return api.post("/documents/upload-url", { orderId, type, contentType })
+}
+
+/** Step 2 of an upload: confirm the file landed so the status becomes Received. */
+export async function confirmUpload(
+  documentId: string,
+  _actorId = "preview-user",
 ): Promise<OrderDocument> {
-  await latency()
-  const prior = documents.filter(
-    (x) => x.orderId === d.orderId && x.type === d.type,
+  const data = await api.post<{ document: OrderDocument }>(
+    `/documents/${documentId}/confirm-upload`,
   )
-  const version = prior.length === 0 ? 1 : Math.max(...prior.map((x) => x.version)) + 1
-  const created: OrderDocument = {
-    ...d,
-    id: `d-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`,
-    version,
-    storageKey: `/clients/${d.clientId}/orders/${d.orderId}/${encodeURIComponent(d.type)}/${version}`,
-  }
-  documents = [created, ...documents]
-  auditLog("document", created.id, "new-version", "—", `${d.type} v${version}`, actorId)
-  return created
+  return data.document
+}
+
+/** A short-lived download URL. The server logs the access. */
+export async function requestDownloadUrl(
+  documentId: string,
+): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
+  return api.get(`/documents/${documentId}/download-url`)
 }
 
 export async function reviewDocument(
   id: string,
   verdict: "Approved" | "Rejected",
-  reviewerId: string,
+  _reviewerId: string,
   rejectionReason?: string,
 ): Promise<OrderDocument> {
-  await latency()
-  const i = documents.findIndex((d) => d.id === id)
-  if (i === -1) throw new Error("Document not found")
-  const before = documents[i].status
-  documents[i] = {
-    ...documents[i],
-    status: verdict,
-    reviewedAt: new Date().toISOString(),
-    reviewedBy: reviewerId,
-    rejectionReason: verdict === "Rejected" ? (rejectionReason ?? "No reason given.") : null,
-  }
-  auditLog("document", id, `review-${verdict.toLowerCase()}`, before, verdict, reviewerId)
-  return documents[i]
+  return api.patch(`/documents/${id}/review`, { verdict, reason: rejectionReason })
 }
 
 /* ---------- Tasks (real API) ---------- */
@@ -184,6 +180,3 @@ export async function updateTaskStatus(
 }
 
 export type { EvidenceStatus, RtoSubmissionStatus }
-
-/* Re-exported so the apiFetch import is used by callers that need raw access. */
-export { apiFetch }

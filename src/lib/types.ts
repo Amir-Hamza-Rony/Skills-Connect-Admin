@@ -266,7 +266,6 @@ export interface OrderDocument {
   clientId: string
   orderId: string
   type: string
-  storageKey: string
   version: number
   status: DocumentStatus
   receivedAt: string | null

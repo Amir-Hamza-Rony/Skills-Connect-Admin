@@ -379,6 +379,32 @@ console.log("\nB3 — clients, orders, workflow");
   check("anonymous /clients -> 401", anonClient.status === 401, `got ${anonClient.status}`);
 }
 
+// ---------------------------------------------------------- B4: documents
+console.log("\nB4 — documents");
+{
+  const login = await call("/auth/login", { method: "POST", body: { email: ADMIN, password: PASSWORD } });
+  const admin = login.json.accessToken;
+
+  const list = await call("/orders/000000000000000000000000/documents", { token: admin });
+  check("GET /orders/:id/documents returns an empty list", list.status === 200 && list.json?.documents?.length === 0, `got ${list.status}`);
+
+  // Storage is not configured in every environment, but the endpoint must fail
+  // cleanly with a named reason rather than a 500.
+  const up = await call("/documents/upload-url", {
+    method: "POST",
+    token: admin,
+    body: { orderId: "000000000000000000000000", type: "USI transcript", contentType: "application/pdf" },
+  });
+  check("POST /documents/upload-url fails cleanly without storage", up.status === 422, `got ${up.status}`);
+  check("refusal names the reason", up.json?.error?.code === "STORAGE_NOT_CONFIGURED", up.json?.error?.code);
+
+  const anon = await call("/documents/upload-url", {
+    method: "POST",
+    body: { orderId: "x", type: "y", contentType: "z" },
+  });
+  check("anonymous upload-url -> 401", anon.status === 401, `got ${anon.status}`);
+}
+
 // ---------------------------------------------------------------- result
 console.log(`\n${"=".repeat(46)}`);
 console.log(`  ${pass} passed, ${fail} failed`);

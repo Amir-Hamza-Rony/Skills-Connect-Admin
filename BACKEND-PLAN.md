@@ -1,7 +1,7 @@
 # BACKEND PLAN — Skills Connect Admin (Phase B1–B6)
 
 > Companion to `architecture.md` (§1 target) and `workflow.md` (§15 roadmap).
-> Status: **B3 complete** (see §1.3). Front-end shell (Day 1–5, 19 commits on
+> Status: **B4 complete** (see §1.4). Front-end shell (Day 1–5, 19 commits on
 > `rony-dev`) is complete with an in-memory preview store; this document
 > defines how the real backend replaces it.
 > Source of truth for requirements: `Skills_Connect_Admin_Software_Developer_Specification.docx`.
@@ -130,6 +130,38 @@ so `lib/transaction.ts` detects the "retryable writes not supported" error and
 runs the same callback without a session. On a replica set — what production
 should be — the writes are atomic. The difference is deliberate and documented
 in the file rather than hidden.
+
+### B4 — Documents + Storage · ✅ COMPLETE
+
+| Item | State |
+|---|---|
+| S3 adapter (`integrations/storage/s3.ts`) — MinIO / S3 / R2 behind one env-only switch | done |
+| 15-min presigned upload + download URLs | done |
+| Raw storage key never leaves the server (structurally omitted from the DTO) | done |
+| `documents` collection + `document_requirements` + checklist template | done |
+| Version-supersede: a new version marks prior ones `Superseded`, never overwriting | done |
+| Concurrent-upload version race handled (unique index + recompute-and-retry) | done |
+| Confirm-upload verifies the object exists before marking `Received` | done |
+| Approve / reject with mandatory rejection reason | done |
+| `document_access_logs` — upload / download / review, with actor, IP, request id | done |
+| Document routes: list, upload-url, confirm-upload, download-url, review, access-log | done |
+| Frontend: `ops-store.ts` documents → real API; `ops-seed.ts` deleted | done |
+| **59/59 live smoke** (45 B2 + 10 B3 + 4 B4) · **105/105 automated** | done |
+
+**The B4 acceptance criteria, verified:**
+- **Upload → review → v2 flow** — a document moves `Not Received` → `Received`
+  (only after the object is confirmed in the bucket) → `Approved`, and a second
+  version supersedes the first.
+- **Raw storage key never reaches the client** — `toDocumentDTO` strips it, and a
+  test asserts the string `storageKey` appears in no API response. Clients get a
+  presigned URL instead.
+- **Access log rows exist** — upload, download and review each write a row with
+  the actor, IP and request id.
+
+**Storage is an env-only switch.** `STORAGE_PROVIDER` + `S3_*` select MinIO, S3
+or R2 with no code change, per D4. The adapter is the only file that names any of
+them. When no bucket is configured the endpoints return a clean 422
+`STORAGE_NOT_CONFIGURED` rather than crashing — B1–B3 all work without storage.
 
 ### B1 — Server foundation · ✅ COMPLETE
 

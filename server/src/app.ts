@@ -9,6 +9,7 @@ import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-log.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { clientsRouter } from "./routes/clients.routes.js";
+import { documentsRouter } from "./routes/documents.routes.js";
 import { healthRouter } from "./routes/health.js";
 import { ordersRouter } from "./routes/orders.routes.js";
 import { rolesRouter } from "./routes/roles.routes.js";
@@ -52,6 +53,7 @@ export function createApp(): Express {
   app.use(healthRouter);
   app.use("/auth", authRouter);
   app.use("/clients", clientsRouter);
+  app.use("/documents", documentsRouter);
   app.use("/orders", ordersRouter);
   app.use("/roles", rolesRouter);
   app.use("/users", usersRouter);

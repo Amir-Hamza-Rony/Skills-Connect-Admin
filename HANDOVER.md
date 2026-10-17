@@ -42,12 +42,13 @@ running API and the real Atlas database.
 - **Masters** — `agents`, `qualifications`, `rtos` and `supplier_routes` now
   exist as real collections, which is what an order needs in order to be
   created.
+- **Documents** — real collection in object storage. Uploads use short-lived
+  presigned URLs so file bytes never pass through the API; the raw storage key
+  is never sent to the browser. Versions supersede rather than overwrite, and
+  every upload, download and review is access-logged.
 
-## Still preview (B4+)
+## Still preview (B5+)
 
-- Documents and tasks still read the in-memory preview store until B4 lands
-  the storage adapter and signed URLs — a document row is only useful once
-  there is a real file behind it.
 - Invoices, payments, QuickBooks sync and the audit *viewer* still read
   `fin-store.ts`. They are async and REST-shaped, so pages do not change when
   the real endpoints land.
@@ -104,6 +105,17 @@ malformed id refused (400) · anonymous `/clients` → 401.
 The automated suite proves the three B3 criteria against a real MongoDB:
 a client with multiple orders · the cost snapshot surviving a route repricing ·
 a status transition writing its history row and its stage task together.
+
+## B4 acceptance — verified (59/59 live, 105/105 automated)
+
+The B4 smoke run adds: document list returns an empty list for an unknown
+order · upload-url fails cleanly with `STORAGE_NOT_CONFIGURED` when no bucket
+is set (a named 422, not a 500) · anonymous upload-url → 401.
+
+The automated suite proves the B4 criteria against a real MongoDB: the
+upload → review → v2 flow with a version superseding the first · the string
+`storageKey` appearing in no API response while being present in the database ·
+access-log rows for upload, download and review with the actor attributed.
 
 ## B2 acceptance — verified live (45/45)
 

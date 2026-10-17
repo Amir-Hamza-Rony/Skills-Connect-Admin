@@ -13,6 +13,7 @@ import {
   updateOrderDimensions,
   type OrderListQuery,
 } from "../services/order.service.js";
+import { listDocuments } from "../services/document.service.js";
 import { auditContextFrom } from "../services/audit.service.js";
 import { isOrderStatus } from "../types/workflow.js";
 
@@ -56,13 +57,28 @@ ordersRouter.get(
 /**
  * `GET /orders/:id/timeline` — every event on this order, oldest first.
  *
- * Mounted before nothing that could shadow it; `:id` alone does not match.
+ * Declared before `/:id` so "timeline" is never parsed as an order id.
  */
 ordersRouter.get(
   "/:id/timeline",
   requirePermission("orders.view"),
   async (req, res) => {
     res.json({ events: await orderTimeline(param(req, "id")) });
+  },
+);
+
+/**
+ * `GET /orders/:id/documents` — the document list for one order.
+ *
+ * Lives on the orders router because the URL is `/orders/:id/documents`; the
+ * documents router is mounted at `/documents` and cannot express that path
+ * without doubling the prefix.
+ */
+ordersRouter.get(
+  "/:id/documents",
+  requirePermission("documents.view"),
+  async (req, res) => {
+    res.json({ documents: await listDocuments(param(req, "id")) });
   },
 );
 
