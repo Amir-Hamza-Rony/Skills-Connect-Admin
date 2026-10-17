@@ -208,18 +208,25 @@ All 15 acceptance criteria (C1–C3, F1–F3, E1–E3, G1–G2, H1–H2, permiss
 
 ---
 
-## 15. Backend roadmap (Phase B1–B6) — planned, not started
+## 15. Backend roadmap (Phase B1–B6) — B1 ✅ complete
 
 Full detail: `BACKEND-PLAN.md`. Front-end shell (Day 1–5) is complete with a
 preview in-memory store (57 REST-shaped functions); these phases replace it
 with Node + Express + TypeScript + MongoDB/Mongoose. Estimate ≈ 22–30 working
-days (not 5 days). Proposed defaults pending confirmation: JWT access +
-rotating httpOnly refresh (D1), same-repo `server/` (D2), local Docker Mongo
-(D3), MinIO dev storage (D4).
+days (not 5 days).
+
+**Decisions D1–D4 confirmed by owner:** JWT access + rotating httpOnly refresh (D1) ·
+same-repo `server/` with npm workspaces (D2) · **MongoDB Atlas only, no local
+Docker Mongo (D3)** · **MinIO in dev, Cloudflare R2 in prod (D4 — an env-only
+switch, since all three are S3-compatible)**.
 
 | Phase | Work | Days | Key dependencies | Done when |
 |---|---|---|---|---|
-| **B1** Server foundation | Express+TS app, zod env, Mongo/Redis connect, error/log middleware, docker-compose (mongo/redis/minio), Vitest+Supertest harness | 3–4 | D2/D3 decisions, Docker | `GET /health` green; compose gives mongo+redis+minio |
+| **B1** Server foundation | Express+TS app, zod env, Mongo/Redis connect, error/log middleware, docker-compose (redis+minio), Vitest+Supertest harness | 3–4 | Docker Desktop | ✅ **done** — typecheck clean, 18/18 tests, Atlas connected, `GET /health/ready` → 200 |
+
+**B1 verified:** boot fails fast without `MONGODB_URI`; unreachable DB never silently listens;
+frontend build unaffected. Only gap: Docker Desktop is not installed, so `docker-compose.yml`
+and the `Dockerfile` are written but unexecuted — neither blocks B2.
 | **B2** Auth + RBAC | User/Role models, argon2id, access+refresh rotation, revoke/logout, rate-limit, `requirePermission` everywhere, audit middleware, real frontend login | 3–4 | D1–D3 locked | Wrong password rejected; Sales gets 403 on `/users` |
 | **B3** Masters + Clients/Orders | 17 collections (incl. new `certificates`), dedupe report, immutable snapshots, transactional transitions + history + tasks, stores → API calls | 4–5 | Mongo access | Multi-order + snapshot + history in one transaction |
 | **B4** Documents + storage | S3 adapter, 15-min signed URLs, checklist templates, version-supersede, review, access logging | 3–4 | D4 locked, bucket creds | Raw storage key never reaches client |

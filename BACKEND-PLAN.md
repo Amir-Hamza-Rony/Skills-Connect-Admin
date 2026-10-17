@@ -1,14 +1,15 @@
 # BACKEND PLAN — Skills Connect Admin (Phase B1–B6)
 
 > Companion to `architecture.md` (§1 target) and `workflow.md` (§15 roadmap).
-> Status: **planned, not started**. Front-end shell (Day 1–5, 19 commits on
+> Status: **B1 in progress** (see §1.1). Front-end shell (Day 1–5, 19 commits on
 > `rony-dev`) is complete with an in-memory preview store; this document
 > defines how the real backend replaces it.
 > Source of truth for requirements: `Skills_Connect_Admin_Software_Developer_Specification.docx`.
 
 ## 0. Starting facts (verified)
 
-- Repo root `D:/Office Work/Admin SC`, branch `rony-dev`. Only `src/` exists — **no backend code**.
+- Repo root `D:/Office Work/Admin SC`, branch `rony-dev`. Only `src/` existed until B1 —
+  backend code now lives in `server/`.
 - 3 preview stores, all async + REST-shaped (57 functions total):
   - `src/lib/store.ts` — masters: roles, users, qualifications, RTOs, agents, supplier routes
   - `src/lib/ops-store.ts` — clients, orders (+snapshots/history), documents (+versions/review), tasks
@@ -18,39 +19,90 @@
 - Missing vs spec §7: `certificates` entity, `communications` (optional), `document_requirements` as a collection.
 - Secrets rule: real connection strings/keys go in local `.env` ONLY — never in chat, code, or git.
 
-## 1. Proposed decisions (defaults — confirm before B2/B4, else these stand)
+## 1. Decisions (D1–D4 — CONFIRMED by owner)
 
-| # | Decision | Proposed default | Needed for |
+| # | Decision | **Confirmed value** | Locked for |
 |---|---|---|---|
 | D1 | Auth strategy | **JWT access (15 min) + rotating refresh in httpOnly cookie** (spec §3 permits JWT/session) | B2 |
-| D2 | Repo layout | **Same repo, `server/` folder, npm workspaces** (atomic commits, shared types) | B1 |
-| D3 | Mongo for dev | **Local Docker Mongo**; Atlas for staging/prod via `MONGODB_URI` | B1/B3 |
-| D4 | Object storage | **MinIO locally** (S3-compatible); AWS S3 or Cloudflare R2 in prod | B4 |
+| D2 | Repo layout | **Same repo, `server/` folder, npm workspaces** (atomic commits, shared types) | B1 — done |
+| D3 | Mongo for dev | **MongoDB Atlas only** — no local Docker Mongo | B1 |
+| D4 | Object storage | **MinIO locally (dev), Cloudflare R2 in production** | B4 |
 
-User offered a MongoDB Atlas URL: it will be consumed as `MONGODB_URI` from `.env` only.
-Atlas also needs: database name (proposed `skills_connect_admin`), IP allowlist entry,
-live cluster (M0 free tier is enough for dev).
+**D3 consequence:** `docker-compose.yml` has **no mongo service** — the database is remote.
+Atlas needs a database name (`skills_connect_admin`) plus an IP allowlist entry per developer
+machine. Never open `0.0.0.0/0`.
 
-## 2. Proposed repo layout
+**D4 consequence:** MinIO, S3 and R2 are all S3-compatible behind one adapter, so the provider
+is an **env-only switch** (`STORAGE_PROVIDER` + `S3_*`) with zero code change. Nothing depends
+on the choice, which is why B1–B3 were never blocked waiting for it.
+
+Atlas URL is consumed as `MONGODB_URI` from `server/.env` only — never in chat, code, or git.
+
+### 1.1 B1 status — ✅ COMPLETE
+
+| Item | State |
+|---|---|
+| npm workspaces (`server/` registered, deps hoisted to root `node_modules`) | done |
+| `server/tsconfig.json` + `tsconfig.build.json` (NodeNext ESM, strict, isolatedModules) | done |
+| zod env validation, fail-fast at import, blank-value = unset | done — `server/src/config/env.ts` |
+| Mongoose connect / graceful disconnect / `dbState()` | done — `server/src/config/db.ts` |
+| Pino logger with secret redaction; `x-request-id` correlation | done — `src/lib/logger.ts`, `src/middleware/request-log.ts` |
+| Error handler (AppError, ZodError, Mongoose, malformed JSON, opaque 500) | done |
+| Helmet, CORS allowlist, JSON body limit, `x-powered-by` disabled | done — `src/app.ts` |
+| `GET /health` (liveness) + `GET /health/ready` (503 without Mongo) | done |
+| Graceful shutdown (SIGTERM/SIGINT with 10s cap) | done — `server.ts` |
+| Vitest + Supertest harness — 18 tests | done, green |
+| Server typecheck + build | done, clean |
+| `docker-compose.yml` — redis + minio + bucket init (**no mongo**, per D3) | written — **unverified: Docker Desktop not installed on this machine** |
+| `server/Dockerfile` + `.dockerignore` | written — **unverified: Docker Desktop not installed** |
+| **Live Atlas connection** | ✅ **verified — `MongoDB connected`, `GET /health/ready` → 200 `{"status":"ready","db":"connected"}`** |
+
+Verified: `server:typecheck` clean · `server:test` 18/18 · `server:build` emits `dist/` ·
+boot without `MONGODB_URI` fails fast with an actionable message and exit 1 ·
+frontend `npm run build` unaffected (1957 modules) · Atlas auth + TLS + `skills_connect_admin`
+database reachable from the dev machine (IP allowlist correct) · `/health` reports
+`db: connected` · `/health/ready` returns 200.
+
+Config landed in the local, git-ignored `server/.env`: Atlas URI, generated
+`JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` (used from B2). `server/.env.example` holds
+placeholders only — verified no credential is present in it or anywhere in git history.
+
+## 2. Repo layout (D2 — same repo, `server/` + npm workspaces)
 
 ```text
 Admin SC/
-├─ package.json            # workspaces: [".", "server"] (D2 decision)
-├─ server/                 # NEW — Node + Express + TypeScript
+├─ package.json            # workspaces: ["server"]; also hosts server:* scripts
+├─ package-lock.json
+├─ docker-compose.yml      # redis + minio + bucket init  (NO mongo — D3 uses Atlas)
+├─ .dockerignore
+├─ server/                 # Node + Express + TypeScript (ESM, NodeNext)
+│  ├─ package.json         # @sc/server
+│  ├─ tsconfig.json        # strict typecheck (src + tests)
+│  ├─ tsconfig.build.json  # emit dist/
+│  ├─ vitest.config.ts
+│  ├─ Dockerfile
+│  ├─ .env.example         # committed; placeholders only
+│  ├─ .env                 # LOCAL ONLY, git-ignored, never committed
 │  ├─ src/
-│  │  ├─ config/          # env.ts (zod validation), db.ts, redis.ts, s3.ts, qb.ts
-│  │  ├─ models/          # Mongoose schemas — 17 collections (§5)
-│  │  ├─ middleware/      # requireAuth, requirePermission, auditLog, errorHandler, rateLimit
-│  │  ├─ routes/          # thin routers → services
-│  │  ├─ services/        # business rules (allocation, snapshots, transitions, sync)
-│  │  ├─ integrations/    # quickbooks/, storage/
-│  │  ├─ jobs/            # BullMQ queues + workers
-│  │  ├─ scripts/         # excel-import, reconcile, seed-admin
+│  │  ├─ config/           # B1: env.ts (zod), db.ts   ·  B5: redis.ts  ·  B4: s3.ts  ·  B5: qb.ts
+│  │  ├─ lib/              # app-error.ts, logger.ts, version.ts
+│  │  ├─ middleware/       # B1: request-log, error-handler, not-found
+│  │  │                    # B2: requireAuth, requirePermission, auditLog, rateLimit
+│  │  ├─ models/           # Mongoose schemas — 17 collections (§5)        [B2–B3]
+│  │  ├─ routes/           # B1: health.ts  ·  thin routers → services    [B2–B6]
+│  │  ├─ services/         # allocation, snapshots, transitions, sync     [B3–B5]
+│  │  ├─ integrations/     # quickbooks/, storage/                        [B4–B5]
+│  │  ├─ jobs/             # BullMQ queues + workers                      [B5]
+│  │  ├─ scripts/          # excel-import, reconcile, seed-admin          [B6]
 │  │  └─ app.ts / server.ts
-│  └─ tests/              # unit + integration (Vitest + Supertest)
-├─ src/                    # frontend (existing)
-└─ docker-compose.yml      # mongo + redis + minio (dev)
+│  └─ tests/               # Vitest + Supertest (B1: 18 tests)
+├─ src/                    # frontend (existing, Day 1–5)
+└─ node_modules/           # hoisted — one install for both packages
 ```
+
+Note: the frontend and server keep separate `package.json` files; shared TypeScript
+types will be extracted to a root-level location in B3 rather than cross-importing
+between packages.
 
 ## 3. Phases (realistic estimate — NOT 5 days)
 
@@ -115,9 +167,12 @@ instalments unlimited; routes soft-expire only.
 
 ## 8. External blockers (owner provides)
 
-1. MongoDB: Atlas URL + db name + IP allowlist (offered — pending).
-2. Storage: S3/R2/MinIO choice + bucket creds (B4).
-3. Redis: local Docker vs managed (B1/B5).
+1. ~~MongoDB Atlas~~ — ✅ **supplied and verified.** URI lives in git-ignored `server/.env`;
+   `skills_connect_admin` reachable from the dev machine; `GET /health/ready` returns 200.
+   Reminder: if that password is ever reused elsewhere, rotate it in Atlas and update `.env`.
+2. Storage: **R2 credentials** (bucket + API token) — D4 locked, consumed in B4.
+3. Redis: local Docker compose, no external blocker. **Docker Desktop is not installed** on the
+   dev machine, so `docker compose up` and the Dockerfile remain unverified.
 4. QuickBooks: sandbox app creds + realm ID + export for reconciliation (B5/B6).
 5. `RTO & Onboarding Master Hub.xlsx` workbook (B6).
 6. Hosting: VPS/Docker target (Railway/Render/own server?) (B6).
@@ -128,3 +183,7 @@ When a new session starts, read in order: `BACKEND-PLAN.md` → `workflow.md` §
 `HANDOVER.md` → `architecture.md` §1–§2. Then continue from the first phase whose
 status is not `completed`. Track work with the todo list; user runs all git
 operations (no auto commit/push).
+
+**B1 is complete. Next phase is B2 (Auth + RBAC)** — it consumes the generated
+`JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` already present in `server/.env`, adds them to the
+zod schema as required, and switches the frontend from preview auth to real login.

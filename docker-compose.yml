@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Skills Connect Admin — local development services (BACKEND-PLAN B1, D3/D4).
+#
+#   docker compose up -d          start redis + minio
+#   docker compose ps             check health
+#   docker compose down           stop
+#   docker compose down -v        stop AND delete volumes (wipes MinIO files)
+#
+# MongoDB is deliberately ABSENT: D3 chose MongoDB Atlas, so the database lives
+# in the cloud and is reached via MONGODB_URI in server/.env.
+#
+# Every credential here is a LOCAL DEV PLACEHOLDER. These values are published in
+# git and are not secrets. Never reuse them in staging or production.
+# ---------------------------------------------------------------------------
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: sc-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: sc-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web console
+    environment:
+      # PLACEHOLDER — local dev only.
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # One-shot: creates the private document bucket that B4 will use.
+  # Runs to completion and exits; `restart: "no"` is intentional.
+  minio-init:
+    image: minio/mc:latest
+    container_name: sc-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        (mc mb --ignore-existing local/sc-documents || true) &&
+        mc anonymous set none local/sc-documents &&
+        echo 'minio: bucket sc-documents ready (private, no anonymous access)'
+      "
+
+volumes:
+  redis-data:
+  minio-data:
