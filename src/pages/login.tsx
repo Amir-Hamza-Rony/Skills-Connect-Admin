@@ -16,8 +16,10 @@ import { ThemeToggle } from "@/components/theme-toggle"
 
 /**
  * Login screen — same theme strategy as the dashboard (no light-only login).
- * Preview accepts any password for seeded accounts; the real backend
- * verifies credentials and issues short-lived session tokens.
+ *
+ * Credentials are verified by the API (`POST /auth/login`). The server returns
+ * a short-lived access token and sets the rotating refresh token as an httpOnly
+ * cookie; neither is ever written to web storage.
  */
 export function LoginPage() {
   const { user, authLoading, authError, login } = useAuth()
@@ -79,7 +81,7 @@ export function LoginPage() {
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
-              Use a preview account — any password works in this demo shell.
+              Sign in with your staff account. Access is enforced by your role.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -92,7 +94,7 @@ export function LoginPage() {
                   id="email"
                   type="email"
                   autoComplete="username"
-                  placeholder="admin@skillsconnect.example"
+                  placeholder="you@skillsconnect.com.au"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -123,8 +125,8 @@ export function LoginPage() {
               </Button>
             </form>
             <div className="mt-4 flex flex-wrap gap-1.5">
-              <Badge variant="info">Preview auth</Badge>
-              <Badge variant="outline">admin@… / finance@… / operations@…</Badge>
+              <Badge variant="info">Server-verified sign-in</Badge>
+              <Badge variant="outline">Session rotates automatically</Badge>
             </div>
           </CardContent>
         </Card>

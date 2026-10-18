@@ -19,7 +19,7 @@ import {
   listAgents,
   listQualifications,
   listRtos,
-  listUsers,
+  listUserDirectory,
   qualificationLabel,
 } from "@/lib/store"
 import type {
@@ -31,7 +31,7 @@ import type {
   Payment,
   Qualification,
   Rto,
-  User,
+  UserRef,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -61,7 +61,7 @@ export function ClientProfilePage() {
   const [quals, setQuals] = useState<Qualification[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [rtos, setRtos] = useState<Rto[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
   const [tab, setTab] = useState<Tab>("Orders")
   const [finPaid, setFinPaid] = useState<number | null>(null)
   const [finInvoiced, setFinInvoiced] = useState<number | null>(null)
@@ -77,7 +77,7 @@ export function ClientProfilePage() {
         listQualifications(),
         listAgents(),
         listRtos(),
-        listUsers(),
+        listUserDirectory(),
       ])
       setClient(c ?? null)
       setOrders(o)

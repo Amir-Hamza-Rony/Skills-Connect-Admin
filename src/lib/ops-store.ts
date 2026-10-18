@@ -1,3 +1,4 @@
+import { api } from "@/lib/api"
 import {
   DOC_CHECKLISTS,
   type Client,
@@ -9,69 +10,66 @@ import {
   type TaskStatus,
   type WorkflowTask,
 } from "@/lib/types"
-import {
-  SEED_CLIENTS,
-  SEED_DOCUMENTS,
-  SEED_ORDERS,
-  SEED_TASKS,
-} from "@/mocks/ops-seed"
-import { listRoutes } from "@/lib/store"
-import { auditLog } from "@/lib/fin-store"
 
 /**
- * Preview operations layer (Day-3). Same async, REST-shaped contract as
- * lib/store.ts — the real backend replaces these functions without UI
- * changes. Snapshots, versions, and history are preserved, never rewritten.
+ * Operations data-access layer.
+ *
+ * CUTOVER STATE (Phase B4): clients, orders, workflow tasks and documents all
+ * come from the real API now. Every function keeps its original async
+ * signature, so pages never change — only the body behind it does.
+ *
+ * Documents no longer carry a `storageKey`: files live in object storage and
+ * are fetched with a short-lived presigned URL, so the raw key never reaches
+ * the browser. Uploading is a two-step dance — `requestUploadUrl` then
+ * `confirmUpload` — rather than a single call.
  */
 
-const latency = () => new Promise((r) => setTimeout(r, 120))
-
-let clients: Client[] = structuredClone(SEED_CLIENTS)
-let orders: Order[] = structuredClone(SEED_ORDERS)
-let documents: OrderDocument[] = structuredClone(SEED_DOCUMENTS)
-let tasks: WorkflowTask[] = structuredClone(SEED_TASKS)
-
-const uid = (p: string) =>
-  `${p}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`
-
-const nowIso = () => new Date().toISOString()
-
-/* ---------- Clients ---------- */
+/* ---------- Clients (real API) ---------- */
 
 export async function listClients(): Promise<Client[]> {
-  await latency()
-  return [...clients]
+  const data = await api.get<{ clients: Client[] }>("/clients")
+  return data.clients
 }
 
 export async function getClient(id: string): Promise<Client | undefined> {
-  await latency()
-  return clients.find((c) => c.id === id)
+  try {
+    const data = await api.get<{ client: Client }>(`/clients/${id}`)
+    return data.client
+  } catch {
+    return undefined
+  }
 }
 
 export async function createClient(
   c: Omit<Client, "id" | "createdAt">,
-  actorId = "preview-user",
+  _actorId = "preview-user",
 ): Promise<Client> {
-  await latency()
-  const created: Client = { ...c, id: uid("c"), createdAt: nowIso() }
-  clients = [created, ...clients]
-  auditLog("client", created.id, "create", "—", c.legalName, actorId)
-  return created
+  const data = await api.post<{ client: Client }>("/clients", c)
+  return data.client
 }
 
-/* ---------- Orders ---------- */
+/* ---------- Orders (real API) ---------- */
 
 export async function listOrders(clientId?: string): Promise<Order[]> {
-  await latency()
-  return clientId ? orders.filter((o) => o.clientId === clientId) : [...orders]
+  const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : ""
+  const data = await api.get<{ orders: Order[] }>(`/orders${query}`)
+  return data.orders
 }
 
 export async function getOrder(id: string): Promise<Order | undefined> {
-  await latency()
-  return orders.find((o) => o.id === id)
+  try {
+    const data = await api.get<{ order: Order }>(`/orders/${id}`)
+    return data.order
+  } catch {
+    return undefined
+  }
 }
 
-/** Creates an order and SNAPSHOTS the current wholesale cost (Spec §8). */
+/**
+ * Creates an order. The wholesale cost snapshot is taken server-side from the
+ * active supplier route — the client never sends a cost, so it cannot be
+ * invented or overwritten.
+ */
 export async function createOrder(
   o: {
     clientId: string
@@ -82,184 +80,103 @@ export async function createOrder(
     sellingPrice: number
     otherCost?: number
   },
-  actorId = "preview-user",
+  _actorId = "preview-user",
 ): Promise<Order> {
-  await latency()
-  const routes = await listRoutes()
-  const route = routes.find(
-    (r) =>
-      r.status === "active" &&
-      r.qualificationId === o.qualificationId &&
-      r.sourceAgentId === o.sourceAgentId &&
-      r.rtoId === o.rtoId,
-  )
-  const created: Order = {
-    id: uid("o"),
-    clientId: o.clientId,
-    qualificationId: o.qualificationId,
-    salesAgentId: o.salesAgentId,
-    sourceAgentId: o.sourceAgentId,
-    rtoId: o.rtoId,
-    status: "New",
-    evidenceStatus: "Not Started",
-    rtoSubmissionStatus: "Not Ready",
-    certificateStatus: "Not Issued",
-    sellingPrice: o.sellingPrice,
-    supplierCostSnapshot: route?.wholesaleCost ?? 0,
-    otherCost: o.otherCost ?? 0,
-    currency: "AUD",
-    createdAt: nowIso(),
-    updatedAt: nowIso(),
-    completedAt: null,
-    history: [
-      { timestamp: nowIso(), actorId, field: "status", before: "—", after: "New" },
-    ],
-  }
-  orders = [created, ...orders]
-  auditLog("order", created.id, "create", "—", `Client ${o.clientId} · AUD ${o.sellingPrice}`, actorId)
-  // Auto-create the onboarding task for the new order.
-  tasks = [
-    {
-      id: uid("t"),
-      orderId: created.id,
-      stage: "Onboarding",
-      title: "Send document checklist to client",
-      assigneeId: null,
-      dueDate: null,
-      status: "Todo",
-      priority: "Medium",
-    },
-    ...tasks,
-  ]
-  return created
+  const data = await api.post<{ order: Order }>("/orders", o)
+  return data.order
 }
 
-/** Status transition with mandatory history entry (Spec §5). */
+/** Status transition with a mandatory history entry (Spec §5). */
 export async function transitionOrder(
   id: string,
   to: OrderStatus,
-  actorId: string,
+  _actorId: string,
 ): Promise<Order> {
-  await latency()
-  const i = orders.findIndex((o) => o.id === id)
-  if (i === -1) throw new Error("Order not found")
-  const before = orders[i].status
-  orders[i] = {
-    ...orders[i],
-    status: to,
-    updatedAt: nowIso(),
-    completedAt: to === "Completed" ? nowIso() : orders[i].completedAt,
-    history: [
-      ...orders[i].history,
-      { timestamp: nowIso(), actorId, field: "status", before, after: to },
-    ],
-  }
-  auditLog("order", id, "status-change", before, to, actorId)
-  return orders[i]
+  const data = await api.patch<{ order: Order }>(`/orders/${id}/status`, { status: to })
+  return data.order
 }
 
 export async function updateOrderDimensions(
   id: string,
   patch: Partial<Pick<Order, "evidenceStatus" | "rtoSubmissionStatus">>,
-  actorId: string,
+  _actorId: string,
 ): Promise<Order> {
-  await latency()
-  const i = orders.findIndex((o) => o.id === id)
-  if (i === -1) throw new Error("Order not found")
-  const changes = (Object.keys(patch) as Array<keyof typeof patch>)
-    .filter((f) => patch[f] !== undefined && patch[f] !== orders[i][f])
-    .map((f) => ({
-      timestamp: nowIso(),
-      actorId,
-      field: f,
-      before: String(orders[i][f]),
-      after: String(patch[f]),
-    }))
-  orders[i] = {
-    ...orders[i],
-    ...patch,
-    updatedAt: nowIso(),
-    history: [...orders[i].history, ...changes],
-  }
-  for (const c of changes) auditLog("order", id, `${c.field}-change`, c.before, c.after, actorId)
-  return orders[i]
+  const data = await api.patch<{ order: Order }>(`/orders/${id}/dimensions`, patch)
+  return data.order
 }
 
 export const grossMargin = (o: Order) =>
   o.sellingPrice - o.supplierCostSnapshot - o.otherCost
 
-/* ---------- Documents ---------- */
+/* ---------- Documents (real API) ---------- */
 
+/** The per-order document checklist template. Static, so it stays client-side. */
 export function checklistFor(_qualificationId: string): string[] {
   return DOC_CHECKLISTS.default
 }
 
 export async function listDocuments(orderId: string): Promise<OrderDocument[]> {
-  await latency()
-  return documents.filter((d) => d.orderId === orderId)
+  const data = await api.get<{ documents: OrderDocument[] }>(`/orders/${orderId}/documents`)
+  return data.documents
 }
 
-/** New version supersedes — the old approved version is never overwritten. */
-export async function addDocumentVersion(
-  d: Omit<OrderDocument, "id" | "version" | "storageKey">,
-  actorId = "preview-user",
+/**
+ * Step 1 of an upload: ask the server for a presigned PUT URL.
+ *
+ * The server picks the version and the storage key; the client only learns the
+ * signed URL. The file bytes go straight to storage, never through the API.
+ */
+export async function requestUploadUrl(
+  orderId: string,
+  type: string,
+  contentType: string,
+  _actorId = "preview-user",
+): Promise<{ uploadUrl: string; document: OrderDocument }> {
+  return api.post("/documents/upload-url", { orderId, type, contentType })
+}
+
+/** Step 2 of an upload: confirm the file landed so the status becomes Received. */
+export async function confirmUpload(
+  documentId: string,
+  _actorId = "preview-user",
 ): Promise<OrderDocument> {
-  await latency()
-  const prior = documents.filter(
-    (x) => x.orderId === d.orderId && x.type === d.type,
+  const data = await api.post<{ document: OrderDocument }>(
+    `/documents/${documentId}/confirm-upload`,
   )
-  const version = prior.length === 0 ? 1 : Math.max(...prior.map((x) => x.version)) + 1
-  const created: OrderDocument = {
-    ...d,
-    id: uid("d"),
-    version,
-    storageKey: `/clients/${d.clientId}/orders/${d.orderId}/${encodeURIComponent(d.type)}/${version}`,
-  }
-  documents = [created, ...documents]
-  auditLog("document", created.id, "new-version", "—", `${d.type} v${version}`, actorId)
-  return created
+  return data.document
+}
+
+/** A short-lived download URL. The server logs the access. */
+export async function requestDownloadUrl(
+  documentId: string,
+): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
+  return api.get(`/documents/${documentId}/download-url`)
 }
 
 export async function reviewDocument(
   id: string,
   verdict: "Approved" | "Rejected",
-  reviewerId: string,
+  _reviewerId: string,
   rejectionReason?: string,
 ): Promise<OrderDocument> {
-  await latency()
-  const i = documents.findIndex((d) => d.id === id)
-  if (i === -1) throw new Error("Document not found")
-  const before = documents[i].status
-  documents[i] = {
-    ...documents[i],
-    status: verdict,
-    reviewedAt: nowIso(),
-    reviewedBy: reviewerId,
-    rejectionReason: verdict === "Rejected" ? (rejectionReason ?? "No reason given.") : null,
-  }
-  auditLog("document", id, `review-${verdict.toLowerCase()}`, before, verdict, reviewerId)
-  return documents[i]
+  return api.patch(`/documents/${id}/review`, { verdict, reason: rejectionReason })
 }
 
-/* ---------- Tasks ---------- */
+/* ---------- Tasks (real API) ---------- */
 
 export async function listTasks(orderId?: string): Promise<WorkflowTask[]> {
-  await latency()
-  return orderId ? tasks.filter((t) => t.orderId === orderId) : [...tasks]
+  const query = orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""
+  const data = await api.get<{ tasks: WorkflowTask[] }>(`/workflow/tasks${query}`)
+  return data.tasks
 }
 
 export async function updateTaskStatus(
   id: string,
   status: TaskStatus,
-  actorId = "preview-user",
+  _actorId = "preview-user",
 ): Promise<WorkflowTask> {
-  await latency()
-  const i = tasks.findIndex((t) => t.id === id)
-  if (i === -1) throw new Error("Task not found")
-  const before = tasks[i].status
-  tasks[i] = { ...tasks[i], status }
-  auditLog("task", id, "status-change", before, status, actorId)
-  return tasks[i]
+  const data = await api.patch<{ task: WorkflowTask }>(`/workflow/tasks/${id}`, { status })
+  return data.task
 }
 
 export type { EvidenceStatus, RtoSubmissionStatus }

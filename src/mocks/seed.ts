@@ -24,13 +24,13 @@ export const SEED_ROLES: Role[] = [
 ]
 
 export const SEED_USERS: User[] = [
-  { id: "u-admin", name: "A. Admin", email: "admin@skillsconnect.example", phone: "0400 000 001", roleIds: ["role-superadmin"], active: true, lastLoginAt: "2026-10-10T09:00:00Z" },
-  { id: "u-finance", name: "F. Finance", email: "finance@skillsconnect.example", phone: "0400 000 002", roleIds: ["role-finance"], active: true, lastLoginAt: "2026-10-09T14:20:00Z" },
-  { id: "u-ops", name: "O. Operations", email: "operations@skillsconnect.example", phone: "0400 000 003", roleIds: ["role-operations"], active: true, lastLoginAt: "2026-10-10T08:15:00Z" },
-  { id: "u-sales", name: "S. Closer", email: "sales@skillsconnect.example", phone: "0400 000 004", roleIds: ["role-sales"], active: true, lastLoginAt: "2026-10-08T11:00:00Z" },
-  { id: "u-source", name: "R. Sourcer", email: "sourcing@skillsconnect.example", phone: "0400 000 005", roleIds: ["role-sourcing"], active: true, lastLoginAt: "2026-10-07T16:40:00Z" },
-  { id: "u-review", name: "D. Reviewer", email: "review@skillsconnect.example", phone: "0400 000 006", roleIds: ["role-reviewer"], active: true, lastLoginAt: null },
-  { id: "u-ro", name: "M. Manager", email: "manager@skillsconnect.example", phone: "0400 000 007", roleIds: ["role-readonly"], active: false, lastLoginAt: null },
+  { id: "u-admin", name: "A. Admin", email: "admin@skillsconnect.example", phone: "0400 000 001", roleNames: ["Super Admin"], active: true, lastLoginAt: "2026-10-10T09:00:00Z" },
+  { id: "u-finance", name: "F. Finance", email: "finance@skillsconnect.example", phone: "0400 000 002", roleNames: ["Finance"], active: true, lastLoginAt: "2026-10-09T14:20:00Z" },
+  { id: "u-ops", name: "O. Operations", email: "operations@skillsconnect.example", phone: "0400 000 003", roleNames: ["Operations"], active: true, lastLoginAt: "2026-10-10T08:15:00Z" },
+  { id: "u-sales", name: "S. Closer", email: "sales@skillsconnect.example", phone: "0400 000 004", roleNames: ["Sales / Closing Agent"], active: true, lastLoginAt: "2026-10-08T11:00:00Z" },
+  { id: "u-source", name: "R. Sourcer", email: "sourcing@skillsconnect.example", phone: "0400 000 005", roleNames: ["RTO / Sourcing Manager"], active: true, lastLoginAt: "2026-10-07T16:40:00Z" },
+  { id: "u-review", name: "D. Reviewer", email: "review@skillsconnect.example", phone: "0400 000 006", roleNames: ["Document Reviewer"], active: true, lastLoginAt: null },
+  { id: "u-ro", name: "M. Manager", email: "manager@skillsconnect.example", phone: "0400 000 007", roleNames: ["Read Only / Manager"], active: false, lastLoginAt: null },
 ]
 
 export const SEED_QUALIFICATIONS: Qualification[] = [

@@ -25,7 +25,7 @@ import {
   listAgents,
   listQualifications,
   listRtos,
-  listUsers,
+  listUserDirectory,
   qualificationLabel,
 } from "@/lib/store"
 import {
@@ -41,7 +41,7 @@ import {
   type Qualification,
   type Rto,
   type RtoSubmissionStatus,
-  type User,
+  type UserRef,
   type WorkflowTask,
 } from "@/lib/types"
 
@@ -65,7 +65,7 @@ export function OrderDetailPage() {
   const [quals, setQuals] = useState<Qualification[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [rtos, setRtos] = useState<Rto[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
   const [docs, setDocs] = useState<OrderDocument[]>([])
   const [tasks, setTasks] = useState<WorkflowTask[]>([])
   const [orderInvoices, setOrderInvoices] = useState<Invoice[]>([])
@@ -84,7 +84,7 @@ export function OrderDetailPage() {
         listQualifications(),
         listAgents(),
         listRtos(),
-        listUsers(),
+        listUserDirectory(),
         listDocuments(o.id),
         listTasks(o.id),
         listInvoices(o.id),

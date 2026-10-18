@@ -1,0 +1,458 @@
+import { Types } from "mongoose";
+
+import { AppError } from "../lib/app-error.js";
+import { Order, type OrderAttrs, type OrderLean } from "../models/order.model.js";
+import { WorkflowTask } from "../models/workflow-task.model.js";
+import { SupplierRoute } from "../models/supplier-route.model.js";
+import { Client } from "../models/client.model.js";
+import { recordAudit } from "./audit.service.js";
+import { withTransaction } from "../lib/transaction.js";
+import { isOrderStatus, type OrderStatus } from "../types/workflow.js";
+
+export interface OrderActor {
+  id: string;
+  email: string;
+  ip?: string | null;
+  requestId?: string | null;
+}
+
+type HistoryEntry = OrderAttrs["history"][number];
+
+/** Shape the API returns — `_id` and refs stringified, dates as ISO. */
+export type OrderDTO = Omit<
+  OrderAttrs,
+  "clientId" | "qualificationId" | "salesAgentId" | "sourceAgentId" | "rtoId" | "history"
+> & {
+  id: string;
+  clientId: string;
+  qualificationId: string;
+  salesAgentId: string;
+  sourceAgentId: string;
+  rtoId: string;
+  history: Array<{
+    timestamp: Date;
+    actorId: string | null;
+    field: string;
+    before: string;
+    after: string;
+  }>;
+};
+
+export function toOrderDTO(doc: OrderLean): OrderDTO {
+  return {
+    ...doc,
+    id: String(doc._id),
+    clientId: String(doc.clientId),
+    qualificationId: String(doc.qualificationId),
+    salesAgentId: String(doc.salesAgentId),
+    sourceAgentId: String(doc.sourceAgentId),
+    rtoId: String(doc.rtoId),
+    history: doc.history.map((h) => ({
+      timestamp: h.timestamp,
+      actorId: h.actorId ? String(h.actorId) : null,
+      field: h.field,
+      before: h.before,
+      after: h.after,
+    })),
+  };
+}
+
+export interface OrderListQuery {
+  status?: OrderStatus;
+  clientId?: string;
+  rtoId?: string;
+  salesAgentId?: string;
+}
+
+/** `GET /orders` — filtered list for the queue view. */
+export async function listOrders(query: OrderListQuery = {}): Promise<OrderDTO[]> {
+  const filter: Record<string, unknown> = {};
+  if (query.status) filter.status = query.status;
+  if (query.clientId && Types.ObjectId.isValid(query.clientId)) {
+    filter.clientId = new Types.ObjectId(query.clientId);
+  }
+  if (query.rtoId && Types.ObjectId.isValid(query.rtoId)) {
+    filter.rtoId = new Types.ObjectId(query.rtoId);
+  }
+  if (query.salesAgentId && Types.ObjectId.isValid(query.salesAgentId)) {
+    filter.salesAgentId = new Types.ObjectId(query.salesAgentId);
+  }
+
+  const docs = await Order.find(filter).sort({ createdAt: -1 }).lean<OrderLean[]>();
+  return docs.map(toOrderDTO);
+}
+
+export async function getOrder(id: string): Promise<OrderDTO | null> {
+  if (!Types.ObjectId.isValid(id)) return null;
+  const doc = await Order.findById(id).lean<OrderLean>();
+  return doc ? toOrderDTO(doc) : null;
+}
+
+export interface CreateOrderInput {
+  clientId: string;
+  qualificationId: string;
+  salesAgentId: string;
+  sourceAgentId: string;
+  rtoId: string;
+  sellingPrice: number;
+  otherCost?: number;
+}
+
+/**
+ * `POST /clients/:clientId/orders`
+ *
+ * The wholesale cost is read from the active supplier route **here**, never
+ * accepted from the caller. That is what makes the snapshot trustworthy: a
+ * client cannot post `supplierCostSnapshot: 0` and invent a margin.
+ *
+ * If no active route matches, the order is rejected rather than created with a
+ * zero snapshot — a zero cost would corrupt every downstream margin figure in
+ * a way that would look like a legitimate discount.
+ */
+export async function createOrder(
+  input: CreateOrderInput,
+  actor: OrderActor,
+): Promise<OrderDTO> {
+  const ids = {
+    clientId: input.clientId,
+    qualificationId: input.qualificationId,
+    salesAgentId: input.salesAgentId,
+    sourceAgentId: input.sourceAgentId,
+    rtoId: input.rtoId,
+  };
+  for (const [field, value] of Object.entries(ids)) {
+    if (!Types.ObjectId.isValid(value)) {
+      throw AppError.badRequest("INVALID_ID", `Invalid ${field}.`);
+    }
+  }
+
+  const route = await SupplierRoute.findOne({
+    qualificationId: ids.qualificationId,
+    sourceAgentId: ids.sourceAgentId,
+    rtoId: ids.rtoId,
+    status: "active",
+  }).lean();
+
+  if (!route) {
+    throw AppError.unprocessable(
+      "NO_ACTIVE_ROUTE",
+      "No active supplier route matches this qualification, source agent and RTO. Create the route before taking the order.",
+    );
+  }
+
+  const exists = await Client.exists({ _id: ids.clientId });
+  if (!exists) {
+    throw new AppError(404, "CLIENT_NOT_FOUND", "Client not found.");
+  }
+
+  const now = new Date();
+  const actorObjectId = new Types.ObjectId(actor.id);
+
+  const docs = await withTransaction((session) =>
+    Order.create(
+      [
+        {
+          clientId: new Types.ObjectId(ids.clientId),
+          qualificationId: new Types.ObjectId(ids.qualificationId),
+          salesAgentId: new Types.ObjectId(ids.salesAgentId),
+          sourceAgentId: new Types.ObjectId(ids.sourceAgentId),
+          rtoId: new Types.ObjectId(ids.rtoId),
+          status: "New",
+          evidenceStatus: "Not Started",
+          rtoSubmissionStatus: "Not Ready",
+          certificateStatus: "Not Issued",
+          sellingPrice: input.sellingPrice,
+          supplierCostSnapshot: route.wholesaleCost,
+          otherCost: input.otherCost ?? 0,
+          currency: "AUD",
+          completedAt: null,
+          history: [
+            { timestamp: now, actorId: actorObjectId, field: "status", before: "—", after: "New" },
+          ],
+        },
+      ],
+      session ? { session } : {},
+    ),
+  );
+
+  const created = docs[0];
+  if (!created) throw new Error("Failed to create order.");
+
+  await recordAudit({
+    actorId: actor.id,
+    actorEmail: actor.email,
+    ip: actor.ip ?? null,
+    requestId: actor.requestId ?? null,
+    action: "order.create",
+    entityType: "order",
+    entityId: String(created._id),
+    after: {
+      clientId: ids.clientId,
+      qualificationId: ids.qualificationId,
+      sellingPrice: input.sellingPrice,
+      supplierCostSnapshot: route.wholesaleCost,
+      snapshotSourceRoute: String(route._id),
+    },
+  });
+
+  // The onboarding task a manual create would also add, so the board and the
+  // order agree from the first request.
+  await WorkflowTask.create({
+    orderId: created._id,
+    stage: "Onboarding",
+    title: "Send document checklist to client",
+    assigneeId: null,
+    dueDate: null,
+    status: "Todo",
+    priority: "Medium",
+  });
+
+  const doc = await Order.findById(created._id).lean<OrderLean>();
+  return toOrderDTO(doc!);
+}
+
+/**
+ * The task the workflow board should carry when an order enters a stage.
+ *
+ * Only stages that need a human to *do* something get one. Terminal and
+ * automatic states (New, Lost, Cancelled) do not — otherwise the board fills
+ * with items nobody can act on.
+ */
+const STAGE_TASKS: Partial<
+  Record<OrderStatus, { stage: string; title: string; priority: "Low" | "Medium" | "High" }>
+> = {
+  "Awaiting Documents": {
+    stage: "Onboarding",
+    title: "Send document checklist to client",
+    priority: "Medium",
+  },
+  "Documents Under Review": {
+    stage: "Onboarding",
+    title: "Review submitted documents",
+    priority: "High",
+  },
+  "Ready for Submission": {
+    stage: "Submission",
+    title: "Prepare RTO submission pack",
+    priority: "High",
+  },
+  "Submitted to Source Agent": {
+    stage: "Submission",
+    title: "Confirm source agent acknowledgement",
+    priority: "Medium",
+  },
+  "Additional Evidence Required": {
+    stage: "Assessment",
+    title: "Request additional evidence from client",
+    priority: "High",
+  },
+  "Rework Required": {
+    stage: "Assessment",
+    title: "Address RTO rework comments",
+    priority: "High",
+  },
+  Approved: {
+    stage: "Completion",
+    title: "Request certificate from RTO",
+    priority: "High",
+  },
+};
+
+/**
+ * `PATCH /orders/:id/status` — a status transition.
+ *
+ * Writes the history entry **and** the stage task in one transaction, which is
+ * the B3 acceptance criterion: an order can never end up transitioned with no
+ * record of who moved it, or with a record but no work item.
+ *
+ * `supplierCostSnapshot` is not writable here. The pre-update hooks on the
+ * order schema strip it from any update, so a caller that tries to change it in
+ * the same request gets the status change only.
+ */
+export async function transitionOrder(
+  id: string,
+  to: OrderStatus,
+  actor: OrderActor,
+): Promise<OrderDTO | null> {
+  if (!Types.ObjectId.isValid(id)) return null;
+  if (!isOrderStatus(to)) {
+    throw AppError.badRequest("INVALID_STATUS", `"${to}" is not a valid order status.`);
+  }
+
+  const existing = await Order.findById(id).lean<OrderLean>();
+  if (!existing) return null;
+  const before = existing.status;
+
+  const updated = await withTransaction(async (session) =>
+    Order.findOneAndUpdate(
+      { _id: new Types.ObjectId(id) },
+      {
+        $set: {
+          status: to,
+          updatedAt: new Date(),
+          ...(to === "Completed" ? { completedAt: new Date() } : {}),
+        },
+        $push: {
+          history: {
+            timestamp: new Date(),
+            actorId: new Types.ObjectId(actor.id),
+            field: "status",
+            before,
+            after: to,
+          },
+        },
+      },
+      { returnDocument: "after", session: session ?? undefined },
+    ).lean<OrderLean | null>(),
+  );
+
+  if (!updated) return null;
+
+  const task = STAGE_TASKS[to];
+  if (task) {
+    await WorkflowTask.findOneAndUpdate(
+      { orderId: updated._id, stage: task.stage, title: task.title },
+      {
+        $setOnInsert: {
+          orderId: updated._id,
+          stage: task.stage,
+          title: task.title,
+          assigneeId: null,
+          dueDate: null,
+          status: "Todo",
+          priority: task.priority,
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  await recordAudit({
+    actorId: actor.id,
+    actorEmail: actor.email,
+    ip: actor.ip ?? null,
+    requestId: actor.requestId ?? null,
+    action: "order.status.change",
+    entityType: "order",
+    entityId: id,
+    before,
+    after: to,
+  });
+
+  return toOrderDTO(updated);
+}
+
+export interface DimensionPatch {
+  evidenceStatus?: OrderAttrs["evidenceStatus"];
+  rtoSubmissionStatus?: OrderAttrs["rtoSubmissionStatus"];
+}
+
+/**
+ * `PATCH /orders/:id/dimensions` — the non-status workflow fields.
+ *
+ * Each changed field gets its own history row so the timeline reads as a
+ * sequence of decisions rather than one blob.
+ */
+export async function updateOrderDimensions(
+  id: string,
+  patch: DimensionPatch,
+  actor: OrderActor,
+): Promise<OrderDTO | null> {
+  if (!Types.ObjectId.isValid(id)) return null;
+
+  const existing = await Order.findById(id).lean<OrderLean>();
+  if (!existing) return null;
+
+  const set: Record<string, unknown> = {};
+  const entries: Array<{ field: string; before: string; after: string }> = [];
+
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (value === existing[field as keyof OrderLean]) continue;
+    set[field] = value;
+    entries.push({ field, before: String(existing[field as keyof OrderLean]), after: String(value) });
+  }
+
+  if (entries.length === 0) {
+    throw AppError.badRequest("NO_CHANGES", "No changes supplied.");
+  }
+
+  set.updatedAt = new Date();
+
+  const historyPush = entries.map((entry) => ({
+    timestamp: new Date(),
+    actorId: new Types.ObjectId(actor.id),
+    field: entry.field,
+    before: entry.before,
+    after: entry.after,
+  }));
+
+  await withTransaction(async (session) =>
+    Order.updateOne(
+      { _id: existing._id },
+      { $set: set, $push: { history: { $each: historyPush } } },
+      session ? { session } : {},
+    ),
+  );
+
+  for (const entry of entries) {
+    await recordAudit({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      ip: actor.ip ?? null,
+      requestId: actor.requestId ?? null,
+      action: `order.${entry.field}.change`,
+      entityType: "order",
+      entityId: id,
+      before: entry.before,
+      after: entry.after,
+    });
+  }
+
+  const updated = await Order.findById(id).lean<OrderLean>();
+  return updated ? toOrderDTO(updated) : null;
+}
+
+/** `GET /orders/:id/timeline` — every event that touched this order, oldest first. */
+export async function orderTimeline(id: string): Promise<Array<Record<string, unknown>>> {
+  if (!Types.ObjectId.isValid(id)) return [];
+  const order = await Order.findById(id).lean<OrderLean>();
+  if (!order) return [];
+
+  const events: Array<Record<string, unknown>> = order.history.map((h: HistoryEntry) => ({
+    kind: "status",
+    timestamp: h.timestamp.toISOString(),
+    actorId: h.actorId ? String(h.actorId) : null,
+    field: h.field,
+    before: h.before,
+    after: h.after,
+  }));
+
+  const tasks = await WorkflowTask.find({ orderId: order._id }).lean();
+  for (const t of tasks) {
+    events.push({
+      kind: "task",
+      timestamp: t.createdAt.toISOString(),
+      actorId: t.assigneeId ? String(t.assigneeId) : null,
+      field: "task.created",
+      before: "—",
+      after: t.title,
+    });
+  }
+
+  events.sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+  return events;
+}
+
+/** Margin as the business defines it: price minus what the supplier charged. */
+export function grossMargin(
+  order: Pick<OrderAttrs, "sellingPrice" | "supplierCostSnapshot" | "otherCost">,
+): number {
+  return order.sellingPrice - order.supplierCostSnapshot - order.otherCost;
+}
+
+/** Exposed for tests and for the B5 finance phase's reconciliation. */
+export async function snapshotOf(orderId: string): Promise<number | null> {
+  const doc = await Order.findById(orderId).lean<OrderLean>();
+  return doc ? doc.supplierCostSnapshot : null;
+}

@@ -1,7 +1,57 @@
-# HANDOVER — Skills Connect Admin (Day 1–5 front-end shell)
+# HANDOVER — Skills Connect Admin (Day 1–5 shell + Phase B2 backend)
 
-Branch: `rony-dev`. Working preview of every module in the specification,
-backed by an in-memory preview store shaped exactly like the future REST API.
+Branch: `rony-dev`. Every module in the specification is built and working.
+Phase B2 (Auth + RBAC) is complete: the API is live on MongoDB Atlas and the
+front end signs in against it. Remaining phases are B3–B6 (see
+`BACKEND-PLAN.md`).
+
+## Running it
+
+```powershell
+npm install
+npm run server:seed     # 7 roles + one Super Admin (idempotent)
+npm run server:dev      # API on :4000
+npm run dev             # SPA on :5173
+```
+
+Sign in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `server/.env`.
+`npm run server:smoke` re-runs the 45-check live acceptance suite against the
+running API and the real Atlas database.
+
+## What is real now (B2 + B3)
+
+- **Auth** — argon2id password hashing, 15-min access JWT in memory only,
+  rotating opaque refresh token in an httpOnly cookie, reuse detection that
+  revokes the whole session family, per-IP+email login rate limit, per-account
+  lockout, logout / logout-all / admin password reset / account unlock.
+- **RBAC** — the matrix lives in `server/src/services/permissions.ts` and is
+  enforced by `requirePermission` on every non-public route. The SPA's copy in
+  `src/lib/permissions.ts` is display-only.
+- **Audit** — append-only `audit_logs` (update/delete blocked by pre-hooks),
+  written on every mutation and on every denied permission, with actor, entity,
+  before/after, IP and request id.
+- **Users & Roles** — real CRUD against Atlas. `GET /users/directory` serves a
+  name-only list so screens that merely render an actor (tasks, documents,
+  audit, timelines) work for roles that cannot administer users.
+- **Clients & Orders** — real CRUD against Atlas. An order snapshots the
+  supplier route's wholesale cost at creation and that snapshot is immutable:
+  repricing the route never rewrites history. A status transition writes the
+  history row and the workflow task together.
+- **Workflow tasks** — real collection, filterable by order, assignee and
+  status, so the board works for every role that can see orders.
+- **Masters** — `agents`, `qualifications`, `rtos` and `supplier_routes` now
+  exist as real collections, which is what an order needs in order to be
+  created.
+- **Documents** — real collection in object storage. Uploads use short-lived
+  presigned URLs so file bytes never pass through the API; the raw storage key
+  is never sent to the browser. Versions supersede rather than overwrite, and
+  every upload, download and review is access-logged.
+
+## Still preview (B5+)
+
+- Invoices, payments, QuickBooks sync and the audit *viewer* still read
+  `fin-store.ts`. They are async and REST-shaped, so pages do not change when
+  the real endpoints land.
 
 ## What was built
 
@@ -41,14 +91,48 @@ backed by an in-memory preview store shaped exactly like the future REST API.
 11. QuickBooks failed sync → retry → Synced, no duplicate (same key).
 12. Filter reports by agent/RTO/qualification/stage.
 13. Log in as Sales — Users/Roles/Settings hidden; direct URL → 403 card.
+    (Now a real 403 from the API, not just the UI card.)
 14. Every mutation above appears in Audit Log with actor.
 15. Finance totals reconcile across dashboard, reports, profile, order detail.
 
+## B3 acceptance — verified (55/55 live, 91/91 automated)
+
+`npm run server:smoke` against the running API + Atlas now also covers B3:
+client create / fetch / update · duplicate email rejected · client search ·
+order refused when no active supplier route matches (422 `NO_ACTIVE_ROUTE`) ·
+malformed id refused (400) · anonymous `/clients` → 401.
+
+The automated suite proves the three B3 criteria against a real MongoDB:
+a client with multiple orders · the cost snapshot surviving a route repricing ·
+a status transition writing its history row and its stage task together.
+
+## B4 acceptance — verified (59/59 live, 105/105 automated)
+
+The B4 smoke run adds: document list returns an empty list for an unknown
+order · upload-url fails cleanly with `STORAGE_NOT_CONFIGURED` when no bucket
+is set (a named 422, not a 500) · anonymous upload-url → 401.
+
+The automated suite proves the B4 criteria against a real MongoDB: the
+upload → review → v2 flow with a version superseding the first · the string
+`storageKey` appearing in no API response while being present in the database ·
+access-log rows for upload, download and review with the actor attributed.
+
+## B2 acceptance — verified live (45/45)
+
+`npm run server:smoke` against the running API + Atlas: health/readiness ·
+wrong password rejected with no cookie issued · correct password accepted ·
+argon2 hash never returned · httpOnly refresh cookie set · `/auth/me` returns
+the principal · refresh rotation issues a new cookie · replaying a used token
+returns `REFRESH_REUSE_DETECTED` and revokes the family · logout kills the
+session · Sales gets **403 on `/users` and `/roles`** while `/auth/me` returns
+200 · anonymous `/users` returns 401 (not 403) · deactivation kills live access
+immediately · password reset invalidates a token minted in the *same second* ·
+7 roles / 18 permissions served from the server.
+
 ## Known preview limitations (must fix with backend)
 
-- Store is in-memory: reload resets; no multi-user persistence.
-- Preview auth accepts any password; session id in localStorage (backend:
-  httpOnly short-lived + refresh rotation, server-side RBAC re-check).
+- Clients/orders/documents/tasks/finance store is in-memory: reload resets; no
+  multi-user persistence. (Users and roles are already on the real API.)
 - QuickBooks transport is simulated; status/idempotency flow is real.
 - Document versions record metadata only; bytes need signed-URL storage.
 - Seed data is synthetic (DEMO codes) — migration + reconciliation pending.

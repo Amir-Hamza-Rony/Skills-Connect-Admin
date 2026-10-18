@@ -1,32 +1,36 @@
-import { ROLE_PERMISSIONS } from "@/lib/permissions"
+import { apiFetch } from "@/lib/api"
 import { auditLog } from "@/lib/fin-store"
 import type {
   Agent,
   Permission,
   Qualification,
   Role,
+  RoleName,
   Rto,
   SupplierRoute,
   User,
+  UserRef,
 } from "@/lib/types"
 import {
   SEED_AGENTS,
   SEED_QUALIFICATIONS,
-  SEED_ROLES,
   SEED_ROUTES,
   SEED_RTOS,
-  SEED_USERS,
 } from "@/mocks/seed"
 
 /**
- * Preview data-access layer. Async, shaped like the future REST API
- * (GET /users, POST /agents, …) so UI code does not change when the
- * real backend lands. In-memory only — resets on reload.
+ * Data-access layer.
+ *
+ * CUTOVER STATE (Phase B2): users and roles now come from the real API.
+ * Agents, qualifications, RTOs and supplier routes are still on the in-memory
+ * preview store and switch over in B3.
+ *
+ * Every function keeps its original async signature, so pages never change —
+ * only the body behind it does.
  */
 
 const latency = () => new Promise((r) => setTimeout(r, 120))
 
-let users: User[] = structuredClone(SEED_USERS)
 let agents: Agent[] = structuredClone(SEED_AGENTS)
 let qualifications: Qualification[] = structuredClone(SEED_QUALIFICATIONS)
 let rtos: Rto[] = structuredClone(SEED_RTOS)
@@ -35,44 +39,55 @@ let routes: SupplierRoute[] = structuredClone(SEED_ROUTES)
 const uid = (p: string) =>
   `${p}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`
 
-/* ---------- Roles & users ---------- */
+/* ---------- Roles & users (real API) ---------- */
 
+interface ApiRole {
+  _id: string
+  name: RoleName
+  description: string
+  permissions: Permission[]
+}
+
+/**
+ * The server is the single source of truth for the RBAC matrix
+ * (`server/src/services/permissions.ts`). The local copy in
+ * `lib/permissions.ts` survives only to filter nav links — it grants nothing.
+ */
 export async function listRoles(): Promise<Role[]> {
-  await latency()
-  return SEED_ROLES.map((r) => ({
-    ...r,
-    permissions: [...ROLE_PERMISSIONS[r.name]],
+  const data = await apiFetch<{ roles: ApiRole[] }>("/roles")
+  return data.roles.map((r) => ({
+    id: r._id,
+    name: r.name,
+    permissions: r.permissions,
   }))
 }
 
+/** Admin listing. Server-enforced: needs `users.manage`. */
 export async function listUsers(): Promise<User[]> {
-  await latency()
-  return [...users]
+  const data = await apiFetch<{ users: User[] }>("/users")
+  return data.users
+}
+
+/**
+ * Name-only staff list for rendering an actor id.
+ *
+ * Replaces the old `listUsers()` calls on the task board, document queues,
+ * audit viewer, client profile and order timeline. Those screens are visible to
+ * roles that are correctly refused `GET /users`, so they must not call it — a
+ * 403 there would blank the page for most of the business.
+ */
+export async function listUserDirectory(): Promise<UserRef[]> {
+  const data = await apiFetch<{ users: UserRef[] }>("/users/directory")
+  return data.users
 }
 
 export async function updateUser(
   id: string,
-  patch: Partial<Pick<User, "name" | "phone" | "roleIds" | "active">>,
-  actorId = "preview-user",
+  patch: Partial<Pick<User, "name" | "phone" | "roleNames" | "active">>,
+  _actorId?: string,
 ): Promise<User> {
-  await latency()
-  const i = users.findIndex((u) => u.id === id)
-  if (i === -1) throw new Error("User not found")
-  const before = users[i]
-  users[i] = { ...users[i], ...patch }
-  auditLog("user", id, "update", `roles=${before.roleIds.join(",")} active=${before.active}`, `roles=${users[i].roleIds.join(",")} active=${users[i].active}`, actorId)
-  return users[i]
-}
-
-export async function permissionsFor(user: User): Promise<Permission[]> {
-  await latency()
-  const roles = await listRoles()
-  const set = new Set<Permission>()
-  for (const rid of user.roleIds) {
-    const role = roles.find((r) => r.id === rid)
-    role?.permissions.forEach((p) => set.add(p))
-  }
-  return [...set]
+  const data = await apiFetch<{ user: User }>(`/users/${id}`, { method: "PATCH", body: patch })
+  return data.user
 }
 
 /* ---------- Qualifications ---------- */

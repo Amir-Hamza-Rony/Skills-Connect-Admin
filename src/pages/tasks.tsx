@@ -11,8 +11,8 @@ import {
   listTasks,
   updateTaskStatus,
 } from "@/lib/ops-store"
-import { listUsers } from "@/lib/store"
-import type { Client, Order, TaskStatus, User, WorkflowTask } from "@/lib/types"
+import { listUserDirectory } from "@/lib/store"
+import type { Client, Order, TaskStatus, UserRef, WorkflowTask } from "@/lib/types"
 
 const STATUS_VARIANT: Record<TaskStatus, "secondary" | "info" | "success" | "destructive"> = {
   Todo: "secondary",
@@ -27,7 +27,7 @@ export function TasksPage() {
   const [tasks, setTasks] = useState<WorkflowTask[] | null>(null)
   const [orders, setOrders] = useState<Order[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
 
   useEffect(() => {
     void (async () => {
@@ -35,7 +35,7 @@ export function TasksPage() {
         listTasks(),
         listOrders(),
         listClients(),
-        listUsers(),
+        listUserDirectory(),
       ])
       setTasks(t)
       setOrders(o)

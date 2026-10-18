@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { listAudit } from "@/lib/fin-store"
-import { listUsers } from "@/lib/store"
-import type { AuditEvent, User } from "@/lib/types"
+import { listUserDirectory } from "@/lib/store"
+import type { AuditEvent, UserRef } from "@/lib/types"
 
 const inputCls =
   "h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -13,14 +13,14 @@ const inputCls =
 /** Immutable audit trail viewer — every financial/status mutation lands here. */
 export function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[] | null>(null)
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
   const [fType, setFType] = useState("")
   const [query, setQuery] = useState("")
 
   useEffect(() => {
     void (async () => {
       setEvents(await listAudit())
-      setUsers(await listUsers())
+      setUsers(await listUserDirectory())
     })()
   }, [])
 
