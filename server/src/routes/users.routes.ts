@@ -9,7 +9,7 @@ import { User, type UserLean, type UserWithRolesLean } from "../models/user.mode
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import { auditContextFrom, recordAudit } from "../services/audit.service.js";
-import { revokeAllSessions } from "../services/auth.service.js";
+import { resetAccountLimiterFor, revokeAllSessions } from "../services/auth.service.js";
 
 export const usersRouter: Router = Router();
 
@@ -226,6 +226,10 @@ adminRouter.post("/:id/reset-password", async (req, res) => {
 
   const revoked = await revokeAllSessions(user.id, "password-reset", auditContextFrom(req));
 
+  // Same reason as unlock: the Redis failure counter outlives the Mongo fields
+  // and would re-lock the user on their next mistake.
+  await resetAccountLimiterFor(user.id);
+
   await recordAudit({
     ...auditContextFrom(req),
     action: "user.password.reset",
@@ -245,6 +249,12 @@ adminRouter.post("/:id/unlock", async (req, res) => {
   user.failedLoginCount = 0;
   user.lockedUntil = null;
   await user.save();
+
+  // The Redis-backed failure counter is separate state and is what actually
+  // decides the lockout. Clearing only the Mongo fields left the counter full,
+  // so one more wrong password re-locked the account the moment after an admin
+  // had just unlocked it.
+  await resetAccountLimiterFor(user.id);
 
   await recordAudit({
     ...auditContextFrom(req),

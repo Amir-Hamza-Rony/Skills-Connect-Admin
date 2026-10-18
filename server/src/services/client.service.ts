@@ -94,6 +94,12 @@ export async function createClient(
     // A specific code, not the generic CONFLICT: the dedupe report exists so a
     // human can merge these, and the client needs to know this is that case
     // rather than any other 409.
+    //
+    // Note there is no unique index behind this check, deliberately — see the
+    // comment on `clientSchema` in the model. Two simultaneous creates of the
+    // same new email can therefore both succeed, and the duplicate report picks
+    // the result up. Making it airtight here would mean an index, and the index
+    // would stop the report from ever having anything to find.
     throw new AppError(409, "DUPLICATE_CLIENT", `A client with email ${email} already exists.`);
   }
 

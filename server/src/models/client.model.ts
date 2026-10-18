@@ -22,6 +22,17 @@ export interface ClientAttrs {
   sourceAgentId: Types.ObjectId | null;
   notes: string;
 
+  /**
+   * QuickBooks `Customer.Id` for this client.
+   *
+   * QuickBooks will not accept an invoice without a `CustomerRef`, and it
+   * issues ids from its own database — there is no way to derive one. The id is
+   * therefore stored once the client exists in both systems, and an invoice for
+   * a client without one fails the sync with a named reason instead of creating
+   * a broken record in QuickBooks. Populated by the B6 migration/import.
+   */
+  qbCustomerId: string | null;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,11 +58,20 @@ const clientSchema = new Schema<ClientAttrs>(
     },
     sourceAgentId: { type: Schema.Types.ObjectId, ref: "Agent", default: null },
     notes: { type: String, default: "" },
+    qbCustomerId: { type: String, default: null },
   },
   { timestamps: true, versionKey: false },
 );
 
 // Dedupe lookups and the client list both start from these fields.
+//
+// Email is deliberately NOT unique. `POST /clients` rejects a duplicate email
+// in the application, but a unique index would make `GET /clients/duplicates`
+// — which exists precisely to find and merge same-email clients — unreachable:
+// the pre-existing rows it is meant to report could never be loaded in the first
+// place, and the B6 migration would abort on the first duplicate. The report is
+// the designed control for historical data; the index would remove the problem
+// by making it unfixable.
 clientSchema.index({ email: 1 });
 clientSchema.index({ phone: 1 });
 clientSchema.index({ legalName: 1 });

@@ -9,6 +9,12 @@ export interface AuthContext {
   email: string;
   name: string;
   roleNames: string[];
+  /**
+   * The role document ids the user holds. Needed where a decision depends on
+   * *which* role is being edited rather than the union of its permissions —
+   * see the self-lockout guard on `PATCH /roles/:id`.
+   */
+  roleIds: string[];
   permissions: Permission[];
   /** When the current access token was issued — used to detect stale tokens. */
   tokenIssuedAt: number;

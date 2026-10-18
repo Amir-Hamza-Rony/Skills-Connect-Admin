@@ -42,6 +42,7 @@ beforeEach(async () => {
  */
 function fakeStorage() {
   const existing = new Set<string>();
+  const sizes = new Map<string, number>();
   let allExist = false;
   return {
     existing,
@@ -54,9 +55,15 @@ function fakeStorage() {
     async keyExists(key: string) {
       return allExist || existing.has(key);
     },
+    /** The real size the bucket reports — drives the upload size cap. */
+    async objectSize(key: string) {
+      if (!(allExist || existing.has(key))) return null;
+      return sizes.get(key) ?? 1024;
+    },
     /** Test helper: simulate the client having PUT the file. */
-    put(key: string) {
+    put(key: string, sizeBytes = 1024) {
       existing.add(key);
+      sizes.set(key, sizeBytes);
     },
     /** Test helper: every key is reported as present. */
     existAll() {

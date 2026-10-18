@@ -41,14 +41,15 @@ if (payload.ver !== user.tokenVersion) {
 }
 
     const roles = (await user.populate<{
-      roleIds: Array<{ name: string; permissions: never[] }>;
-    }>("roleIds")).roleIds as unknown as Array<{ name: string; permissions: never[] }>;
+      roleIds: Array<{ _id: unknown; name: string; permissions: never[] }>;
+    }>("roleIds")).roleIds as unknown as Array<{ _id: unknown; name: string; permissions: never[] }>;
 
     req.auth = {
       userId: user.id,
       email: user.email,
       name: user.name,
       roleNames: roles.map((r) => r.name),
+      roleIds: roles.map((r) => String(r._id)),
       permissions: resolvePermissions(roles.map((r) => r.permissions)),
       tokenIssuedAt: payload.issuedAt,
     };

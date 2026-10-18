@@ -26,6 +26,10 @@ export interface DocumentAttrs {
   version: number;
   /** Object-storage key. Never serialised into an API response. */
   storageKey: string;
+  /** Declared at request time; verified against the bucket on confirm-upload. */
+  contentType: string;
+  /** Real byte count from the bucket's HEAD response. Null until confirmed. */
+  sizeBytes: number | null;
   status: DocumentStatus;
   receivedAt: Date | null;
   reviewedAt: Date | null;
@@ -43,6 +47,8 @@ const documentSchema = new Schema<DocumentAttrs>(
     type: { type: String, required: true, trim: true },
     version: { type: Number, required: true, min: 1 },
     storageKey: { type: String, required: true },
+    contentType: { type: String, required: true, default: "application/octet-stream" },
+    sizeBytes: { type: Number, default: null, min: 0 },
     status: {
       type: String,
       required: true,

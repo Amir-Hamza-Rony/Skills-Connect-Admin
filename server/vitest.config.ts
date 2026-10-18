@@ -16,11 +16,25 @@ export default defineConfig({
       LOG_LEVEL: "silent",
       MONGODB_URI: "mongodb://127.0.0.1:27017/skills_connect_admin_test",
       MONGODB_DB: "skills_connect_admin_test",
+      // Deliberately a CLOSED port. Every suite runs in its own fork but they all
+      // sign in as `admin@example.com` from 127.0.0.1, so against a shared real
+      // Redis the login counter accumulated across files and everything 429'd.
+      // Pointing the suite at a dead port makes it use the in-process fallback,
+      // which is deterministic. The real Redis path is verified separately by
+      // `npm run server:verify:queue` (docker compose up -d first).
+      REDIS_URL: "redis://127.0.0.1:6399",
+      // Pinned here rather than inherited from server/.env: the local dev .env
+      // raises the login limit to 100 for the smoke suite, which would silently
+      // disable the rate-limit tests.
+      LOGIN_RATE_LIMIT_MAX: "5",
       // Test-only secrets. Never reuse a real deployment's values here.
       JWT_ACCESS_SECRET: "test-only-access-secret-0000000000000000000000000000",
       JWT_REFRESH_SECRET: "test-only-refresh-secret-111111111111111111111111111",
       COOKIE_SECURE: "false",
       COOKIE_SAME_SITE: "lax",
+      // Test-only verifier for the QuickBooks webhook signature. Never reuse a
+      // real deployment's value here.
+      QB_WEBHOOK_SECRET: "test-only-qb-webhook-secret",
     },
   },
 });

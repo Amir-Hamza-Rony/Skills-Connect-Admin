@@ -59,15 +59,17 @@ class Jar {
   }
 }
 
-async function call(path, { method = "GET", body, token, jar } = {}) {
-  const headers = {};
-  if (body) headers["Content-Type"] = "application/json";
+async function call(path, { method = "GET", body, token, jar, headers: extraHeaders } = {}) {
+  const headers = { ...extraHeaders };
+  if (body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
   if (jar) headers.Cookie = jar.header();
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    // A pre-serialised body is sent verbatim — the QuickBooks webhook signs the
+    // exact bytes, so it must not be re-encoded on the way out.
+    body: typeof body === "string" ? body : body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
   let json = null;
@@ -257,6 +259,11 @@ console.log("\nRBAC");
 
     const relogin = await call("/auth/login", { method: "POST", body: { email, password: "SmokeSalesPass123!" } });
     check("deactivated account cannot sign in", relogin.status === 403, `got ${relogin.status}`);
+
+    // Leave the fixture usable for the next run. Without this the fixture stays
+    // deactivated and the *next* run's "sales user can sign in" fails with a
+    // misleading 403 that looks like a security bug.
+    await call(`/users/${salesId}`, { method: "PATCH", token: admin, body: { active: true } });
   }
 }
 
@@ -403,6 +410,41 @@ console.log("\nB4 — documents");
     body: { orderId: "x", type: "y", contentType: "z" },
   });
   check("anonymous upload-url -> 401", anon.status === 401, `got ${anon.status}`);
+}
+
+// ------------------------------------------------------------- B5: finance
+console.log("\nB5 — finance + QuickBooks");
+{
+  const login = await call("/auth/login", { method: "POST", body: { email: ADMIN, password: PASSWORD } });
+  const admin = login.json.accessToken;
+
+  const status = await call("/integrations/quickbooks/status", { token: admin });
+  check("GET /integrations/quickbooks/status returns 200", status.status === 200, `got ${status.status}`);
+  check("status exposes booleans, never tokens", typeof status.json?.configured === "boolean" && typeof status.json?.authorised === "boolean");
+  check("status never leaks token material", !JSON.stringify(status.json ?? {}).includes("accessToken"));
+  check("an unconfigured integration explains itself", status.json?.configured === true || typeof status.json?.hint === "string");
+
+  const queue = await call("/integrations/quickbooks/sync", { token: admin });
+  check("GET the sync queue returns 200", queue.status === 200, `got ${queue.status}`);
+  check("sync queue is a list", Array.isArray(queue.json?.records));
+
+  const unknown = await call("/integrations/quickbooks/sync/invoice/000000000000000000000000", { token: admin });
+  check("unknown sync record -> 404", unknown.status === 404, `got ${unknown.status}`);
+
+  const badType = await call("/integrations/quickbooks/sync/widget/000000000000000000000000", { token: admin });
+  check("unknown entity type -> 400", badType.status === 400, `got ${badType.status}`);
+
+  const anonStatus = await call("/integrations/quickbooks/status");
+  check("anonymous /integrations/quickbooks/status -> 401", anonStatus.status === 401, `got ${anonStatus.status}`);
+
+  // The webhook authenticates with Intuit's HMAC over the raw body, not with a
+  // session. Unconfigured or unsigned it must refuse rather than trust it.
+  const webhook = await call("/integrations/quickbooks/webhook", {
+    method: "POST",
+    body: JSON.stringify({ eventNotifications: [{ realmId: "1", dataChangeEvent: { entities: [{ Id: "1" }] } }] }),
+    headers: { "Content-Type": "application/json" },
+  });
+  check("unsigned QB webhook is refused (401)", webhook.status === 401, `got ${webhook.status}`);
 }
 
 // ---------------------------------------------------------------- result

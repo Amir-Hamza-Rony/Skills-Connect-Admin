@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import { AppError } from "../lib/app-error.js";
 import { param } from "../lib/params.js";
+import { ALLOWED_UPLOAD_TYPES, allowedUpload } from "../lib/uploads.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import {
@@ -20,7 +22,11 @@ documentsRouter.use(requireAuth);
 const uploadBody = z.object({
   orderId: z.string().min(1),
   type: z.string().trim().min(1).max(120),
+  // Validated against the allowlist below rather than accepted as free text.
+  // See `lib/uploads.ts` for why the API is the only place this can be decided.
   contentType: z.string().trim().min(1).max(200),
+  fileName: z.string().trim().max(200).optional(),
+  sizeBytes: z.number().int().positive().optional(),
 });
 
 /**
@@ -38,6 +44,21 @@ documentsRouter.post(
   requirePermission("documents.view"),
   async (req, res) => {
     const body = uploadBody.parse(req.body);
+
+    const allowed = allowedUpload(body.contentType);
+    if (!allowed) {
+      throw AppError.unprocessable(
+        "CONTENT_TYPE_NOT_ALLOWED",
+        `"${body.contentType}" is not an accepted document type. Allowed: ${ALLOWED_UPLOAD_TYPES.map((t) => t.label).join(", ")}.`,
+      );
+    }
+    if (body.sizeBytes !== undefined && body.sizeBytes > allowed.maxBytes) {
+      throw AppError.unprocessable(
+        "FILE_TOO_LARGE",
+        `${allowed.label} files must be under ${Math.round(allowed.maxBytes / (1024 * 1024))} MB.`,
+      );
+    }
+
     const result = await requestUploadUrl(body.orderId, body.type, body.contentType, {
       ...auditContextFrom(req),
       id: req.auth!.userId,

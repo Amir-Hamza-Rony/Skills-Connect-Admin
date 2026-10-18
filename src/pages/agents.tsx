@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAuth } from "@/lib/auth"
 import { agentLabel, createAgent, listAgents, updateAgent } from "@/lib/store"
 import type { Agent, AgentType } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -37,7 +36,7 @@ const TYPE_LABEL: Record<AgentType, string> = {
  * into one generic field. Sales ≠ source ≠ RTO contact.
  */
 export function AgentsPage() {
-  const { user: me } = useAuth()
+  // The actor is taken from the access token by the server; no client-side id is sent.
   const [rows, setRows] = useState<Agent[] | null>(null)
   const [tab, setTab] = useState<AgentType | "all">("all")
   const [creating, setCreating] = useState(false)
@@ -55,7 +54,7 @@ export function AgentsPage() {
   const visible = (rows ?? []).filter((a) => tab === "all" || a.type === tab)
 
   async function toggleActive(a: Agent) {
-    const updated = await updateAgent(a.id, { active: !a.active }, me?.id ?? "preview-user")
+    const updated = await updateAgent(a.id, { active: !a.active })
     setRows((prev) => prev?.map((r) => (r.id === updated.id ? updated : r)) ?? null)
   }
 
@@ -74,7 +73,7 @@ export function AgentsPage() {
         contact: contact.trim(),
         commissionRule: commission.trim() || "N/A",
         active: true,
-      }, me?.id ?? "preview-user")
+      })
       setRows((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
       setName("")

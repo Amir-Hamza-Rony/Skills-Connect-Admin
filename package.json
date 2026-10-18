@@ -16,6 +16,7 @@
     "server:start": "npm run start --workspace=@sc/server",
     "server:seed": "npm run seed --workspace=@sc/server",
     "server:smoke": "npm run smoke --workspace=@sc/server",
+    "server:verify:queue": "npm run verify:queue --workspace=@sc/server",
     "server:test": "npm run test --workspace=@sc/server",
     "server:typecheck": "npm run typecheck --workspace=@sc/server",
     "typecheck": "tsc -b && npm run server:typecheck"

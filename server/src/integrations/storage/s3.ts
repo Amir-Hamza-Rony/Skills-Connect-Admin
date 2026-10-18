@@ -48,6 +48,17 @@ export interface StorageAdapter {
 
   /** Whether an object already exists at `key`. Used to confirm an upload. */
   keyExists(key: string): Promise<boolean>;
+
+  /**
+   * The real size in bytes of the stored object, or `null` if it is absent.
+   *
+   * This is how the upload size cap is actually enforced. A presigned PUT URL
+   * cannot carry a length condition the way a presigned POST policy can, so the
+   * number the browser claimed is not trustworthy — but `confirmUpload` HEADs
+   * the object and compares this against the cap and against what was declared,
+   * which makes an oversized upload fail before a reviewer ever sees it.
+   */
+  objectSize(key: string): Promise<number | null>;
 }
 
 function buildClient(): S3Client {
@@ -107,13 +118,35 @@ export const s3Storage: StorageAdapter = {
       await getClient().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
       return true;
     } catch (err) {
-      // A 404 is the expected answer for "not there yet"; anything else is a real
-      // failure and should surface rather than be reported as a missing file.
+      // Only a 404 is "not there yet". A 403 means the credentials cannot read
+      // the bucket, which is a configuration fault — reporting it as "missing"
+      // hid that from the operator until someone read the logs.
       const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata
         ?.httpStatusCode;
-      if (status === 404 || status === 403) return false;
+      if (status === 404) return false;
+      if (status === 403) {
+        logger.error({ key }, "Storage denied a HEAD request — check the bucket credentials");
+        throw new StorageNotConfiguredError();
+      }
       logger.error({ err, key }, "Storage head request failed");
       return false;
+    }
+  },
+
+  async objectSize(key) {
+    try {
+      const res = await getClient().send(new HeadObjectCommand({ Bucket: bucket(), Key: key }));
+      return res.ContentLength ?? null;
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata
+        ?.httpStatusCode;
+      if (status === 404) return null;
+      if (status === 403) {
+        logger.error({ key }, "Storage denied a HEAD request — check the bucket credentials");
+        throw new StorageNotConfiguredError();
+      }
+      logger.error({ err, key }, "Storage head request failed");
+      return null;
     }
   },
 };

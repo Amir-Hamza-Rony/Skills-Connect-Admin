@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAuth } from "@/lib/auth"
 import { createRto, listRtos, rtoLabel } from "@/lib/store"
 import type { Rto, RtoStatus } from "@/lib/types"
 
@@ -20,7 +19,7 @@ const STATUS_VARIANT: Record<RtoStatus, "success" | "warning" | "destructive" | 
 }
 
 export function RtosPage() {
-  const { user: me } = useAuth()
+  // The actor is taken from the access token by the server; no client-side id is sent.
   const [rows, setRows] = useState<Rto[] | null>(null)
   const [viewing, setViewing] = useState<Rto | null>(null)
   const [creating, setCreating] = useState(false)
@@ -54,7 +53,7 @@ export function RtosPage() {
         status,
         complianceNote: "Preview record — verify against training.gov.au at migration.",
         website: website.trim() || "https://example.invalid",
-      }, me?.id ?? "preview-user")
+      })
       setRows((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
       setLegalName("")

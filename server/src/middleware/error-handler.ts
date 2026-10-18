@@ -33,6 +33,12 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       { requestId, code: err.code, status: err.status, path: req.originalUrl },
       err.message,
     );
+    // A rate-limited response is only actionable if the client knows how long to
+    // wait, so the header goes out with the body.
+    const retryAfter = (err as AppError & { retryAfterSeconds?: number }).retryAfterSeconds;
+    if (retryAfter !== undefined && !res.getHeader("Retry-After")) {
+      res.setHeader("Retry-After", String(retryAfter));
+    }
     send(res, err.status, {
       error: { code: err.code, message: err.message, details: err.details, requestId },
     });

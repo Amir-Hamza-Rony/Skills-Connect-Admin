@@ -1,7 +1,10 @@
 import { Router } from "express";
+import { Types } from "mongoose";
 import { z } from "zod";
 
 import { param } from "../lib/params.js";
+import { Certificate } from "../models/certificate.model.js";
+import { DocumentRequirement } from "../models/document-requirement.model.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import {
@@ -111,6 +114,49 @@ ordersRouter.get(
   },
 );
 
+/**
+ * `GET /orders/:id/checklist` — the document requirements opened with the order.
+ *
+ * The rows are created from `DOCUMENT_CHECKLIST` when the order is created, so
+ * this is per-order *state* ("USI transcript approved, reference letter not
+ * requested yet"), not a constant the client could render itself.
+ */
+ordersRouter.get(
+  "/:id/checklist",
+  requirePermission("documents.view"),
+  async (req, res) => {
+    const id = param(req, "id");
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(400).json({ error: { code: "INVALID_ID", message: "Invalid order id." } });
+      return;
+    }
+    const requirements = await DocumentRequirement.find({ orderId: new Types.ObjectId(id) })
+      .sort({ type: 1 })
+      .lean();
+    res.json({ requirements });
+  },
+);
+
+/**
+ * `GET /orders/:id/certificate` — the certificate record for one order.
+ *
+ * Returns `null` for orders created before certificates existed, which the UI
+ * already handles as "not tracked".
+ */
+ordersRouter.get(
+  "/:id/certificate",
+  requirePermission("orders.view"),
+  async (req, res) => {
+    const id = param(req, "id");
+    if (!Types.ObjectId.isValid(id)) {
+      res.status(400).json({ error: { code: "INVALID_ID", message: "Invalid order id." } });
+      return;
+    }
+    const certificate = await Certificate.findOne({ orderId: new Types.ObjectId(id) }).lean();
+    res.json({ certificate });
+  },
+);
+
 const createOrderBody = z.object({
   clientId: z.string().min(1),
   qualificationId: z.string().min(1),
@@ -177,6 +223,9 @@ const dimensionBody = z.object({
       "Additional Evidence Required",
       "Issued",
     ])
+    .optional(),
+  certificateStatus: z
+    .enum(["Not Issued", "Pending", "Issued", "Certificate File Received", "Delivered to Client"])
     .optional(),
 });
 

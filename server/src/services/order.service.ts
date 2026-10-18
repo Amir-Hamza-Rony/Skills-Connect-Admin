@@ -1,6 +1,11 @@
 import { Types } from "mongoose";
 
 import { AppError } from "../lib/app-error.js";
+import { Certificate } from "../models/certificate.model.js";
+import {
+  DOCUMENT_CHECKLIST,
+  DocumentRequirement,
+} from "../models/document-requirement.model.js";
 import { Order, type OrderAttrs, type OrderLean } from "../models/order.model.js";
 import { WorkflowTask } from "../models/workflow-task.model.js";
 import { SupplierRoute } from "../models/supplier-route.model.js";
@@ -178,6 +183,24 @@ export async function createOrder(
   const created = docs[0];
   if (!created) throw new Error("Failed to create order.");
 
+  // Open the order's checklist and its certificate record. Both collections were
+  // modelled in B3 but nothing ever wrote a row, so the checklist a client is
+  // asked for and the certificate the order claims to be tracking were both
+  // empty until something outside the API created them.
+  await Promise.all([
+    DocumentRequirement.insertMany(
+      DOCUMENT_CHECKLIST.map((type) => ({
+        orderId: created._id,
+        type,
+        required: true,
+        status: "Not Received" as const,
+        documentId: null,
+      })),
+      { ordered: false },
+    ),
+    Certificate.create({ orderId: created._id, status: "Not Issued" }),
+  ]);
+
   await recordAudit({
     actorId: actor.id,
     actorEmail: actor.email,
@@ -283,8 +306,13 @@ export async function transitionOrder(
   if (!existing) return null;
   const before = existing.status;
 
-  const updated = await withTransaction(async (session) =>
-    Order.findOneAndUpdate(
+  const task = STAGE_TASKS[to];
+
+  // Both writes run INSIDE the transaction. The task upsert used to sit outside
+  // it, so a crash between the two left an order transitioned with no work item
+  // — precisely the outcome this function claims cannot happen.
+  const updated = await withTransaction(async (session) => {
+    const order = await Order.findOneAndUpdate(
       { _id: new Types.ObjectId(id) },
       {
         $set: {
@@ -303,29 +331,30 @@ export async function transitionOrder(
         },
       },
       { returnDocument: "after", session: session ?? undefined },
-    ).lean<OrderLean | null>(),
-  );
+    ).lean<OrderLean | null>();
+
+    if (order && task) {
+      await WorkflowTask.findOneAndUpdate(
+        { orderId: order._id, stage: task.stage, title: task.title },
+        {
+          $setOnInsert: {
+            orderId: order._id,
+            stage: task.stage,
+            title: task.title,
+            assigneeId: null,
+            dueDate: null,
+            status: "Todo",
+            priority: task.priority,
+          },
+        },
+        { upsert: true, session: session ?? undefined },
+      );
+    }
+
+    return order;
+  });
 
   if (!updated) return null;
-
-  const task = STAGE_TASKS[to];
-  if (task) {
-    await WorkflowTask.findOneAndUpdate(
-      { orderId: updated._id, stage: task.stage, title: task.title },
-      {
-        $setOnInsert: {
-          orderId: updated._id,
-          stage: task.stage,
-          title: task.title,
-          assigneeId: null,
-          dueDate: null,
-          status: "Todo",
-          priority: task.priority,
-        },
-      },
-      { upsert: true },
-    );
-  }
 
   await recordAudit({
     actorId: actor.id,
@@ -345,6 +374,13 @@ export async function transitionOrder(
 export interface DimensionPatch {
   evidenceStatus?: OrderAttrs["evidenceStatus"];
   rtoSubmissionStatus?: OrderAttrs["rtoSubmissionStatus"];
+  /**
+   * Writable here because the `certificates` collection is the record but this
+   * denormalised field is what every list view reads. It was previously in the
+   * schema with no endpoint that could ever set it, so the badge on the order
+   * list was permanently "Not Issued" no matter what happened to the order.
+   */
+  certificateStatus?: OrderAttrs["certificateStatus"];
 }
 
 /**

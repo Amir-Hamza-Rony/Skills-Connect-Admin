@@ -162,6 +162,9 @@ const schema = z.object({
   /** Consecutive failures before the account itself is locked. */
   ACCOUNT_LOCK_MAX_FAILURES: positiveInt(10),
   ACCOUNT_LOCK_MINUTES: positiveInt(15),
+  /** Backstop against runaway loops across every non-public route. */
+  GLOBAL_RATE_LIMIT_MAX: positiveInt(300),
+  GLOBAL_RATE_LIMIT_WINDOW_MIN: positiveInt(1),
 
   // ---- QuickBooks (B5: invoices / payments sync) ----
   // Left unset until QB sandbox credentials are supplied. The sync endpoints
@@ -173,6 +176,28 @@ const schema = z.object({
   QB_SANDBOX: booleanFromEnv(true),
   /** Where the QB webhook should be verified against. */
   QB_WEBHOOK_SECRET: optionalText,
+  /** QuickBooks Item/Account id for enrolled-course invoice revenue. */
+  QB_INCOME_ACCOUNT_ID: z.preprocess(blankToUndefined, z.string().min(1).default("1")),
+  /**
+   * API and token endpoints. Overridable so the integration can be exercised
+   * end-to-end against a local stand-in for QuickBooks (`tests/helpers/qb-stub`).
+   *
+   * The defaults are Intuit's and nothing in production should override them.
+   * The variable exists so the OAuth exchange, the v3 create calls and the token
+   * refresh are genuinely testable rather than assumed.
+   */
+  QB_API_BASE_URL: z.preprocess(
+    blankToUndefined,
+    z.string().min(1).default("https://quickbooks.api.intuit.com"),
+  ),
+  QB_TOKEN_URL: z.preprocess(
+    blankToUndefined,
+    z.string().min(1).default("https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"),
+  ),
+  QB_AUTH_URL: z.preprocess(
+    blankToUndefined,
+    z.string().min(1).default("https://appcenter.intuit.com/connect/oauth2"),
+  ),
 
   // ---- Seed admin (first-run only; used by `npm run server:seed`) ----
   SEED_ADMIN_EMAIL: z.preprocess(blankToUndefined, z.string().email().optional()),

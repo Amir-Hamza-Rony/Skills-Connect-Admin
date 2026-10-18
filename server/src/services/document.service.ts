@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 
 import { AppError } from "../lib/app-error.js";
+import { MAX_UPLOAD_BYTES, allowedUpload } from "../lib/uploads.js";
 import { logger } from "../lib/logger.js";
 import {
   Document,
@@ -123,6 +124,8 @@ export async function requestUploadUrl(
         type,
         version,
         storageKey,
+        contentType,
+        sizeBytes: null,
         status: "Not Received",
         receivedAt: null,
         reviewedAt: null,
@@ -147,8 +150,20 @@ export async function requestUploadUrl(
   // review outcomes are preserved — only the status changes — so an approved
   // document is never silently overwritten. The replacement must be reviewed on
   // its own merits.
+  //
+  // `version: { $lt: doc.version }` is the important part. Without the ceiling,
+  // two concurrent uploads resolve to v1 and v2, and whichever calls this last
+  // marks *both* the other one and every older version Superseded — including
+  // the newer sibling — leaving the order with no active version at all and no
+  // way to tell which file is current.
   await Document.updateMany(
-    { orderId: order._id, type, status: { $ne: "Superseded" }, _id: { $ne: doc._id } },
+    {
+      orderId: order._id,
+      type,
+      status: { $ne: "Superseded" },
+      _id: { $ne: doc._id },
+      version: { $lt: doc.version },
+    },
     { $set: { status: "Superseded" } },
   );
 
@@ -186,6 +201,11 @@ export async function requestUploadUrl(
  * Trusting the client's word would let someone mark a document received without
  * uploading it, and the whole review workflow downstream is built on "received"
  * meaning a file exists. A `HeadObject` call is cheap and settles it.
+ *
+ * The same HEAD gives the real byte count, which is the only trustworthy size:
+ * the browser's claim is unverified because the bytes never pass through the
+ * API. An oversized or empty object is rejected here rather than sitting in the
+ * review queue until a human notices.
  */
 export async function confirmUpload(
   documentId: string,
@@ -195,17 +215,39 @@ export async function confirmUpload(
   if (!doc) throw AppError.notFound("Document not found.");
 
   const storage = getStorage();
-  const present = storage ? await storage.keyExists(doc.storageKey) : false;
+  // Distinguish "storage is not configured" from "the file is missing". Both
+  // used to surface as UPLOAD_NOT_FOUND, which told the operator their upload
+  // had gone missing when in fact nothing had ever been configured.
+  if (!storage) {
+    throw AppError.unprocessable(
+      "STORAGE_NOT_CONFIGURED",
+      "Document storage is not configured, so uploads cannot be confirmed.",
+    );
+  }
 
-  if (!present) {
+  const sizeBytes = await storage.objectSize(doc.storageKey);
+  if (sizeBytes === null) {
     throw AppError.unprocessable(
       "UPLOAD_NOT_FOUND",
       "No file found at this document's storage location. Upload it before confirming.",
     );
   }
 
+  const allowed = allowedUpload(doc.contentType);
+  const cap = allowed?.maxBytes ?? MAX_UPLOAD_BYTES;
+  if (sizeBytes > cap) {
+    throw AppError.unprocessable(
+      "FILE_TOO_LARGE",
+      `The uploaded file is ${Math.round(sizeBytes / (1024 * 1024))} MB, over the ${Math.round(cap / (1024 * 1024))} MB limit for ${allowed?.label ?? "this file type"}.`,
+    );
+  }
+  if (sizeBytes === 0) {
+    throw AppError.unprocessable("FILE_EMPTY", "The uploaded file is empty.");
+  }
+
   doc.status = "Received";
   doc.receivedAt = new Date();
+  doc.sizeBytes = sizeBytes;
   await doc.save();
 
   await recordAudit({
