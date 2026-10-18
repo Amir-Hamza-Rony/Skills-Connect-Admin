@@ -14,6 +14,7 @@ import {
   type OrderListQuery,
 } from "../services/order.service.js";
 import { listDocuments } from "../services/document.service.js";
+import { createPlan, getPlan } from "../services/payment-plan.service.js";
 import { auditContextFrom } from "../services/audit.service.js";
 import { isOrderStatus } from "../types/workflow.js";
 
@@ -64,6 +65,34 @@ ordersRouter.get(
   requirePermission("orders.view"),
   async (req, res) => {
     res.json({ events: await orderTimeline(param(req, "id")) });
+  },
+);
+
+/** `GET /orders/:id/payment-plan` — the plan for one order. */
+ordersRouter.get(
+  "/:id/payment-plan",
+  requirePermission("finance.view"),
+  async (req, res) => {
+    const plan = await getPlan(param(req, "id"));
+    if (!plan) {
+      res.status(404).json({ error: { code: "NOT_FOUND", message: "No payment plan for this order." } });
+      return;
+    }
+    res.json({ plan });
+  },
+);
+
+/** `POST /orders/:id/payment-plan` — create the plan for an order. */
+ordersRouter.post(
+  "/:id/payment-plan",
+  requirePermission("finance.manage"),
+  async (req, res) => {
+    const body = z.object({ total: z.number().positive() }).parse(req.body);
+    const plan = await createPlan(
+      { orderId: param(req, "id"), total: body.total },
+      { ...auditContextFrom(req), id: req.auth!.userId, email: req.auth!.email },
+    );
+    res.status(201).json({ plan });
   },
 );
 

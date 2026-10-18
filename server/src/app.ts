@@ -11,7 +11,14 @@ import { authRouter } from "./routes/auth.routes.js";
 import { clientsRouter } from "./routes/clients.routes.js";
 import { documentsRouter } from "./routes/documents.routes.js";
 import { healthRouter } from "./routes/health.js";
+import {
+  financeRouter,
+  invoicesRouter,
+  paymentsRouter,
+  plansRouter,
+} from "./routes/finance.routes.js";
 import { ordersRouter } from "./routes/orders.routes.js";
+import { quickbooksRouter } from "./routes/quickbooks.routes.js";
 import { rolesRouter } from "./routes/roles.routes.js";
 import { usersRouter } from "./routes/users.routes.js";
 import { workflowRouter } from "./routes/workflow.routes.js";
@@ -54,7 +61,12 @@ export function createApp(): Express {
   app.use("/auth", authRouter);
   app.use("/clients", clientsRouter);
   app.use("/documents", documentsRouter);
+  app.use("/finance", financeRouter);
+  app.use("/invoices", invoicesRouter);
   app.use("/orders", ordersRouter);
+  app.use("/payment-plans", plansRouter);
+  app.use("/payments", paymentsRouter);
+  app.use("/integrations/quickbooks", quickbooksRouter);
   app.use("/roles", rolesRouter);
   app.use("/users", usersRouter);
   app.use("/workflow", workflowRouter);

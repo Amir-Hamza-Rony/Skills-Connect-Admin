@@ -163,6 +163,17 @@ const schema = z.object({
   ACCOUNT_LOCK_MAX_FAILURES: positiveInt(10),
   ACCOUNT_LOCK_MINUTES: positiveInt(15),
 
+  // ---- QuickBooks (B5: invoices / payments sync) ----
+  // Left unset until QB sandbox credentials are supplied. The sync endpoints
+  // fail cleanly (a named `Failed` status) while these are absent, so the rest of
+  // finance works without QuickBooks.
+  QB_REALM_ID: optionalText,
+  QB_CLIENT_ID: optionalText,
+  QB_CLIENT_SECRET: optionalText,
+  QB_SANDBOX: booleanFromEnv(true),
+  /** Where the QB webhook should be verified against. */
+  QB_WEBHOOK_SECRET: optionalText,
+
   // ---- Seed admin (first-run only; used by `npm run server:seed`) ----
   SEED_ADMIN_EMAIL: z.preprocess(blankToUndefined, z.string().email().optional()),
   SEED_ADMIN_PASSWORD: z.preprocess(blankToUndefined, z.string().min(12).optional()),
