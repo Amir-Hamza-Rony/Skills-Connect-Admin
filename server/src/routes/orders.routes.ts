@@ -5,6 +5,7 @@ import { z } from "zod";
 import { param } from "../lib/params.js";
 import { Certificate } from "../models/certificate.model.js";
 import { DocumentRequirement } from "../models/document-requirement.model.js";
+import { type OrderAttrs } from "../models/order.model.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import {
@@ -196,7 +197,7 @@ ordersRouter.patch(
   requirePermission("orders.manage"),
   async (req, res) => {
     const body = statusBody.parse(req.body);
-    const order = await transitionOrder(param(req, "id"), body.status as never, {
+    const order = await transitionOrder(param(req, "id"), body.status as OrderAttrs["status"], {
       ...auditContextFrom(req),
       id: req.auth!.userId,
       email: req.auth!.email,

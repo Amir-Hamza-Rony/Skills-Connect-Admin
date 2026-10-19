@@ -8,6 +8,7 @@ import { errorHandler } from "./middleware/error-handler.js";
 import { globalRateLimit } from "./middleware/global-rate-limit.js";
 import { notFoundHandler } from "./middleware/not-found.js";
 import { requestLogger } from "./middleware/request-log.js";
+import { auditRouter } from "./routes/audit.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { clientsRouter } from "./routes/clients.routes.js";
 import { documentsRouter } from "./routes/documents.routes.js";
@@ -26,6 +27,7 @@ import {
 } from "./routes/finance.routes.js";
 import { ordersRouter } from "./routes/orders.routes.js";
 import { qbWebhookRouter, quickbooksRouter } from "./routes/quickbooks.routes.js";
+import { reportsRouter } from "./routes/reports.routes.js";
 import { rolesRouter } from "./routes/roles.routes.js";
 import { usersRouter } from "./routes/users.routes.js";
 import { workflowRouter } from "./routes/workflow.routes.js";
@@ -77,6 +79,7 @@ export function createApp(): Express {
   app.use(globalRateLimit());
 
   app.use(healthRouter);
+  app.use("/audit", auditRouter);
   app.use("/auth", authRouter);
   app.use("/agents", agentsRouter);
   app.use("/clients", clientsRouter);
@@ -87,6 +90,7 @@ export function createApp(): Express {
   app.use("/payment-plans", plansRouter);
   app.use("/payments", paymentsRouter);
   app.use("/qualifications", qualificationsRouter);
+  app.use("/reports", reportsRouter);
   app.use("/rtos", rtosRouter);
   app.use("/supplier-routes", supplierRoutesRouter);
   app.use("/integrations/quickbooks", quickbooksRouter);

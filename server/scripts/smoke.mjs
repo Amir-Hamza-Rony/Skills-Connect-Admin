@@ -447,6 +447,59 @@ console.log("\nB5 â€” finance + QuickBooks");
   check("unsigned QB webhook is refused (401)", webhook.status === 401, `got ${webhook.status}`);
 }
 
+
+// ------------------------------------------------------------- B6: reports
+console.log("\nB6 — reports + audit");
+{
+  const login = await call("/auth/login", { method: "POST", body: { email: ADMIN, password: PASSWORD } });
+  const admin = login.json.accessToken;
+
+  const finance = await call("/reports/finance", { token: admin });
+  check("GET /reports/finance returns 200", finance.status === 200, `got ${finance.status}`);
+  check("finance report has the headline fields", ["invoiced", "collected", "outstanding", "overdueCount"].every((k) => k in (finance.json ?? {})));
+  check("invoiced minus collected equals outstanding", finance.json?.invoiced - finance.json?.collected === finance.json?.outstanding);
+
+  const revenue = await call("/reports/revenue", { token: admin });
+  check("GET /reports/revenue returns 200", revenue.status === 200, `got ${revenue.status}`);
+  check("revenue report groups by qualification and agent", Array.isArray(revenue.json?.byQualification) && Array.isArray(revenue.json?.byAgent));
+
+  const margin = await call("/reports/margin", { token: admin });
+  check("GET /reports/margin returns 200", margin.status === 200, `got ${margin.status}`);
+  check("margin rows carry a percentage", Array.isArray(margin.json?.byQualification) && margin.json.byQualification.every((r) => typeof r.percent === "number"));
+
+  const funnel = await call("/reports/funnel", { token: admin });
+  check("GET /reports/funnel returns 200", funnel.status === 200, `got ${funnel.status}`);
+  check("funnel reports a conversion percentage", typeof funnel.json?.conversionPercent === "number");
+
+  const ageing = await call("/reports/ageing", { token: admin });
+  check("GET /reports/ageing returns 200", ageing.status === 200, `got ${ageing.status}`);
+  check("ageing buckets the overdue total", ageing.json?.buckets?.reduce((s, b) => s + b.amount, 0) === ageing.json?.totalOverdue);
+
+  const collections = await call("/reports/collections", { token: admin });
+  check("GET /reports/collections returns 200", collections.status === 200, `got ${collections.status}`);
+  check("collections are grouped by month", Array.isArray(collections.json?.months));
+
+  const rtoTurn = await call("/reports/rto-turnaround", { token: admin });
+  check("GET /reports/rto-turnaround returns 200", rtoTurn.status === 200, `got ${rtoTurn.status}`);
+
+  // A filter that matches nothing must return empty groups, not an error.
+  const empty = await call("/reports/finance?stage=NoSuchStage", { token: admin });
+  check("an unknown stage filter is refused (400)", empty.status === 400, `got ${empty.status}`);
+
+  // The audit log.
+  const audit = await call("/audit", { token: admin });
+  check("GET /audit returns 200", audit.status === 200, `got ${audit.status}`);
+  check("audit is paginated with a total", typeof audit.json?.total === "number" && Array.isArray(audit.json?.events));
+
+  const auditFilters = await call("/audit/filters", { token: admin });
+  check("GET /audit/filters returns the vocabulary", auditFilters.status === 200 && Array.isArray(auditFilters.json?.entityTypes), `got ${auditFilters.status}`);
+
+  const auditSearch = await call("/audit?search=order.create&pageSize=5", { token: admin });
+  check("audit search respects the page size", (auditSearch.json?.events?.length ?? 99) <= 5, `got ${auditSearch.json?.events?.length}`);
+
+  const anonAudit = await call("/audit");
+  check("anonymous /audit -> 401", anonAudit.status === 401, `got ${anonAudit.status}`);
+}
 // ---------------------------------------------------------------- result
 console.log(`\n${"=".repeat(46)}`);
 console.log(`  ${pass} passed, ${fail} failed`);

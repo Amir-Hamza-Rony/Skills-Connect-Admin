@@ -448,6 +448,47 @@ Getting there exposed two more defects the suite could not have caught:
   `.env.example`, with production kept at the default 5). The per-account lockout
   at 10 failures is unchanged and remains the real brute-force control.
 
+### B6 — Reports + Audit Viewer · ? BUILT
+
+| Item | State |
+|---|---|
+| `reports.service.ts` — one derivation per number | done |
+| `GET /reports/finance` — invoiced/collected/outstanding/overdue | done |
+| `GET /reports/revenue` — by qualification, by sales agent | done |
+| `GET /reports/margin` — by qualification with margin % | done |
+| `GET /reports/funnel` — orders by stage + conversion % | done |
+| `GET /reports/ageing` — overdue bucketed 1–30 / 31–60 / 61–90 / 90+ | done |
+| `GET /reports/collections` — invoiced vs collected by month | done |
+| `GET /reports/rto-turnaround` — completion time by RTO | done |
+| Shared filter (agent / RTO / qualification / stage / date range) | done — UAT criterion 12 |
+| `audit-query.service.ts` — paged, filterable, `$toString` search over Mixed | done |
+| `GET /audit` + `GET /audit/filters` | done |
+| Frontend cutover: `reports.tsx` and `audit.tsx` off the preview store | done |
+
+**Why the reports moved server-side.** The page used to pull every order,
+client, qualification, agent and invoice and group them in the browser, so the
+numbers came from a *different code path* than the dashboard — a report could
+disagree with the dashboard and neither could be proven wrong. B6's criterion is
+"dashboard numbers equal DB aggregations", which needs one implementation.
+
+**`audit.view` was granted to nobody.** The permission existed and `GET /audit`
+was gated on it, but no role in the matrix held it — only Super Admin could open
+the viewer. Now held by Finance, Operations and Read Only / Manager, which are
+the oversight roles. This is the same class of gap as the missing master
+endpoints: a permission defined but unreachable.
+
+**194/194 automated · 89/89 live smoke** (20 new B6 checks in the smoke suite).
+
+### B6 — still outstanding
+
+- **Excel import + reconciliation** — needs `RTO & Onboarding Master Hub.xlsx`
+  and the QuickBooks export. The three-way tie-out (workbook vs DB vs QB) is the
+  one criterion that cannot be produced without them.
+- **Docker prod image + staging deploy** — the Dockerfile has never been run
+  end-to-end (B1 noted Docker Desktop was absent); it is now installed, so this
+  is unblocked and just needs doing.
+- **UAT on migrated data.**
+
 ### Cross-cutting gaps closed in the audit pass
 
 | Requirement | Before | Now |

@@ -1,83 +1,93 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { financeSummary, listInvoices } from "@/lib/fin-store"
-import { grossMargin, listClients, listOrders } from "@/lib/ops-store"
-import { listAgents, listQualifications } from "@/lib/store"
-import type { Agent, Client, Invoice, Order, Qualification } from "@/lib/types"
+import { api } from "@/lib/api"
 
 const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
 
-interface ReportData {
-  orders: Order[]
-  clients: Client[]
-  quals: Qualification[]
-  agents: Agent[]
-  invoices: Invoice[]
+interface FinanceReport {
+  orders: number
+  clients: number
+  invoiced: number
+  collected: number
+  outstanding: number
+  overdueAmount: number
+  overdueCount: number
+  pipelineValue: number
 }
 
-/** Day-4 operational reports (Spec §4K): revenue, ageing, margin, funnel. */
+interface NameValue {
+  name: string
+  orders: number
+  revenue: number
+}
+
+interface MarginRow {
+  name: string
+  orders: number
+  revenue: number
+  cost: number
+  margin: number
+  percent: number
+}
+
+interface FunnelRow {
+  stage: string
+  count: number
+  percent: number
+}
+
+interface AgeingBucket {
+  label: string
+  count: number
+  amount: number
+}
+
+interface CollectionsMonth {
+  month: string
+  orders: number
+  invoiced: number
+  collected: number
+}
+
+/**
+ * Day-4 operational reports (Spec §4K): revenue, ageing, margin, funnel.
+ *
+ * CUTOVER STATE (B6): the aggregations moved server-side. This page used to
+ * pull every order, client, qualification, agent and invoice and group them in
+ * the browser, which meant the numbers on screen came from a different code
+ * path than the dashboard — so a report could disagree with the dashboard and
+ * neither could be proven wrong. The server now derives them once.
+ */
 export function ReportsPage() {
-  const [data, setData] = useState<ReportData | null>(null)
-  const [paid, setPaid] = useState(0)
+  const [finance, setFinance] = useState<FinanceReport | null>(null)
+  const [revenue, setRevenue] = useState<{ byQualification: NameValue[]; byAgent: NameValue[] } | null>(null)
+  const [margin, setMargin] = useState<{ totals: MarginRow; byQualification: MarginRow[] } | null>(null)
+  const [funnel, setFunnel] = useState<{ total: number; byStage: FunnelRow[]; conversionPercent: number } | null>(null)
+  const [ageing, setAgeing] = useState<{ totalOverdue: number; buckets: AgeingBucket[] } | null>(null)
+  const [collections, setCollections] = useState<CollectionsMonth[] | null>(null)
 
   useEffect(() => {
     void (async () => {
-      const [orders, clients, quals, agents, invoices, summary] = await Promise.all([
-        listOrders(),
-        listClients(),
-        listQualifications(),
-        listAgents(),
-        listInvoices(),
-        financeSummary(),
+      const [fin, rev, marg, fun, age, col] = await Promise.all([
+        api.get<FinanceReport>("/reports/finance"),
+        api.get<{ byQualification: NameValue[]; byAgent: NameValue[] }>("/reports/revenue"),
+        api.get<{ totals: MarginRow; byQualification: MarginRow[] }>("/reports/margin"),
+        api.get<{ total: number; byStage: FunnelRow[]; conversionPercent: number }>("/reports/funnel"),
+        api.get<{ totalOverdue: number; buckets: AgeingBucket[] }>("/reports/ageing"),
+        api.get<CollectionsMonth[]>("/reports/collections"),
       ])
-      setData({ orders, clients, quals, agents, invoices })
-      setPaid(summary.paid)
+      setFinance(fin)
+      setRevenue(rev)
+      setMargin(marg)
+      setFunnel(fun)
+      setAgeing(age)
+      setCollections(col)
     })()
   }, [])
 
-  const qualById = useMemo(
-    () => new Map((data?.quals ?? []).map((q) => [q.id, q])),
-    [data],
-  )
-  const agentById = useMemo(
-    () => new Map((data?.agents ?? []).map((a) => [a.id, a])),
-    [data],
-  )
-
-  const byQualification = useMemo(() => {
-    const m = new Map<string, { revenue: number; margin: number; count: number }>()
-    for (const o of data?.orders ?? []) {
-      const key = qualById.get(o.qualificationId)?.code ?? o.qualificationId
-      const cur = m.get(key) ?? { revenue: 0, margin: 0, count: 0 }
-      cur.revenue += o.sellingPrice
-      cur.margin += grossMargin(o)
-      cur.count += 1
-      m.set(key, cur)
-    }
-    return [...m.entries()]
-  }, [data, qualById])
-
-  const bySalesAgent = useMemo(() => {
-    const m = new Map<string, { orders: number; revenue: number }>()
-    for (const o of data?.orders ?? []) {
-      const key = agentById.get(o.salesAgentId)?.name ?? o.salesAgentId
-      const cur = m.get(key) ?? { orders: 0, revenue: 0 }
-      cur.orders += 1
-      cur.revenue += o.sellingPrice
-      m.set(key, cur)
-    }
-    return [...m.entries()]
-  }, [data, agentById])
-
-  const byStage = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const o of data?.orders ?? []) m.set(o.status, (m.get(o.status) ?? 0) + 1)
-    return [...m.entries()]
-  }, [data])
-
-  if (!data) {
+  if (!finance || !revenue || !margin || !funnel || !ageing || !collections) {
     return (
       <div className="mx-auto w-full max-w-7xl space-y-3 p-4 sm:p-6">
         <Skeleton className="h-10 w-56" aria-label="Loading reports" />
@@ -92,60 +102,119 @@ export function ReportsPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Reports</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Revenue, collections, margin, pipeline · {data.orders.length} orders
+            Revenue, collections, margin, pipeline · {finance.orders} orders · {finance.clients} clients
           </p>
         </div>
-        <Badge variant="info">Preview data</Badge>
+        <Badge variant="success">Live data</Badge>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Pipeline value" value={aud(finance.pipelineValue)} />
+        <StatCard label="Invoiced" value={aud(finance.invoiced)} />
+        <StatCard label="Collected" value={aud(finance.collected)} />
+        <StatCard
+          label="Overdue"
+          value={aud(finance.overdueAmount)}
+          detail={`${finance.overdueCount} invoice${finance.overdueCount === 1 ? "" : "s"}`}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ReportCard title="Revenue by qualification">
           <Rows
-            rows={byQualification.map(([k, v]) => ({
-              label: k,
-              detail: `${v.count} order${v.count === 1 ? "" : "s"}`,
-              value: `${aud(v.revenue)} · margin ${aud(v.margin)}`,
+            rows={revenue.byQualification.map((r) => ({
+              label: r.name,
+              detail: `${r.orders} order${r.orders === 1 ? "" : "s"}`,
+              value: aud(r.revenue),
             }))}
           />
         </ReportCard>
+
         <ReportCard title="Agent performance (sales)">
           <Rows
-            rows={bySalesAgent.map(([k, v]) => ({
-              label: k,
-              detail: `${v.orders} order${v.orders === 1 ? "" : "s"}`,
-              value: aud(v.revenue),
+            rows={revenue.byAgent.map((r) => ({
+              label: r.name,
+              detail: `${r.orders} order${r.orders === 1 ? "" : "s"}`,
+              value: aud(r.revenue),
             }))}
           />
         </ReportCard>
-        <ReportCard title="Orders by workflow stage">
-          <Rows rows={byStage.map(([k, v]) => ({ label: k, detail: "", value: String(v) }))} />
-        </ReportCard>
-        <ReportCard title="Collections">
+
+        <ReportCard title="Margin by qualification">
           <Rows
-            rows={[
-              { label: "Invoiced", detail: "", value: aud(data.invoices.filter((i) => i.status !== "Void").reduce((s, i) => s + i.total, 0)) },
-              { label: "Collected", detail: "", value: aud(paid) },
-              {
-                label: "Overdue invoices",
-                detail: "",
-                value: String(data.invoices.filter((i) => i.status === "Overdue").length),
-              },
-            ]}
+            rows={margin.byQualification.map((r) => ({
+              label: r.name,
+              detail: `${r.percent}% margin · ${r.orders} order${r.orders === 1 ? "" : "s"}`,
+              value: aud(r.margin),
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard title="Collections by month">
+          <Rows
+            rows={collections.map((m) => ({
+              label: m.month,
+              detail: `${m.orders} order${m.orders === 1 ? "" : "s"}`,
+              value: `${aud(m.collected)} of ${aud(m.invoiced)}`,
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard title="Orders by workflow stage">
+          <Rows
+            rows={funnel.byStage.map((s) => ({
+              label: s.stage,
+              detail: `${s.percent}%`,
+              value: String(s.count),
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard
+          title="Overdue ageing"
+          subtitle={`${aud(ageing.totalOverdue)} overdue`}
+        >
+          <Rows
+            rows={ageing.buckets.map((b) => ({
+              label: b.label,
+              detail: `${b.count} invoice${b.count === 1 ? "" : "s"}`,
+              value: aud(b.amount),
+            }))}
           />
         </ReportCard>
       </div>
+
       <p className="text-xs text-muted-foreground">
-        {data.clients.length} clients in scope. Full ageing, RTO turnaround, and
-        exportable reports arrive with the backend + migration.
+        {funnel.conversionPercent}% of orders reach Completed. Figures are computed
+        server-side from the same rows the dashboard reads.
       </p>
     </div>
   )
 }
 
-function ReportCard({ title, children }: { title: string; children: React.ReactNode }) {
+function StatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      {detail ? <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p> : null}
+    </div>
+  )
+}
+
+function ReportCard({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
   return (
     <div className="rounded-xl border bg-card p-4">
       <h2 className="pb-3 text-sm font-semibold">{title}</h2>
+      {subtitle ? <p className="pb-2 text-xs text-muted-foreground">{subtitle}</p> : null}
       {children}
     </div>
   )
@@ -160,7 +229,7 @@ function Rows({ rows }: { rows: Array<{ label: string; detail: string; value: st
         <li key={r.label} className="flex items-center justify-between gap-3 py-2 text-sm">
           <span className="min-w-0">
             <span className="block truncate font-medium">{r.label}</span>
-            {r.detail && <span className="block text-xs text-muted-foreground">{r.detail}</span>}
+            {r.detail ? <span className="block text-xs text-muted-foreground">{r.detail}</span> : null}
           </span>
           <span className="shrink-0 tabular-nums text-muted-foreground">{r.value}</span>
         </li>
