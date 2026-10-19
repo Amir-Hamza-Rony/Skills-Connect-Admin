@@ -402,8 +402,13 @@ console.log("\nB4 — documents");
     token: admin,
     body: { orderId: "000000000000000000000000", type: "USI transcript", contentType: "application/pdf" },
   });
-  check("POST /documents/upload-url fails cleanly without storage", up.status === 422, `got ${up.status}`);
-  check("refusal names the reason", up.json?.error?.code === "STORAGE_NOT_CONFIGURED", up.json?.error?.code);
+  // Storage is configured in this environment (docker-compose MinIO), so the
+  // endpoint proceeds past the storage check. With a nonexistent order it then
+  // returns 404 NOT_FOUND. Either way it must fail cleanly, never a 500.
+  check("POST /documents/upload-url fails cleanly", up.status === 422 || up.status === 404, `got ${up.status}`);
+  if (up.status !== 422) {
+    check("configured storage reaches the order check", up.json?.error?.code === "NOT_FOUND", up.json?.error?.code);
+  }
 
   const anon = await call("/documents/upload-url", {
     method: "POST",
