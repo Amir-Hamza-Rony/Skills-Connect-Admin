@@ -129,7 +129,7 @@ export function PricingPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="info">Preview data</Badge>
+          <Badge variant="success">Live data</Badge>
           <Button size="sm" onClick={() => setCreating(true)}>
             Add route
           </Button>

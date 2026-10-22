@@ -11,12 +11,35 @@ import type { ClientStatus } from "../types/workflow.js";
  * reports rows that look like the same person so an operator can merge them
  * before two agents unknowingly work the same lead.
  */
+export interface ClientContact {
+  label: string; // e.g. "Mobile", "Work", "Emergency"
+  type: "phone" | "email" | "whatsapp";
+  value: string;
+  primary: boolean;
+}
+
+export interface ClientAddress {
+  label: string; // e.g. "Home", "Mailing", "Billing"
+  street: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  primary: boolean;
+}
+
 export interface ClientAttrs {
   legalName: string;
   preferredName: string;
-  phone: string;
+  /**
+   * Primary email — the dedupe key. Kept at the top level (rather than only
+   * inside `contacts`) because `POST /clients` rejects a duplicate email and
+   * the duplicates report groups on it. The richer set of contact methods
+   * lives in `contacts`; this is the one used for identity.
+   */
   email: string;
-  address: string;
+  contacts: ClientContact[]; // multiple contact methods (phone, email, whatsapp)
+  addresses: ClientAddress[]; // multiple addresses (home, mailing, billing)
   status: ClientStatus;
   /** Sales / Closing Agent who owns this client. */
   sourceAgentId: Types.ObjectId | null;
@@ -37,11 +60,37 @@ export interface ClientAttrs {
   updatedAt: Date;
 }
 
+const clientContactSchema = new Schema<ClientContact>(
+  {
+    label: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      required: true,
+      enum: ["phone", "email", "whatsapp"],
+    },
+    value: { type: String, required: true, trim: true },
+    primary: { type: Boolean, required: true, default: false },
+  },
+  { _id: false, versionKey: false },
+);
+
+const clientAddressSchema = new Schema<ClientAddress>(
+  {
+    label: { type: String, required: true, trim: true },
+    street: { type: String, required: true, trim: true },
+    city: { type: String, required: true, trim: true },
+    state: { type: String, default: "", trim: true },
+    postalCode: { type: String, default: "", trim: true },
+    country: { type: String, default: "Australia", trim: true },
+    primary: { type: Boolean, required: true, default: false },
+  },
+  { _id: false, versionKey: false },
+);
+
 const clientSchema = new Schema<ClientAttrs>(
   {
     legalName: { type: String, required: true, trim: true },
     preferredName: { type: String, default: "", trim: true },
-    phone: { type: String, default: "", trim: true },
     email: {
       type: String,
       required: true,
@@ -49,7 +98,8 @@ const clientSchema = new Schema<ClientAttrs>(
       trim: true,
       match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
     },
-    address: { type: String, default: "", trim: true },
+    contacts: { type: [clientContactSchema], required: true, default: [] },
+    addresses: { type: [clientAddressSchema], required: true, default: [] },
     status: {
       type: String,
       required: true,
@@ -73,7 +123,7 @@ const clientSchema = new Schema<ClientAttrs>(
 // the designed control for historical data; the index would remove the problem
 // by making it unfixable.
 clientSchema.index({ email: 1 });
-clientSchema.index({ phone: 1 });
+clientSchema.index({ "contacts.value": 1 });
 clientSchema.index({ legalName: 1 });
 clientSchema.index({ status: 1, createdAt: -1 });
 

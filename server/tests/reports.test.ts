@@ -200,6 +200,10 @@ describe("GET /reports/funnel", () => {
     const newStage = res.body.byStage.find((s: { stage: string }) => s.stage === "New");
     expect(newStage.count).toBe(1);
 
+    await (await import("../src/models/order.model.js")).Order.updateOne(
+      { _id: orderId },
+      { $set: { status: "Certificate Issued" } },
+    );
     await request(app)
       .patch(`/orders/${orderId}/status`)
       .set(authed(token))
@@ -268,6 +272,10 @@ describe("GET /audit", () => {
   it("searches across action, entity id and the before/after values", async () => {
     const token = await signIn("admin@example.com");
     const { orderId } = await makeOrder(token, "SRCH", 1000);
+    await (await import("../src/models/order.model.js")).Order.updateOne(
+      { _id: orderId },
+      { $set: { status: "Certificate Issued" } },
+    );
     await request(app)
       .patch(`/orders/${orderId}/status`)
       .set(authed(token))

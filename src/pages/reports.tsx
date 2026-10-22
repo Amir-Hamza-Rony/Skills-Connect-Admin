@@ -3,6 +3,16 @@ import { useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api"
+import {
+  certificateCompletionTime,
+  documentCompletion,
+  revenueByMonth,
+  revenueBySupplier,
+  type CertificateCompletionTime,
+  type DocumentCompletionRow,
+  type RevenueByMonthRow,
+  type RevenueBySupplierGroup,
+} from "@/lib/queues"
 
 const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
 
@@ -67,27 +77,49 @@ export function ReportsPage() {
   const [funnel, setFunnel] = useState<{ total: number; byStage: FunnelRow[]; conversionPercent: number } | null>(null)
   const [ageing, setAgeing] = useState<{ totalOverdue: number; buckets: AgeingBucket[] } | null>(null)
   const [collections, setCollections] = useState<CollectionsMonth[] | null>(null)
+  const [revMonth, setRevMonth] = useState<RevenueByMonthRow[] | null>(null)
+  const [revSupplier, setRevSupplier] = useState<{
+    bySourceAgent: RevenueBySupplierGroup[]
+    byRto: RevenueBySupplierGroup[]
+  } | null>(null)
+  const [docCompletion, setDocCompletion] = useState<DocumentCompletionRow[] | null>(null)
+  const [certTime, setCertTime] = useState<CertificateCompletionTime | null>(null)
 
   useEffect(() => {
     void (async () => {
-      const [fin, rev, marg, fun, age, col] = await Promise.all([
+      // allSettled (not all) so one failing report can never leave the page
+      // stuck on the loading skeleton — every section degrades independently.
+      const [fin, rev, marg, fun, age, col, rm, rs, dc, ct] = await Promise.allSettled([
         api.get<FinanceReport>("/reports/finance"),
         api.get<{ byQualification: NameValue[]; byAgent: NameValue[] }>("/reports/revenue"),
         api.get<{ totals: MarginRow; byQualification: MarginRow[] }>("/reports/margin"),
         api.get<{ total: number; byStage: FunnelRow[]; conversionPercent: number }>("/reports/funnel"),
         api.get<{ totalOverdue: number; buckets: AgeingBucket[] }>("/reports/ageing"),
-        api.get<CollectionsMonth[]>("/reports/collections"),
+        api.get<{ months: CollectionsMonth[] }>("/reports/collections"),
+        revenueByMonth(),
+        revenueBySupplier(),
+        documentCompletion(),
+        certificateCompletionTime(),
       ])
-      setFinance(fin)
-      setRevenue(rev)
-      setMargin(marg)
-      setFunnel(fun)
-      setAgeing(age)
-      setCollections(col)
+      const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+        r.status === "fulfilled" ? r.value : fallback
+      setFinance(val(fin, { orders: 0, clients: 0, invoiced: 0, collected: 0, outstanding: 0, overdueAmount: 0, overdueCount: 0, pipelineValue: 0 }))
+      setRevenue(val(rev, { byQualification: [], byAgent: [] }))
+      setMargin(val(marg, { totals: { name: "", orders: 0, revenue: 0, cost: 0, margin: 0, percent: 0 }, byQualification: [] }))
+      setFunnel(val(fun, { total: 0, byStage: [], conversionPercent: 0 }))
+      setAgeing(val(age, { totalOverdue: 0, buckets: [] }))
+      setCollections(val(col, { months: [] }).months)
+      setRevMonth(val(rm, { months: [] }).months)
+      setRevSupplier(val(rs, { bySourceAgent: [], byRto: [] }))
+      setDocCompletion(val(dc, { byType: [] }).byType)
+      setCertTime(val(ct, { count: 0, averageDays: 0, medianDays: 0, minDays: 0, maxDays: 0 }))
     })()
   }, [])
 
-  if (!finance || !revenue || !margin || !funnel || !ageing || !collections) {
+  if (
+    !finance || !revenue || !margin || !funnel || !ageing || !collections ||
+    !revMonth || !revSupplier || !docCompletion || !certTime
+  ) {
     return (
       <div className="mx-auto w-full max-w-7xl space-y-3 p-4 sm:p-6">
         <Skeleton className="h-10 w-56" aria-label="Loading reports" />
@@ -180,6 +212,64 @@ export function ReportsPage() {
               detail: `${b.count} invoice${b.count === 1 ? "" : "s"}`,
               value: aud(b.amount),
             }))}
+          />
+        </ReportCard>
+
+        <ReportCard title="Revenue by month" subtitle="Invoiced vs collected">
+          <Rows
+            rows={revMonth.map((m) => ({
+              label: m.month,
+              detail: `${m.orders} order${m.orders === 1 ? "" : "s"}`,
+              value: `${aud(m.collected)} of ${aud(m.invoiced)}`,
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard title="Revenue by source agent">
+          <Rows
+            rows={revSupplier.bySourceAgent.map((r) => ({
+              label: r.name,
+              detail: `${r.orders} order${r.orders === 1 ? "" : "s"}`,
+              value: aud(r.revenue),
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard title="Revenue by RTO">
+          <Rows
+            rows={revSupplier.byRto.map((r) => ({
+              label: r.name,
+              detail: `${r.orders} order${r.orders === 1 ? "" : "s"}`,
+              value: aud(r.revenue),
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard title="Document completion" subtitle="Approval & rejection by type">
+          <Rows
+            rows={docCompletion.map((d) => ({
+              label: d.type,
+              detail: `${d.approvalRate}% approved · ${d.rejectionRate}% rejected of ${d.total}`,
+              value: `${d.approved} / ${d.total}`,
+            }))}
+          />
+        </ReportCard>
+
+        <ReportCard
+          title="Certificate completion time"
+          subtitle={`Order → certificate delivered${certTime.count ? ` · ${certTime.count} samples` : ""}`}
+        >
+          <Rows
+            rows={
+              certTime.count === 0
+                ? []
+                : [
+                    { label: "Average", detail: "Mean days", value: `${certTime.averageDays}d` },
+                    { label: "Median", detail: "Middle sample", value: `${certTime.medianDays}d` },
+                    { label: "Fastest", detail: "Minimum days", value: `${certTime.minDays}d` },
+                    { label: "Slowest", detail: "Maximum days", value: `${certTime.maxDays}d` },
+                  ]
+            }
           />
         </ReportCard>
       </div>

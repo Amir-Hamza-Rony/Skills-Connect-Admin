@@ -11,6 +11,7 @@ import { requestLogger } from "./middleware/request-log.js";
 import { auditRouter } from "./routes/audit.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { clientsRouter } from "./routes/clients.routes.js";
+import { communicationsRouter } from "./routes/communications.routes.js";
 import { documentsRouter } from "./routes/documents.routes.js";
 import { healthRouter } from "./routes/health.js";
 import {
@@ -29,6 +30,7 @@ import { ordersRouter } from "./routes/orders.routes.js";
 import { qbWebhookRouter, quickbooksRouter } from "./routes/quickbooks.routes.js";
 import { reportsRouter } from "./routes/reports.routes.js";
 import { rolesRouter } from "./routes/roles.routes.js";
+import { savedViewsRouter } from "./routes/saved-views.routes.js";
 import { usersRouter } from "./routes/users.routes.js";
 import { workflowRouter } from "./routes/workflow.routes.js";
 
@@ -83,6 +85,7 @@ export function createApp(): Express {
   app.use("/auth", authRouter);
   app.use("/agents", agentsRouter);
   app.use("/clients", clientsRouter);
+  app.use("/communications", communicationsRouter);
   app.use("/documents", documentsRouter);
   app.use("/finance", financeRouter);
   app.use("/invoices", invoicesRouter);
@@ -95,6 +98,7 @@ export function createApp(): Express {
   app.use("/supplier-routes", supplierRoutesRouter);
   app.use("/integrations/quickbooks", quickbooksRouter);
   app.use("/roles", rolesRouter);
+  app.use("/saved-views", savedViewsRouter);
   app.use("/users", usersRouter);
   app.use("/workflow", workflowRouter);
 

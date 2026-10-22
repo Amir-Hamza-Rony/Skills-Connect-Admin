@@ -38,7 +38,7 @@ export function RolesPage() {
             Permission contract per role · {roles.length} roles
           </p>
         </div>
-        <Badge variant="info">Preview data</Badge>
+        <Badge variant="success">Live data</Badge>
       </div>
 
       <div className="space-y-2.5">

@@ -2,10 +2,13 @@ import { Types } from "mongoose";
 
 import { AppError } from "../lib/app-error.js";
 import { Agent } from "../models/agent.model.js";
+import { Certificate } from "../models/certificate.model.js";
+import { Document } from "../models/document.model.js";
 import { Invoice, type InvoiceLean } from "../models/invoice.model.js";
 import { Order, type OrderLean } from "../models/order.model.js";
 import { Payment, type PaymentLean } from "../models/payment.model.js";
 import { Qualification } from "../models/qualification.model.js";
+import { Rto } from "../models/rto.model.js";
 
 /**
  * Report aggregations (BACKEND-PLAN B6).
@@ -81,6 +84,7 @@ export interface ReportContext {
   orders: OrderLean[];
   qualifications: Map<string, { code: string; title: string }>;
   agents: Map<string, string>;
+  rtos: Map<string, string>;
   invoices: InvoiceLean[];
   payments: PaymentLean[];
 }
@@ -94,13 +98,15 @@ export interface ReportContext {
 export async function buildReportContext(filter: ReportFilter): Promise<ReportContext> {
   const orders = await Order.find(orderFilter(filter)).lean<OrderLean[]>();
 
-  const [qualifications, agents] = await Promise.all([
+  const [qualifications, agents, rtos] = await Promise.all([
     Qualification.find().lean(),
     Agent.find().lean(),
+    Rto.find().lean(),
   ]);
 
   const qualMap = new Map(qualifications.map((q) => [String(q._id), { code: q.code, title: q.title }]));
   const agentMap = new Map(agents.map((a) => [String(a._id), a.name]));
+  const rtoMap = new Map(rtos.map((r) => [String(r._id), r.tradingName || r.legalName]));
 
   const orderIds = orders.map((o) => o._id);
   const [invoices, payments] = await Promise.all([
@@ -108,7 +114,7 @@ export async function buildReportContext(filter: ReportFilter): Promise<ReportCo
     Payment.find({ orderId: { $in: orderIds } }).lean<PaymentLean[]>(),
   ]);
 
-  return { orders, qualifications: qualMap, agents: agentMap, invoices, payments };
+  return { orders, qualifications: qualMap, agents: agentMap, rtos: rtoMap, invoices, payments };
 }
 
 /** `grossMargin` — the same formula the frontend used, now the only one. */
@@ -329,5 +335,129 @@ async function computeRtoTurnaround(filter: ReportFilter) {
       ? Math.round((rows.reduce((sum, r) => sum + r.averageDays * r.completed, 0) / totalCompleted) * 10) / 10
       : 0,
     byRto: rows,
+  };
+}
+
+/** `GET /reports/revenue-by-month` — invoiced vs collected, grouped by month. */
+export function revenueByMonthReport(ctx: ReportContext) {
+  const byMonth = new Map<string, { invoiced: number; collected: number; orders: number }>();
+
+  for (const inv of ctx.invoices) {
+    if (inv.status === "Void") continue;
+    const key = toISODate(inv.createdAt).slice(0, 7);
+    const row = byMonth.get(key) ?? { invoiced: 0, collected: 0, orders: 0 };
+    row.invoiced += inv.total;
+    byMonth.set(key, row);
+  }
+
+  for (const pay of ctx.payments) {
+    if (pay.status === "Void" || pay.status === "Refunded") continue;
+    const key = toISODate(pay.date).slice(0, 7);
+    const row = byMonth.get(key) ?? { invoiced: 0, collected: 0, orders: 0 };
+    row.collected += pay.allocatedAmount;
+    byMonth.set(key, row);
+  }
+
+  for (const o of ctx.orders) {
+    const key = toISODate(o.createdAt).slice(0, 7);
+    const row = byMonth.get(key) ?? { invoiced: 0, collected: 0, orders: 0 };
+    row.orders += 1;
+    byMonth.set(key, row);
+  }
+
+  return {
+    months: [...byMonth.entries()]
+      .map(([month, v]) => ({ month, ...v }))
+      .sort((a, b) => a.month.localeCompare(b.month)),
+  };
+}
+
+/** `GET /reports/revenue-by-supplier` — revenue by source agent and by RTO. */
+export function revenueBySupplierReport(ctx: ReportContext) {
+  const bySourceAgent = new Map<string, { orders: number; revenue: number }>();
+  const byRto = new Map<string, { orders: number; revenue: number }>();
+
+  for (const o of ctx.orders) {
+    const sourceKey = ctx.agents.get(String(o.sourceAgentId)) ?? String(o.sourceAgentId);
+    const sRow = bySourceAgent.get(sourceKey) ?? { orders: 0, revenue: 0 };
+    sRow.orders += 1;
+    sRow.revenue += o.sellingPrice;
+    bySourceAgent.set(sourceKey, sRow);
+
+    const rtoKey = ctx.rtos.get(String(o.rtoId)) ?? String(o.rtoId);
+    const rRow = byRto.get(rtoKey) ?? { orders: 0, revenue: 0 };
+    rRow.orders += 1;
+    rRow.revenue += o.sellingPrice;
+    byRto.set(rtoKey, rRow);
+  }
+
+  return {
+    bySourceAgent: [...bySourceAgent.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenue - a.revenue),
+    byRto: [...byRto.entries()].map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenue - a.revenue),
+  };
+}
+
+/** `GET /reports/document-completion` — document completion & rejection rates. */
+export async function documentCompletionReport(filter: ReportFilter) {
+  const orderFilterQ = orderFilter(filter);
+  const orderIds = (
+    await Order.find(orderFilterQ, { _id: 1 }).lean<{ _id: Types.ObjectId }[]>()
+  ).map((o) => o._id);
+
+  const docs = await Document.find({ orderId: { $in: orderIds } }).lean();
+
+  const byType = new Map<string, { total: number; approved: number; rejected: number }>();
+  for (const d of docs) {
+    const row = byType.get(d.type) ?? { total: 0, approved: 0, rejected: 0 };
+    row.total += 1;
+    if (d.status === "Approved") row.approved += 1;
+    if (d.status === "Rejected") row.rejected += 1;
+    byType.set(d.type, row);
+  }
+
+  return {
+    byType: [...byType.entries()]
+      .map(([type, v]) => ({
+        type,
+        total: v.total,
+        approved: v.approved,
+        rejected: v.rejected,
+        approvalRate: v.total > 0 ? Math.round((v.approved / v.total) * 100) : 0,
+        rejectionRate: v.total > 0 ? Math.round((v.rejected / v.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total),
+  };
+}
+
+/** `GET /reports/certificate-completion-time` — days from order creation to certificate delivered. */
+export async function certificateCompletionTimeReport(filter: ReportFilter) {
+  const orderFilterQ = orderFilter(filter);
+  const orders = await Order.find({
+    ...orderFilterQ,
+    certificateStatus: "Delivered to Client",
+  }).lean<OrderLean[]>();
+
+  const certs = await Certificate.find({
+    orderId: { $in: orders.map((o) => o._id) },
+  }).lean();
+
+  const certMap = new Map(certs.map((c) => [String(c.orderId), c]));
+
+  const durations: number[] = [];
+  for (const o of orders) {
+    const cert = certMap.get(String(o._id));
+    if (cert?.deliveredToClientAt) {
+      durations.push(Math.round((cert.deliveredToClientAt.getTime() - o.createdAt.getTime()) / 86_400_000));
+    }
+  }
+
+  durations.sort((a, b) => a - b);
+
+  return {
+    count: durations.length,
+    averageDays: durations.length > 0 ? Math.round((durations.reduce((s, d) => s + d, 0) / durations.length) * 10) / 10 : 0,
+    medianDays: durations.length > 0 ? durations[Math.floor(durations.length / 2)] : 0,
+    minDays: durations.length > 0 ? durations[0] : 0,
+    maxDays: durations.length > 0 ? durations[durations.length - 1] : 0,
   };
 }

@@ -12,9 +12,29 @@ export type ClientDTO = Omit<ClientAttrs, "sourceAgentId"> & {
 
 export function toClientDTO(doc: ClientLean | ClientAttrs & { _id: Types.ObjectId }): ClientDTO {
   const obj = doc instanceof Client ? doc.toObject() : doc;
-  const { _id, ...rest } = obj as ClientLean;
+  const { _id, ...rest } = obj as ClientLean & { phone?: string; address?: string };
+
+  // Legacy rows (created before Spec §4B) stored a single `phone`/`address` and
+  // have no `contacts`/`addresses` arrays — `.lean()` returns them as undefined.
+  // Coerce to arrays and synthesise the primary entries from the legacy fields
+  // so nothing disappears from the UI and the client never receives `undefined`.
+  const legacyPhone = rest.phone?.trim();
+  const legacyAddress = rest.address?.trim();
+  const contacts = rest.contacts?.length
+    ? rest.contacts
+    : legacyPhone
+      ? [{ label: "Mobile", type: "phone" as const, value: legacyPhone, primary: true }]
+      : [];
+  const addresses = rest.addresses?.length
+    ? rest.addresses
+    : legacyAddress
+      ? [{ label: "Home", street: legacyAddress, city: "", state: "", postalCode: "", country: "Australia", primary: true }]
+      : [];
+
   return {
     ...rest,
+    contacts,
+    addresses,
     id: String(_id),
     sourceAgentId: rest.sourceAgentId ? String(rest.sourceAgentId) : null,
   };
@@ -48,10 +68,11 @@ export async function listClients(query: ClientListQuery = {}): Promise<ClientDT
     ];
     // Phones are stored formatted ("0411 222 333") but people search for digits
     // ("222333"), so build a pattern that tolerates spaces between each digit
-    // rather than looking for a literal substring.
+    // rather than looking for a literal substring. Phone numbers now live in
+    // the `contacts` array, so we match against any contact value.
     const digits = term.replace(/\D/g, "");
     if (digits.length >= 3) {
-      or.push({ phone: new RegExp(digits.split("").join("\\s*")) });
+      or.push({ "contacts.value": new RegExp(digits.split("").join("\\s*")) });
     }
     filter.$or = or;
   }
@@ -69,9 +90,9 @@ export async function getClient(id: string): Promise<ClientDTO | null> {
 export interface CreateClientInput {
   legalName: string;
   preferredName?: string;
-  phone?: string;
+  contacts?: Array<{ label: string; type: "phone" | "email" | "whatsapp"; value: string; primary?: boolean }>;
+  addresses?: Array<{ label: string; street: string; city: string; state?: string; postalCode?: string; country?: string; primary?: boolean }>;
   email: string;
-  address?: string;
   status?: string;
   sourceAgentId?: string | null;
   notes?: string;
@@ -103,12 +124,29 @@ export async function createClient(
     throw new AppError(409, "DUPLICATE_CLIENT", `A client with email ${email} already exists.`);
   }
 
+  const contacts = (input.contacts ?? []).map((c) => ({
+    label: c.label.trim(),
+    type: c.type,
+    value: c.value.trim(),
+    primary: c.primary ?? false,
+  }));
+
+  const addresses = (input.addresses ?? []).map((a) => ({
+    label: a.label.trim(),
+    street: a.street.trim(),
+    city: a.city.trim(),
+    state: a.state?.trim() ?? "",
+    postalCode: a.postalCode?.trim() ?? "",
+    country: a.country?.trim() ?? "Australia",
+    primary: a.primary ?? false,
+  }));
+
   const doc = await Client.create({
     legalName: input.legalName.trim(),
     preferredName: input.preferredName?.trim() ?? "",
-    phone: input.phone?.trim() ?? "",
     email,
-    address: input.address?.trim() ?? "",
+    contacts,
+    addresses,
     status: (input.status as ClientAttrs["status"]) ?? "Prospect",
     sourceAgentId: input.sourceAgentId ? new Types.ObjectId(input.sourceAgentId) : null,
     notes: input.notes ?? "",
@@ -131,9 +169,8 @@ export async function createClient(
 export interface UpdateClientInput {
   legalName?: string;
   preferredName?: string;
-  phone?: string;
-  email?: string;
-  address?: string;
+  contacts?: Array<{ label: string; type: "phone" | "email" | "whatsapp"; value: string; primary?: boolean }>;
+  addresses?: Array<{ label: string; street: string; city: string; state?: string; postalCode?: string; country?: string; primary?: boolean }>;
   status?: string;
   sourceAgentId?: string | null;
   notes?: string;
@@ -152,9 +189,8 @@ export async function updateClient(
   const before: Record<string, unknown> = {
     legalName: doc.legalName,
     preferredName: doc.preferredName,
-    phone: doc.phone,
-    email: doc.email,
-    address: doc.address,
+    contacts: doc.contacts,
+    addresses: doc.addresses,
     status: doc.status,
     sourceAgentId: doc.sourceAgentId ? String(doc.sourceAgentId) : null,
     notes: doc.notes,
@@ -162,7 +198,11 @@ export async function updateClient(
 
   const set: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
-    if (value !== undefined) set[key] = value;
+    if (key === "contacts" || key === "addresses") {
+      set[key] = value;
+    } else if (value !== undefined) {
+      set[key] = value;
+    }
   }
   if (set.email) set.email = String(set.email).trim().toLowerCase();
   if (set.sourceAgentId === null) {
@@ -188,9 +228,8 @@ export async function updateClient(
     after: {
       legalName: updated.legalName,
       preferredName: updated.preferredName,
-      phone: updated.phone,
-      email: updated.email,
-      address: updated.address,
+      contacts: updated.contacts,
+      addresses: updated.addresses,
       status: updated.status,
       sourceAgentId: updated.sourceAgentId ? String(updated.sourceAgentId) : null,
       notes: updated.notes,
@@ -225,7 +264,7 @@ export async function duplicateReport(): Promise<{ certain: DuplicateGroup[]; po
   for (const c of clients) {
     const email = c.email.toLowerCase();
     push(byEmail, email, c);
-    const digits = c.phone.replace(/\D/g, "");
+    const digits = primaryPhone(c).replace(/\D/g, "");
     if (digits.length >= 6) push(byPhone, digits, c);
   }
 
@@ -266,10 +305,23 @@ function toGroup(
         id: String(c._id),
         legalName: c.legalName,
         email: c.email,
-        phone: c.phone,
+        phone: primaryPhone(c),
         createdAt: c.createdAt.toISOString(),
       })),
   };
+}
+
+/**
+ * The client's primary phone number, taken from the `contacts` array. Falls
+ * back to the first phone/whatsapp contact if none is flagged primary, and to
+ * an empty string when the client has no phone contact at all.
+ */
+function primaryPhone(c: ClientLean): string {
+  const phoneContacts = c.contacts.filter(
+    (ct) => ct.type === "phone" || ct.type === "whatsapp",
+  );
+  const primary = phoneContacts.find((ct) => ct.primary) ?? phoneContacts[0];
+  return primary?.value ?? "";
 }
 
 function escapeRegex(value: string): string {

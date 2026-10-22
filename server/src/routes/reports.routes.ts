@@ -6,10 +6,14 @@ import { isOrderStatus } from "../types/workflow.js";
 import {
   ageingReport,
   buildReportContext,
+  certificateCompletionTimeReport,
   collectionsReport,
+  documentCompletionReport,
   financeReport,
   funnelReport,
   marginReport,
+  revenueByMonthReport,
+  revenueBySupplierReport,
   revenueReport,
   rtoTurnaroundReport,
   type ReportFilter,
@@ -93,4 +97,24 @@ reportsRouter.get("/collections", async (req, res) => {
 /** `GET /reports/rto-turnaround` — completion time by RTO. */
 reportsRouter.get("/rto-turnaround", async (req, res) => {
   res.json(await rtoTurnaroundReport(parseFilter(req.query)));
+});
+
+/** `GET /reports/revenue-by-month` — invoiced vs collected by month. */
+reportsRouter.get("/revenue-by-month", async (req, res) => {
+  res.json(revenueByMonthReport(await buildReportContext(parseFilter(req.query))));
+});
+
+/** `GET /reports/revenue-by-supplier` — revenue by source agent and RTO. */
+reportsRouter.get("/revenue-by-supplier", async (req, res) => {
+  res.json(revenueBySupplierReport(await buildReportContext(parseFilter(req.query))));
+});
+
+/** `GET /reports/document-completion` — document completion & rejection rates. */
+reportsRouter.get("/document-completion", async (req, res) => {
+  res.json(await documentCompletionReport(parseFilter(req.query)));
+});
+
+/** `GET /reports/certificate-completion-time` — days from order to certificate delivered. */
+reportsRouter.get("/certificate-completion-time", async (req, res) => {
+  res.json(await certificateCompletionTimeReport(parseFilter(req.query)));
 });
