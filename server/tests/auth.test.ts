@@ -129,17 +129,50 @@ describe("POST /auth/login", () => {
   it("rate-limits repeated failures from one IP+email", async () => {
     await createUser({ email: "admin@example.com", password: PASSWORD });
     const seen = new Set<number>();
+    let retryAfter: string | undefined;
 
     for (let i = 0; i < 8; i += 1) {
       const res = await request(app)
         .post("/auth/login")
         .send({ email: "admin@example.com", password: `wrong-${i}` });
       seen.add(res.status);
+      if (res.status === 429) retryAfter = res.headers["retry-after"];
     }
 
-    // Still 401 (not 500), but the limiter headers show the window filling up.
-    expect(seen.has(500)).toBe(false);
-    expect([...seen].every((s) => s === 401 || s === 423)).toBe(true);
+    // The limiter must actually REFUSE, not merely count. It used to set the
+    // headers and call next() regardless, so the test below asserted only that
+    // nothing 500'd — which passed while proving nothing about limiting at all.
+    expect(seen.has(429)).toBe(true);
+    expect(retryAfter).toBeDefined();
+    expect(Number(retryAfter)).toBeGreaterThan(0);
+
+    // And the limiter names itself rather than returning a bare status.
+    const blocked = await request(app)
+      .post("/auth/login")
+      .send({ email: "admin@example.com", password: "wrong-again" });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe("RATE_LIMITED");
+  });
+
+  it("does not rate-limit a different email from the same IP", async () => {
+    await createUser({ email: "first@example.com", password: PASSWORD });
+    for (let i = 0; i < 7; i += 1) {
+      await request(app)
+        .post("/auth/login")
+        .send({ email: "first@example.com", password: "wrong" });
+    }
+    const blocked = await request(app)
+      .post("/auth/login")
+      .send({ email: "first@example.com", password: "wrong" });
+    expect(blocked.status).toBe(429);
+
+    // The key is IP+email, so hammering one address must not lock out a
+    // colleague behind the same NAT.
+    await createUser({ email: "colleague@example.com", password: PASSWORD });
+    const other = await request(app)
+      .post("/auth/login")
+      .send({ email: "colleague@example.com", password: PASSWORD });
+    expect(other.status).toBe(200);
   });
 });
 

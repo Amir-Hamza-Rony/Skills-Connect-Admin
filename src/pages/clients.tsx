@@ -7,7 +7,7 @@ import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
-import { createClient, listClients } from "@/lib/ops-store"
+import { createClient, listClients, primaryPhone } from "@/lib/ops-store"
 import { listAgents, agentLabel } from "@/lib/store"
 import type { Agent, Client } from "@/lib/types"
 import { useMemo } from "react"
@@ -55,9 +55,24 @@ export function ClientsPage() {
       const created = await createClient({
         legalName: legalName.trim(),
         preferredName: preferredName.trim() || legalName.trim(),
-        phone: phone.trim(),
         email: email.trim(),
-        address: address.trim(),
+        contacts: [
+          { label: "Mobile", type: "phone", value: phone.trim(), primary: true },
+          { label: "Email", type: "email", value: email.trim(), primary: true },
+        ],
+        addresses: address.trim()
+          ? [
+              {
+                label: "Home",
+                street: address.trim(),
+                city: "",
+                state: "",
+                postalCode: "",
+                country: "Australia",
+                primary: true,
+              },
+            ]
+          : [],
         status: "Active",
         sourceAgentId: sourceAgentId || null,
         notes: notes.trim(),
@@ -95,7 +110,7 @@ export function ClientsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="info">Preview data</Badge>
+          <Badge variant="success">Live data</Badge>
           <Button size="sm" onClick={() => setCreating(true)}>
             Add client
           </Button>
@@ -119,7 +134,7 @@ export function ClientsPage() {
                   {c.legalName}
                 </Link>
                 <span className="block text-xs text-muted-foreground">
-                  {c.preferredName} · {c.phone}
+                  {c.preferredName} · {primaryPhone(c) || c.email}
                 </span>
               </span>
             ),

@@ -41,6 +41,15 @@ export class AppError extends Error {
   static unprocessable(code: string, message: string, details?: unknown): AppError {
     return new AppError(422, code, message, details);
   }
+
+  /** Too many requests. `retryAfterSeconds` is surfaced as a `Retry-After` header. */
+  static tooManyRequests(message: string, retryAfterSeconds?: number): AppError {
+    const err = new AppError(429, "RATE_LIMITED", message) as AppError & {
+      retryAfterSeconds?: number;
+    };
+    err.retryAfterSeconds = retryAfterSeconds;
+    return err;
+  }
 }
 
 /** Single response envelope so clients never have to guess the shape. */

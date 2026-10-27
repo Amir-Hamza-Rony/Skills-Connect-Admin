@@ -1,9 +1,10 @@
-# HANDOVER — Skills Connect Admin (Day 1–5 shell + Phase B2 backend)
+# HANDOVER — Skills Connect Admin (Day 1–5 shell + Phases B1–B5 backend)
 
-Branch: `rony-dev`. Every module in the specification is built and working.
-Phase B2 (Auth + RBAC) is complete: the API is live on MongoDB Atlas and the
-front end signs in against it. Remaining phases are B3–B6 (see
-`BACKEND-PLAN.md`).
+Branch: `rony-dev`. Every module in the specification is built and working, and
+**all of it runs on the real backend** — `src/mocks/` is gone. B1–B5 are
+complete and have been audited line-by-line against `BACKEND-PLAN.md`. Remaining
+work is B6 (reports, audit viewer, Excel migration, deploy) plus the QuickBooks
+credentials described below.
 
 ## Running it
 
@@ -46,12 +47,38 @@ running API and the real Atlas database.
   presigned URLs so file bytes never pass through the API; the raw storage key
   is never sent to the browser. Versions supersede rather than overwrite, and
   every upload, download and review is access-logged.
+- **Finance** — invoices (server-allocated numbers, void never delete), payment
+  plans with unlimited instalments, payments and refunds. Allocation is
+  server-authoritative: the client sends an amount and the server decides where
+  it lands, oldest-due-first, so money cannot be steered away from an overdue
+  instalment.
+- **QuickBooks sync** — a BullMQ queue and worker, a real OAuth2 + v3 client,
+  and an HMAC-verified webhook. Idempotency is enforced twice: a unique
+  `idempotencyKey` in MongoDB and the same key as the BullMQ job id. Retrying,
+  re-enqueuing or redelivering all converge on one QuickBooks record.
+- **Rate limiting** — Redis-backed, so the limit is shared across every API
+  instance. Falls back to in-process counters when Redis is unreachable. A global
+  backstop covers every route; the login route has its own tighter per-IP+email
+  limit that returns `429`.
+- **Masters** — agents, qualifications, RTOs and supplier pricing are all real
+  collections with real endpoints. The pricing matrix an order snapshots its
+  wholesale cost from is the same one the pricing screen shows.
+- **Overdue sweep** — an hourly job flips unpaid invoices and instalments to
+  `Overdue`. Nothing happens on a timer in the browser, so this had to be
+  server-side: an invoice that passes its due date with no payment activity would
+  otherwise read `Sent` indefinitely.
 
-## Still preview (B5+)
+## Still pending
 
-- Invoices, payments, QuickBooks sync and the audit *viewer* still read
-  `fin-store.ts`. They are async and REST-shaped, so pages do not change when
-  the real endpoints land.
+- **QuickBooks has never touched Intuit's real API.** The integration is proven
+  end-to-end against a local stand-in that speaks Intuit's OAuth + v3 contract,
+  so our client, payloads, retry guard and token handling are all verified.
+  Confirming that Intuit behaves as documented needs sandbox credentials.
+- **Docker is up and the queue is verified** (10/10). Two production bugs were
+  fixed to get there, both invisible to the suite: the Redis client used
+  `node-redis`, which BullMQ rejects outright, and `REDIS_URL` parsed to a NaN
+  port. See "Two bugs Docker exposed" in `BACKEND-PLAN.md`.
+- **Reports, the audit viewer, the Excel import and the deploy are B6.**
 
 ## What was built
 
@@ -129,13 +156,16 @@ session · Sales gets **403 on `/users` and `/roles`** while `/auth/me` returns
 immediately · password reset invalidates a token minted in the *same second* ·
 7 roles / 18 permissions served from the server.
 
-## Known preview limitations (must fix with backend)
+## Known limitations (must fix / verify)
 
-- Clients/orders/documents/tasks/finance store is in-memory: reload resets; no
-  multi-user persistence. (Users and roles are already on the real API.)
-- QuickBooks transport is simulated; status/idempotency flow is real.
-- Document versions record metadata only; bytes need signed-URL storage.
+- **QuickBooks is unverified end-to-end.** The code is written and its refusal
+  paths are tested, but without sandbox credentials no request has reached the
+  API. The "failed → retry → Synced, exactly one record" criterion is
+  unproven until credentials and an OAuth-authorised company exist.
 - Seed data is synthetic (DEMO codes) — migration + reconciliation pending.
+- `docker-compose.yml` (Redis + MinIO) and the Dockerfile are still unverified:
+  Docker Desktop is not installed on the dev machine. The Redis fallback means
+  the API works without it, but the queue has never run against a real Redis.
 
 ## External blockers (unchanged)
 

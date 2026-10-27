@@ -72,6 +72,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly Permission[]> = {
     "qb.retry",
     "reports.view",
     "documents.view",
+    "audit.view",
   ],
   Operations: [
     "clients.view",
@@ -81,6 +82,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly Permission[]> = {
     "documents.view",
     "documents.review",
     "reports.view",
+    "audit.view",
   ],
   "Sales / Closing Agent": ["clients.view", "orders.view", "finance.view", "reports.view"],
   "RTO / Sourcing Manager": [
@@ -98,6 +100,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, readonly Permission[]> = {
     "finance.view",
     "reports.view",
     "documents.view",
+    "audit.view",
   ],
 };
 

@@ -71,7 +71,7 @@ export function TasksPage() {
             Operational tasks · {tasks.length} open and done
           </p>
         </div>
-        <Badge variant="info">Preview data</Badge>
+        <Badge variant="success">Live data</Badge>
       </div>
 
       <DataTable<WorkflowTask>

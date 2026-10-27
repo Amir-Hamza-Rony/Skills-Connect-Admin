@@ -4,7 +4,7 @@ import { Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/dialog"
-import { listClients, listOrders } from "@/lib/ops-store"
+import { listClients, listOrders, primaryPhone } from "@/lib/ops-store"
 import { listInvoices } from "@/lib/fin-store"
 import { listQualifications, qualificationLabel } from "@/lib/store"
 import type { Client, Invoice, Order, Qualification } from "@/lib/types"
@@ -58,8 +58,9 @@ export function GlobalSearch() {
     if (q.length < 2) return []
     const out: Hit[] = []
     for (const c of clients) {
-      if ([c.legalName, c.preferredName, c.phone, c.email].some((f) => f.toLowerCase().includes(q))) {
-        out.push({ kind: "Client", label: c.legalName, sub: `${c.phone} · ${c.email}`, to: `/clients/${c.id}` })
+      const phone = primaryPhone(c)
+      if ([c.legalName, c.preferredName, phone, c.email].some((f) => f.toLowerCase().includes(q))) {
+        out.push({ kind: "Client", label: c.legalName, sub: `${phone || c.email}`, to: `/clients/${c.id}` })
       }
     }
     for (const o of orders) {

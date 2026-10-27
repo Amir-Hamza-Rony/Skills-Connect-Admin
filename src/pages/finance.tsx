@@ -242,7 +242,7 @@ export function FinancePage() {
             Invoices, instalment plans, payments, QuickBooks sync
           </p>
         </div>
-        <Badge variant="info">Preview data</Badge>
+        <Badge variant="success">Live data</Badge>
       </div>
 
       {summary && (

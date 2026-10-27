@@ -1,6 +1,6 @@
 import { env } from "../config/env.js";
 import { AppError } from "../lib/app-error.js";
-import { createRateLimiter } from "../lib/rate-limit.js";
+import { createSharedRateLimiter } from "../lib/rate-limit.js";
 import { dummyVerify, verifyPassword } from "../lib/password.js";
 import {
   digestsMatch,
@@ -41,6 +41,8 @@ export interface AuthenticatedUser {
   email: string;
   name: string;
   roleNames: string[];
+  /** Role document ids — used by the self-lockout guard on role edits. */
+  roleIds: string[];
   permissions: ReturnType<typeof resolvePermissions>;
   /** Current token generation — embedded in the access token as `ver`. */
   tokenVersion: number;
@@ -55,13 +57,25 @@ export interface LoginResult {
 }
 
 /** Per-account lockout, in addition to the per-IP limiter on the route. */
-const accountLimiter = createRateLimiter({
+const accountLimiter = createSharedRateLimiter({
   windowMs: env.ACCOUNT_LOCK_MINUTES * 60 * 1000,
   max: env.ACCOUNT_LOCK_MAX_FAILURES,
 });
 
 export function resetAccountLimiter(): void {
-  accountLimiter.clearAll();
+  void accountLimiter.clearAll();
+}
+
+/**
+ * Clears one account's brute-force counter.
+ *
+ * Needed by admin actions that "unlock" a user: the counter lives in Redis
+ * since B5, so clearing the `failedLoginCount`/`lockedUntil` fields on the user
+ * document is no longer enough — the user would re-lock on their next wrong
+ * password.
+ */
+export async function resetAccountLimiterFor(userId: string): Promise<void> {
+  await accountLimiter.reset(userId);
 }
 
 function refreshExpiry(): Date {
@@ -72,14 +86,15 @@ async function loadAuthedUser(userId: string): Promise<AuthenticatedUser> {
   const user = await User.findById(userId).select("+tokenVersion");
   if (!user) throw AppError.unauthorized("Account no longer exists.");
   const roles = (await user.populate<{
-    roleIds: Array<{ name: string; permissions: never[] }>;
-  }>("roleIds")).roleIds as unknown as Array<{ name: string; permissions: never[] }>;
+    roleIds: Array<{ _id: unknown; name: string; permissions: never[] }>;
+  }>("roleIds")).roleIds as unknown as Array<{ _id: unknown; name: string; permissions: never[] }>;
 
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     roleNames: roles.map((r) => r.name),
+    roleIds: roles.map((r) => String(r._id)),
     permissions: resolvePermissions(roles.map((r) => r.permissions)),
     tokenVersion: user.tokenVersion,
   };
@@ -120,7 +135,9 @@ export async function login(
 
   const ok = await verifyPassword(user.passwordHash, password);
   if (!ok) {
-    const failures = accountLimiter.hit(user.id);
+    // `await` because the counters live in Redis since B5; the in-process
+    // fallback resolves immediately, so this costs nothing when Redis is absent.
+    const failures = await accountLimiter.hit(user.id);
     user.failedLoginCount = (user.failedLoginCount ?? 0) + 1;
     if (!failures.allowed) {
       user.lockedUntil = new Date(Date.now() + env.ACCOUNT_LOCK_MINUTES * 60 * 1000);
@@ -140,7 +157,7 @@ export async function login(
   }
 
   // Success resets the counters.
-  accountLimiter.reset(user.id);
+  await accountLimiter.reset(user.id);
   user.failedLoginCount = 0;
   user.lockedUntil = null;
   user.lastLoginAt = new Date();

@@ -108,6 +108,32 @@ export async function updateOrderDimensions(
 export const grossMargin = (o: Order) =>
   o.sellingPrice - o.supplierCostSnapshot - o.otherCost
 
+/* ---------- Client contact/address helpers (Spec §4B) ---------- */
+
+/** The client's primary phone/whatsapp contact value ("" when none). */
+export function primaryPhone(c: Client): string {
+  const phones = (c.contacts ?? []).filter((ct) => ct.type === "phone" || ct.type === "whatsapp")
+  const primary = phones.find((ct) => ct.primary) ?? phones[0]
+  return primary?.value ?? ""
+}
+
+/** The client's primary email contact value, falling back to the top-level email. */
+export function primaryEmail(c: Client): string {
+  const emails = (c.contacts ?? []).filter((ct) => ct.type === "email")
+  const primary = emails.find((ct) => ct.primary) ?? emails[0]
+  return primary?.value ?? c.email
+}
+
+/** A one-line rendering of the client's primary address ("" when none). */
+export function formatAddress(c: Client): string {
+  const list = c.addresses ?? []
+  const primary = list.find((a) => a.primary) ?? list[0]
+  if (!primary) return ""
+  return [primary.street, primary.city, primary.state, primary.postalCode]
+    .filter(Boolean)
+    .join(", ")
+}
+
 /* ---------- Documents (real API) ---------- */
 
 /** The per-order document checklist template. Static, so it stays client-side. */

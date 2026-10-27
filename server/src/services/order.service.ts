@@ -1,13 +1,82 @@
 import { Types } from "mongoose";
 
 import { AppError } from "../lib/app-error.js";
+import { Certificate } from "../models/certificate.model.js";
+import {
+  DOCUMENT_CHECKLIST,
+  DocumentRequirement,
+} from "../models/document-requirement.model.js";
+import { Document } from "../models/document.model.js";
+import { Invoice } from "../models/invoice.model.js";
 import { Order, type OrderAttrs, type OrderLean } from "../models/order.model.js";
+import { Payment } from "../models/payment.model.js";
 import { WorkflowTask } from "../models/workflow-task.model.js";
 import { SupplierRoute } from "../models/supplier-route.model.js";
 import { Client } from "../models/client.model.js";
 import { recordAudit } from "./audit.service.js";
 import { withTransaction } from "../lib/transaction.js";
 import { isOrderStatus, type OrderStatus } from "../types/workflow.js";
+
+/**
+ * Order status state machine — Spec §5.
+ *
+ * Defines which transitions are permitted. Terminal states (Lost, Cancelled,
+ * Refunded, Completed) have no outgoing edges. On Hold can return to any
+ * non-terminal onboarding/submission/assessment/completion stage.
+ */
+const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  Lead: ["Qualified", "Lost"],
+  Qualified: ["Won", "Lost"],
+  Won: ["New", "Lost"],
+  Lost: [],
+  New: ["Awaiting Payment", "Awaiting Documents", "On Hold", "Cancelled"],
+  "Awaiting Payment": ["Awaiting Documents", "On Hold", "Cancelled", "Refunded"],
+  "Awaiting Documents": ["Documents Under Review", "On Hold", "Cancelled"],
+  "Documents Under Review": ["Ready for Submission", "On Hold", "Rework Required"],
+  "Ready for Submission": ["Submitted to Source Agent", "On Hold"],
+  "Submitted to Source Agent": ["Submitted to RTO", "On Hold"],
+  "Submitted to RTO": ["RTO Acknowledged", "On Hold"],
+  "RTO Acknowledged": ["Under Assessment", "On Hold"],
+  "Under Assessment": ["Additional Evidence Required", "Approved", "On Hold"],
+  "Additional Evidence Required": ["Under Assessment", "Rework Required", "On Hold"],
+  "Rework Required": ["Under Assessment", "On Hold"],
+  Approved: ["Certificate Issued", "On Hold"],
+  "Certificate Issued": ["Completed", "On Hold"],
+  "On Hold": [
+    "New",
+    "Awaiting Payment",
+    "Awaiting Documents",
+    "Documents Under Review",
+    "Ready for Submission",
+    "Submitted to Source Agent",
+    "Submitted to RTO",
+    "RTO Acknowledged",
+    "Under Assessment",
+    "Additional Evidence Required",
+    "Rework Required",
+    "Approved",
+    "Certificate Issued",
+    "Cancelled",
+  ],
+  Completed: [],
+  Cancelled: [],
+  Refunded: [],
+};
+
+/**
+ * Computes payment status from invoice total, amount paid, and overdue flag.
+ * Spec §6: payment status should be calculated, not manually typed.
+ */
+export function computePaymentStatus(
+  invoiceTotal: number,
+  amountPaid: number,
+  hasOverdue: boolean,
+): "Unpaid" | "Part Paid" | "Paid" | "Overdue" | "Refunded" {
+  if (amountPaid <= 0) return "Unpaid";
+  if (hasOverdue) return "Overdue";
+  if (amountPaid >= invoiceTotal) return "Paid";
+  return "Part Paid";
+}
 
 export interface OrderActor {
   id: string;
@@ -29,6 +98,7 @@ export type OrderDTO = Omit<
   salesAgentId: string;
   sourceAgentId: string;
   rtoId: string;
+  paymentStatus: "Unpaid" | "Part Paid" | "Paid" | "Overdue" | "Refunded";
   history: Array<{
     timestamp: Date;
     actorId: string | null;
@@ -38,7 +108,16 @@ export type OrderDTO = Omit<
   }>;
 };
 
-export function toOrderDTO(doc: OrderLean): OrderDTO {
+export interface PaymentInfo {
+  invoiceTotal: number;
+  amountPaid: number;
+  hasOverdue: boolean;
+}
+
+export function toOrderDTO(
+  doc: OrderLean,
+  paymentInfo?: PaymentInfo,
+): OrderDTO {
   return {
     ...doc,
     id: String(doc._id),
@@ -47,6 +126,13 @@ export function toOrderDTO(doc: OrderLean): OrderDTO {
     salesAgentId: String(doc.salesAgentId),
     sourceAgentId: String(doc.sourceAgentId),
     rtoId: String(doc.rtoId),
+    paymentStatus: paymentInfo
+      ? computePaymentStatus(
+          paymentInfo.invoiceTotal,
+          paymentInfo.amountPaid,
+          paymentInfo.hasOverdue,
+        )
+      : "Unpaid",
     history: doc.history.map((h) => ({
       timestamp: h.timestamp,
       actorId: h.actorId ? String(h.actorId) : null,
@@ -79,13 +165,68 @@ export async function listOrders(query: OrderListQuery = {}): Promise<OrderDTO[]
   }
 
   const docs = await Order.find(filter).sort({ createdAt: -1 }).lean<OrderLean[]>();
-  return docs.map(toOrderDTO);
+
+  // Compute payment status per order from invoices + payments.
+  const orderIds = docs.map((d) => d._id);
+  const [invoices, payments] = await Promise.all([
+    Invoice.find({ orderId: { $in: orderIds } }).lean(),
+    Payment.find({ orderId: { $in: orderIds } }).lean(),
+  ]);
+
+  const invoiceTotals = new Map<string, number>();
+  for (const inv of invoices) {
+    const cur = invoiceTotals.get(String(inv.orderId)) ?? 0;
+    invoiceTotals.set(String(inv.orderId), cur + inv.total);
+  }
+
+  const paidByOrder = new Map<string, number>();
+  const overdueByOrder = new Map<string, boolean>();
+  const now = new Date();
+  for (const p of payments) {
+    // Only money that actually landed counts toward the paid total. Refunded
+    // and voided payments do not.
+    if (p.status === "Refunded" || p.status === "Void") continue;
+    const cur = paidByOrder.get(String(p.orderId)) ?? 0;
+    paidByOrder.set(String(p.orderId), cur + p.amount);
+  }
+  for (const inv of invoices) {
+    // An invoice past its due date with a balance still owing marks the order
+    // overdue.
+    if (inv.status === "Paid" || inv.status === "Void") continue;
+    if (new Date(inv.dueDate) < now) {
+      overdueByOrder.set(String(inv.orderId), true);
+    }
+  }
+
+  return docs.map((doc) => {
+    const orderIdStr = String(doc._id);
+    const paymentInfo: PaymentInfo = {
+      invoiceTotal: invoiceTotals.get(orderIdStr) ?? 0,
+      amountPaid: paidByOrder.get(orderIdStr) ?? 0,
+      hasOverdue: overdueByOrder.get(orderIdStr) ?? false,
+    };
+    return toOrderDTO(doc, paymentInfo);
+  });
 }
 
 export async function getOrder(id: string): Promise<OrderDTO | null> {
   if (!Types.ObjectId.isValid(id)) return null;
   const doc = await Order.findById(id).lean<OrderLean>();
-  return doc ? toOrderDTO(doc) : null;
+  if (!doc) return null;
+
+  const [invoices, payments] = await Promise.all([
+    Invoice.find({ orderId: new Types.ObjectId(id) }).lean(),
+    Payment.find({ orderId: new Types.ObjectId(id) }).lean(),
+  ]);
+
+  const invoiceTotal = invoices.reduce((sum, inv) => sum + inv.total, 0);
+  const amountPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const now = new Date();
+  const hasOverdue = invoices.some(
+    (inv) => new Date(inv.dueDate) < now && inv.status !== "Paid" && inv.status !== "Void",
+  );
+
+  return toOrderDTO(doc, { invoiceTotal, amountPaid, hasOverdue });
 }
 
 export interface CreateOrderInput {
@@ -177,6 +318,24 @@ export async function createOrder(
 
   const created = docs[0];
   if (!created) throw new Error("Failed to create order.");
+
+  // Open the order's checklist and its certificate record. Both collections were
+  // modelled in B3 but nothing ever wrote a row, so the checklist a client is
+  // asked for and the certificate the order claims to be tracking were both
+  // empty until something outside the API created them.
+  await Promise.all([
+    DocumentRequirement.insertMany(
+      DOCUMENT_CHECKLIST.map((type) => ({
+        orderId: created._id,
+        type,
+        required: true,
+        status: "Not Received" as const,
+        documentId: null,
+      })),
+      { ordered: false },
+    ),
+    Certificate.create({ orderId: created._id, status: "Not Issued" }),
+  ]);
 
   await recordAudit({
     actorId: actor.id,
@@ -283,8 +442,22 @@ export async function transitionOrder(
   if (!existing) return null;
   const before = existing.status;
 
-  const updated = await withTransaction(async (session) =>
-    Order.findOneAndUpdate(
+  // State machine validation — Spec §5.
+  const allowed = ALLOWED_TRANSITIONS[before];
+  if (!allowed.includes(to)) {
+    throw AppError.badRequest(
+      "INVALID_TRANSITION",
+      `Cannot move order from "${before}" to "${to}". Allowed next statuses: ${allowed.join(", ") || "none (terminal state)"}.`,
+    );
+  }
+
+  const task = STAGE_TASKS[to];
+
+  // Both writes run INSIDE the transaction. The task upsert used to sit outside
+  // it, so a crash between the two left an order transitioned with no work item
+  // — precisely the outcome this function claims cannot happen.
+  const updated = await withTransaction(async (session) => {
+    const order = await Order.findOneAndUpdate(
       { _id: new Types.ObjectId(id) },
       {
         $set: {
@@ -303,29 +476,30 @@ export async function transitionOrder(
         },
       },
       { returnDocument: "after", session: session ?? undefined },
-    ).lean<OrderLean | null>(),
-  );
+    ).lean<OrderLean | null>();
+
+    if (order && task) {
+      await WorkflowTask.findOneAndUpdate(
+        { orderId: order._id, stage: task.stage, title: task.title },
+        {
+          $setOnInsert: {
+            orderId: order._id,
+            stage: task.stage,
+            title: task.title,
+            assigneeId: null,
+            dueDate: null,
+            status: "Todo",
+            priority: task.priority,
+          },
+        },
+        { upsert: true, session: session ?? undefined },
+      );
+    }
+
+    return order;
+  });
 
   if (!updated) return null;
-
-  const task = STAGE_TASKS[to];
-  if (task) {
-    await WorkflowTask.findOneAndUpdate(
-      { orderId: updated._id, stage: task.stage, title: task.title },
-      {
-        $setOnInsert: {
-          orderId: updated._id,
-          stage: task.stage,
-          title: task.title,
-          assigneeId: null,
-          dueDate: null,
-          status: "Todo",
-          priority: task.priority,
-        },
-      },
-      { upsert: true },
-    );
-  }
 
   await recordAudit({
     actorId: actor.id,
@@ -345,6 +519,13 @@ export async function transitionOrder(
 export interface DimensionPatch {
   evidenceStatus?: OrderAttrs["evidenceStatus"];
   rtoSubmissionStatus?: OrderAttrs["rtoSubmissionStatus"];
+  /**
+   * Writable here because the `certificates` collection is the record but this
+   * denormalised field is what every list view reads. It was previously in the
+   * schema with no endpoint that could ever set it, so the badge on the order
+   * list was permanently "Not Issued" no matter what happened to the order.
+   */
+  certificateStatus?: OrderAttrs["certificateStatus"];
 }
 
 /**
@@ -428,15 +609,55 @@ export async function orderTimeline(id: string): Promise<Array<Record<string, un
     after: h.after,
   }));
 
-  const tasks = await WorkflowTask.find({ orderId: order._id }).lean();
-  for (const t of tasks) {
+  // Invoices (Spec §14: timeline includes invoices)
+  const invoices = await Invoice.find({ orderId: order._id }).lean();
+  for (const inv of invoices) {
     events.push({
-      kind: "task",
-      timestamp: t.createdAt.toISOString(),
-      actorId: t.assigneeId ? String(t.assigneeId) : null,
-      field: "task.created",
+      kind: "invoice",
+      timestamp: inv.createdAt.toISOString(),
+      actorId: null,
+      field: "invoice.created",
       before: "—",
-      after: t.title,
+      after: `${inv.invoiceNumber} · AUD ${inv.total}`,
+    });
+  }
+
+  // Payments
+  const payments = await Payment.find({ orderId: order._id }).lean();
+  for (const p of payments) {
+    events.push({
+      kind: "payment",
+      timestamp: p.createdAt.toISOString(),
+      actorId: null,
+      field: "payment.recorded",
+      before: "—",
+      after: `AUD ${p.amount} · ${p.method} · ${p.status}`,
+    });
+  }
+
+  // Documents
+  const docs = await Document.find({ orderId: order._id }).lean();
+  for (const d of docs) {
+    events.push({
+      kind: "document",
+      timestamp: d.createdAt.toISOString(),
+      actorId: d.reviewedBy ? String(d.reviewedBy) : null,
+      field: "document.uploaded",
+      before: "—",
+      after: `${d.type} v${d.version} · ${d.status}`,
+    });
+  }
+
+  // Certificate
+  const cert = await Certificate.findOne({ orderId: order._id }).lean();
+  if (cert) {
+    events.push({
+      kind: "certificate",
+      timestamp: cert.createdAt.toISOString(),
+      actorId: null,
+      field: "certificate.tracked",
+      before: "—",
+      after: cert.status,
     });
   }
 

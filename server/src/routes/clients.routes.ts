@@ -74,9 +74,30 @@ clientsRouter.get(
 const clientBody = z.object({
   legalName: z.string().trim().min(1).max(200),
   preferredName: z.string().trim().max(120).optional(),
-  phone: z.string().trim().max(40).optional(),
   email: z.string().trim().email().max(320),
-  address: z.string().trim().max(300).optional(),
+  contacts: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(80),
+        type: z.enum(["phone", "email", "whatsapp"]),
+        value: z.string().trim().min(1).max(200),
+        primary: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  addresses: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(80),
+        street: z.string().trim().min(1).max(200),
+        city: z.string().trim().min(1).max(100),
+        state: z.string().trim().max(50).optional(),
+        postalCode: z.string().trim().max(20).optional(),
+        country: z.string().trim().max(50).optional(),
+        primary: z.boolean().optional(),
+      }),
+    )
+    .optional(),
   status: z
     .enum(["Prospect", "Active", "On Hold", "Inactive"])
     .optional(),

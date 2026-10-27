@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAuth } from "@/lib/auth"
 import {
   agentLabel,
   createRoute,
@@ -31,8 +30,7 @@ const aud = (n: number) =>
  * preserves it; old orders keep their snapshots (Spec §4G).
  */
 export function PricingPage() {
-  const { user: me } = useAuth()
-  const actor = me?.id ?? "preview-user"
+  // The actor is taken from the access token by the server; no client-side id is sent.
   const [routes, setRoutes] = useState<SupplierRoute[] | null>(null)
   const [quals, setQuals] = useState<Qualification[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
@@ -93,7 +91,7 @@ export function PricingPage() {
         effectiveFrom: from,
         effectiveTo: null,
         status: "active",
-      }, actor)
+      })
       setRoutes((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
       setCost("")
@@ -105,7 +103,7 @@ export function PricingPage() {
 
   async function onExpire() {
     if (!expiring) return
-    const updated = await expireRoute(expiring.id, actor)
+    const updated = await expireRoute(expiring.id)
     setRoutes((prev) => prev?.map((r) => (r.id === updated.id ? updated : r)) ?? null)
     setExpiring(null)
   }
@@ -131,7 +129,7 @@ export function PricingPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="info">Preview data</Badge>
+          <Badge variant="success">Live data</Badge>
           <Button size="sm" onClick={() => setCreating(true)}>
             Add route
           </Button>

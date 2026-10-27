@@ -3,6 +3,10 @@ import { createServer } from "node:http";
 import { createApp } from "./app.js";
 import { connectDb, disconnectDb } from "./config/db.js";
 import { env } from "./config/env.js";
+import { closeRedis } from "./config/redis.js";
+import { closeQBQueue } from "./jobs/qb-sync.queue.js";
+import { closeQBWorker, startQBWorker } from "./jobs/qb-sync.worker.js";
+import { startOverdueSweep } from "./jobs/overdue.job.js";
 import { logger } from "./lib/logger.js";
 
 /** Hard cap so a stuck socket cannot block the shutdown forever. */
@@ -11,6 +15,15 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 async function main(): Promise<void> {
   // Fail fast: an API without a database is worse than no API at all.
   await connectDb();
+
+  // Started after the database and before the listener: a job that starts
+  // polling must be able to read its record. Returns null without Redis, in
+  // which case the queue module runs those jobs inline instead.
+  await startQBWorker();
+
+  // Invoices and instalments go overdue by the calendar passing, not by
+  // anything happening in the application, so this cannot be event-driven.
+  const stopOverdueSweep = startOverdueSweep();
 
   const server = createServer(createApp());
 
@@ -30,6 +43,8 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, "Shutdown requested — draining");
 
+    stopOverdueSweep();
+
     const timer = setTimeout(() => {
       logger.error("Forced exit: shutdown timed out");
       process.exit(1);
@@ -38,10 +53,22 @@ async function main(): Promise<void> {
 
     server.close((err) => {
       if (err) logger.error({ err }, "Error while closing HTTP server");
-      void disconnectDb().finally(() => {
-        clearTimeout(timer);
-        process.exit(err ? 1 : 0);
-      });
+      // Order matters: stop taking new jobs, then drain the worker, then the
+      // queue, then Redis, then the database. A worker shut down after its
+      // connection would log a connection error for every in-flight job.
+      void (async () => {
+        await closeQBWorker();
+        await closeQBQueue();
+        await closeRedis();
+        await disconnectDb();
+      })()
+        .catch((shutdownErr: unknown) => {
+          logger.error({ err: shutdownErr }, "Error during shutdown");
+        })
+        .finally(() => {
+          clearTimeout(timer);
+          process.exit(err ? 1 : 0);
+        });
     });
   };
 

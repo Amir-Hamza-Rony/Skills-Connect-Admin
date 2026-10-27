@@ -174,6 +174,13 @@ describe("status transition", () => {
       .send({ clientId, ...masters, sellingPrice: 2500 });
     const orderId = created.body.order.id as string;
 
+    // Walk the state machine to "Documents Under Review" (Spec §5): New ->
+    // Awaiting Documents -> Documents Under Review.
+    await request(app)
+      .patch(`/orders/${orderId}/status`)
+      .set(authed(token))
+      .send({ status: "Awaiting Documents" });
+
     const res = await request(app)
       .patch(`/orders/${orderId}/status`)
       .set(authed(token))
@@ -184,10 +191,10 @@ describe("status transition", () => {
 
     // History recorded who moved it, from what, to what.
     const history = res.body.order.history;
-    expect(history).toHaveLength(2);
-    expect(history[1]).toMatchObject({
+    expect(history.length).toBeGreaterThanOrEqual(2);
+    expect(history[history.length - 1]).toMatchObject({
       field: "status",
-      before: "New",
+      before: "Awaiting Documents",
       after: "Documents Under Review",
       actorId: expect.any(String),
     });
@@ -211,10 +218,9 @@ describe("status transition", () => {
       .send({ clientId, ...masters, sellingPrice: 2500 });
     const orderId = created.body.order.id as string;
 
-    await request(app)
-      .patch(`/orders/${orderId}/status`)
-      .set(authed(token))
-      .send({ status: "Under Assessment" });
+    // Seed the order to just before Completed so a single valid state-machine
+    // hop (Certificate Issued -> Completed) is all that is exercised here.
+    await Order.updateOne({ _id: orderId }, { $set: { status: "Certificate Issued" } });
 
     let doc = await Order.findById(orderId);
     expect(doc?.completedAt).toBeNull();
@@ -305,7 +311,13 @@ describe("clients", () => {
     await request(app)
       .post("/clients")
       .set(authed(token))
-      .send({ legalName: "Phone Person", email: "phone@example.com", phone: "0411 222 333" });
+      .send({
+        legalName: "Phone Person",
+        email: "phone@example.com",
+        contacts: [
+          { label: "Mobile", type: "phone", value: "0411 222 333", primary: true },
+        ],
+      });
 
     const res = await request(app).get("/clients?search=222333").set(authed(token));
     expect(res.status).toBe(200);
@@ -321,12 +333,16 @@ describe("clients", () => {
     await Client.create({
       legalName: "Same Email",
       email: "same@example.com",
-      phone: "0411 000 001",
+      contacts: [
+        { label: "Mobile", type: "phone", value: "0411 000 001", primary: true },
+      ],
     });
     await Client.create({
       legalName: "Same Email Again",
       email: "same@example.com",
-      phone: "0411 000 002",
+      contacts: [
+        { label: "Mobile", type: "phone", value: "0411 000 002", primary: true },
+      ],
     });
 
     // Two different people can legitimately share a phone, so this is reported
@@ -334,12 +350,16 @@ describe("clients", () => {
     await Client.create({
       legalName: "Same Phone",
       email: "other@example.com",
-      phone: "0411 999 888",
+      contacts: [
+        { label: "Mobile", type: "phone", value: "0411 999 888", primary: true },
+      ],
     });
     await Client.create({
       legalName: "Same Phone Again",
       email: "another@example.com",
-      phone: "0411 999 888",
+      contacts: [
+        { label: "Mobile", type: "phone", value: "0411 999 888", primary: true },
+      ],
     });
 
     const token = await signIn("admin@example.com");

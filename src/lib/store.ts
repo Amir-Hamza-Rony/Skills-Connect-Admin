@@ -1,5 +1,4 @@
 import { apiFetch } from "@/lib/api"
-import { auditLog } from "@/lib/fin-store"
 import type {
   Agent,
   Permission,
@@ -11,35 +10,23 @@ import type {
   User,
   UserRef,
 } from "@/lib/types"
-import {
-  SEED_AGENTS,
-  SEED_QUALIFICATIONS,
-  SEED_ROUTES,
-  SEED_RTOS,
-} from "@/mocks/seed"
 
 /**
  * Data-access layer.
  *
- * CUTOVER STATE (Phase B2): users and roles now come from the real API.
- * Agents, qualifications, RTOs and supplier routes are still on the in-memory
- * preview store and switch over in B3.
+ * CUTOVER STATE: everything is on the real API.
+ *
+ * Users and roles moved in B2; agents, qualifications, RTOs and supplier routes
+ * moved in B3. Before that the masters served synthetic in-memory data while
+ * the orders snapshotting their wholesale cost were already real — so the
+ * pricing matrix on screen was not the matrix an order was priced from. Both
+ * looked correct, which is what made it dangerous.
  *
  * Every function keeps its original async signature, so pages never change —
  * only the body behind it does.
  */
 
-const latency = () => new Promise((r) => setTimeout(r, 120))
-
-let agents: Agent[] = structuredClone(SEED_AGENTS)
-let qualifications: Qualification[] = structuredClone(SEED_QUALIFICATIONS)
-let rtos: Rto[] = structuredClone(SEED_RTOS)
-let routes: SupplierRoute[] = structuredClone(SEED_ROUTES)
-
-const uid = (p: string) =>
-  `${p}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`
-
-/* ---------- Roles & users (real API) ---------- */
+/* ---------- Roles & users ---------- */
 
 interface ApiRole {
   _id: string
@@ -84,7 +71,6 @@ export async function listUserDirectory(): Promise<UserRef[]> {
 export async function updateUser(
   id: string,
   patch: Partial<Pick<User, "name" | "phone" | "roleNames" | "active">>,
-  _actorId?: string,
 ): Promise<User> {
   const data = await apiFetch<{ user: User }>(`/users/${id}`, { method: "PATCH", body: patch })
   return data.user
@@ -93,95 +79,78 @@ export async function updateUser(
 /* ---------- Qualifications ---------- */
 
 export async function listQualifications(): Promise<Qualification[]> {
-  await latency()
-  return [...qualifications]
+  const data = await apiFetch<{ qualifications: Qualification[] }>("/qualifications")
+  return data.qualifications
 }
 
 export async function createQualification(
   q: Omit<Qualification, "id" | "licensingRefs">,
-  actorId = "preview-user",
 ): Promise<Qualification> {
-  await latency()
-  const created: Qualification = { ...q, id: uid("q"), licensingRefs: [] }
-  qualifications = [created, ...qualifications]
-  auditLog("qualification", created.id, "create", "—", q.code, actorId)
-  return created
+  const data = await apiFetch<{ qualification: Qualification }>("/qualifications", {
+    method: "POST",
+    body: q,
+  })
+  return data.qualification
 }
 
 /* ---------- RTOs ---------- */
 
 export async function listRtos(): Promise<Rto[]> {
-  await latency()
-  return [...rtos]
+  const data = await apiFetch<{ rtos: Rto[] }>("/rtos")
+  return data.rtos
 }
 
-export async function createRto(r: Omit<Rto, "id">, actorId = "preview-user"): Promise<Rto> {
-  await latency()
-  const created: Rto = { ...r, id: uid("rto") }
-  rtos = [created, ...rtos]
-  auditLog("rto", created.id, "create", "—", r.tradingName, actorId)
-  return created
+export async function createRto(r: Omit<Rto, "id">): Promise<Rto> {
+  const data = await apiFetch<{ rto: Rto }>("/rtos", { method: "POST", body: r })
+  return data.rto
 }
 
 /* ---------- Agents ---------- */
 
 export async function listAgents(): Promise<Agent[]> {
-  await latency()
-  return [...agents]
+  const data = await apiFetch<{ agents: Agent[] }>("/agents")
+  return data.agents
 }
 
-export async function createAgent(a: Omit<Agent, "id">, actorId = "preview-user"): Promise<Agent> {
-  await latency()
-  const created: Agent = { ...a, id: uid("ag") }
-  agents = [created, ...agents]
-  auditLog("agent", created.id, "create", "—", `${a.name} (${a.type})`, actorId)
-  return created
+export async function createAgent(a: Omit<Agent, "id">): Promise<Agent> {
+  const data = await apiFetch<{ agent: Agent }>("/agents", { method: "POST", body: a })
+  return data.agent
 }
 
 export async function updateAgent(
   id: string,
   patch: Partial<Pick<Agent, "contact" | "commissionRule" | "active">>,
-  actorId = "preview-user",
 ): Promise<Agent> {
-  await latency()
-  const i = agents.findIndex((a) => a.id === id)
-  if (i === -1) throw new Error("Agent not found")
-  const before = agents[i].active
-  agents[i] = { ...agents[i], ...patch }
-  auditLog("agent", id, "update", `active=${before}`, `active=${agents[i].active}`, actorId)
-  return agents[i]
+  const data = await apiFetch<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body: patch })
+  return data.agent
 }
 
 /* ---------- Supplier routes / pricing ---------- */
 
 export async function listRoutes(): Promise<SupplierRoute[]> {
-  await latency()
-  return [...routes]
+  const data = await apiFetch<{ routes: SupplierRoute[] }>("/supplier-routes")
+  return data.routes
 }
 
-export async function createRoute(
-  r: Omit<SupplierRoute, "id">,
-  actorId = "preview-user",
-): Promise<SupplierRoute> {
-  await latency()
-  const created: SupplierRoute = { ...r, id: uid("sr") }
-  routes = [created, ...routes]
-  auditLog("supplier_route", created.id, "create", "—", `AUD ${r.wholesaleCost}`, actorId)
-  return created
+/**
+ * A cost change is recorded by expiring the old route and creating a new one.
+ * Orders already created keep their own snapshot either way.
+ */
+export async function createRoute(r: Omit<SupplierRoute, "id">): Promise<SupplierRoute> {
+  const data = await apiFetch<{ route: SupplierRoute }>("/supplier-routes", {
+    method: "POST",
+    body: r,
+  })
+  return data.route
 }
 
-/** History is preserved: expiring sets status + effectiveTo, never deletes. */
-export async function expireRoute(id: string, actorId = "preview-user"): Promise<SupplierRoute> {
-  await latency()
-  const i = routes.findIndex((r) => r.id === id)
-  if (i === -1) throw new Error("Route not found")
-  routes[i] = {
-    ...routes[i],
-    status: "expired",
-    effectiveTo: new Date().toISOString().slice(0, 10),
-  }
-  auditLog("supplier_route", id, "expire", "active", "expired", actorId)
-  return routes[i]
+/** History is preserved: expiring sets status + effectiveTo on the server, never deletes. */
+export async function expireRoute(id: string): Promise<SupplierRoute> {
+  const data = await apiFetch<{ route: SupplierRoute }>(`/supplier-routes/${id}/expire`, {
+    method: "POST",
+    body: {},
+  })
+  return data.route
 }
 
 /* ---------- Display helpers ---------- */

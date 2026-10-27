@@ -8,7 +8,7 @@ import { Types } from "mongoose";
 
 import { WorkflowTask, type WorkflowTaskAttrs, type WorkflowTaskLean } from "../models/workflow-task.model.js";
 import { recordAudit } from "../services/audit.service.js";
-import { isTaskPriority, isTaskStatus } from "../types/workflow.js";
+import { isTaskStatus } from "../types/workflow.js";
 
 export const workflowRouter: Router = Router();
 

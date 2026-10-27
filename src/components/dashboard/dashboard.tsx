@@ -18,8 +18,6 @@ import {
 import { useEffect, useState } from "react"
 
 import { DashboardSection, type KpiDefinition } from "@/components/dashboard/kpi-card"
-import { Badge } from "@/components/ui/badge"
-import { useTheme } from "@/lib/theme"
 import { financeSummary, listInvoices, listQBSync } from "@/lib/fin-store"
 import { grossMargin, listClients, listDocuments, listOrders } from "@/lib/ops-store"
 import type { OrderDocument } from "@/lib/types"
@@ -36,10 +34,10 @@ interface SectionDef {
 
 /**
  * Management dashboard (Spec §12) with LIVE values from the ops + finance
- * stores. Still preview data until the backend + migration land.
+ * stores. Renders bare KPI sections; the unified Dashboard shell owns the
+ * page header and the view switcher.
  */
-export function Dashboard() {
-  const { theme, resolvedTheme } = useTheme()
+export function ManagementDashboard() {
   const [sections, setSections] = useState<SectionDef[] | null>(null)
 
   useEffect(() => {
@@ -117,33 +115,18 @@ export function Dashboard() {
     })()
   }, [])
 
-  return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-            Dashboard
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Business overview — viewing as{" "}
-            <span className="font-medium text-foreground">Administrator</span>
-            {" · "}theme {theme} ({resolvedTheme})
-          </p>
-        </div>
-        <Badge variant="info">Preview data</Badge>
-      </div>
+  if (!sections)
+    return <p className="text-sm text-muted-foreground">Loading metrics…</p>
 
-      {!sections ? (
-        <p className="text-sm text-muted-foreground">Loading metrics…</p>
-      ) : (
-        sections.map((section) => (
-          <DashboardSection
-            key={section.title}
-            title={section.title}
-            kpis={section.kpis}
-          />
-        ))
-      )}
-    </div>
+  return (
+    <>
+      {sections.map((section) => (
+        <DashboardSection
+          key={section.title}
+          title={section.title}
+          kpis={section.kpis}
+        />
+      ))}
+    </>
   )
 }

@@ -214,7 +214,7 @@ export function DocumentsPage() {
             Evidence workspace · {docs.length} tracked files
           </p>
         </div>
-        <Badge variant="info">Preview data</Badge>
+        <Badge variant="success">Live data</Badge>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 pb-3">
