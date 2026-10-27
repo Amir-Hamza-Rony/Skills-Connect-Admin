@@ -10,21 +10,22 @@ import { DocumentStatusBadge } from "@/components/status-badge"
 import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
 import {
-  addDocumentVersion,
   checklistFor,
+  confirmUpload,
   listClients,
   listDocuments,
   listOrders,
+  requestDownloadUrl,
+  requestUploadUrl,
   reviewDocument,
 } from "@/lib/ops-store"
-import { listQualifications, listUsers, qualificationLabel } from "@/lib/store"
+import { listQualifications, listUserDirectory, qualificationLabel } from "@/lib/store"
 import type {
   Client,
-  DocumentStatus,
   Order,
   OrderDocument,
   Qualification,
-  User,
+  UserRef,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -65,7 +66,7 @@ export function DocumentsPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [quals, setQuals] = useState<Qualification[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
   const [docs, setDocs] = useState<OrderDocument[] | null>(null)
   const [queue, setQueue] = useState<Queue>("Missing")
 
@@ -83,7 +84,7 @@ export function DocumentsPage() {
         listOrders(),
         listClients(),
         listQualifications(),
-        listUsers(),
+        listUserDirectory(),
       ])
       setOrders(o)
       setClients(c)
@@ -138,18 +139,61 @@ export function DocumentsPage() {
     }
   }
 
-  async function onNewVersion(d: OrderDocument) {
-    const created = await addDocumentVersion({
-      clientId: d.clientId,
-      orderId: d.orderId,
-      type: d.type,
-      status: "Received" as DocumentStatus,
-      receivedAt: new Date().toISOString(),
-      reviewedAt: null,
-      reviewedBy: null,
-      rejectionReason: null,
-    }, user?.id ?? "preview-user")
-    setDocs((prev) => (prev ? [created, ...prev] : [created]))
+  /** Confirms an upload so the document flips from Not Received to Received. */
+  async function onConfirm(d: OrderDocument) {
+    setFormError(null)
+    try {
+      const updated = await confirmUpload(d.id, user?.id ?? "preview-user")
+      setDocs((prev) => prev?.map((x) => (x.id === updated.id ? updated : x)) ?? null)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not confirm the upload.")
+    }
+  }
+
+  /** Opens a short-lived signed download URL. */
+  async function onDownload(d: OrderDocument) {
+    setFormError(null)
+    try {
+      const { downloadUrl } = await requestDownloadUrl(d.id)
+      window.open(downloadUrl, "_blank", "noopener")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not get a download link.")
+    }
+  }
+
+  /**
+   * Starts a new version of a document type.
+   *
+   * With real object storage the upload is a two-step flow: ask for a
+   * presigned URL, PUT the file straight to storage, then confirm. The
+   * presigned URL is short-lived, so the file input must be wired to it
+   * immediately — this just creates the row and returns the URL.
+   */
+  function onNewVersion(d: OrderDocument) {
+    const type = window.prompt(
+      "File type",
+      d.type,
+    )
+    if (!type?.trim()) return
+
+    const contentType = window.prompt("File MIME type", "application/pdf") ?? "application/pdf"
+
+    void (async () => {
+      try {
+        const { uploadUrl, document } = await requestUploadUrl(
+          d.orderId,
+          type.trim(),
+          contentType,
+          user?.id ?? "preview-user",
+        )
+        // The row is created optimistically so the list updates immediately;
+        // the status flips to Received once the file is confirmed uploaded.
+        setDocs((prev) => (prev ? [document, ...prev] : [document]))
+        window.open(uploadUrl, "_blank", "noopener")
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : "Could not start the upload.")
+      }
+    })()
   }
 
   if (!docs) {
@@ -170,7 +214,7 @@ export function DocumentsPage() {
             Evidence workspace · {docs.length} tracked files
           </p>
         </div>
-        <Badge variant="info">Preview data</Badge>
+        <Badge variant="success">Live data</Badge>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 pb-3">
@@ -205,6 +249,11 @@ export function DocumentsPage() {
         </select>
       </div>
 
+      {formError && (
+        <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          {formError}
+        </p>
+      )}
       <DataTable<OrderDocument>
         rows={visible}
         emptyMessage={`Nothing in the ${queue} queue.`}
@@ -246,19 +295,51 @@ export function DocumentsPage() {
           {
             key: "actions",
             label: "Actions",
-            render: (d) =>
-              canReview ? (
-                <span className="flex gap-1.5">
-                  <Button size="sm" variant="outline" onClick={() => { setReviewing(d); setVerdict("Approved"); setReason(""); }}>
+            render: (d) => (
+              <span className="flex flex-wrap gap-1.5">
+                {canReview && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setReviewing(d)
+                      setVerdict("Approved")
+                      setReason("")
+                    }}
+                  >
                     Review
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => void onNewVersion(d)} title="Record a new received version">
-                    + Version
+                )}
+                {d.status === "Not Received" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Confirm the uploaded file landed"
+                    onClick={() => void onConfirm(d)}
+                  >
+                    Confirm
                   </Button>
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">View only</span>
-              ),
+                )}
+                {d.status !== "Not Received" && d.status !== "Requested" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Download via a short-lived signed URL"
+                    onClick={() => void onDownload(d)}
+                  >
+                    Download
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onNewVersion(d)}
+                  title="Upload a new version of this document"
+                >
+                  + Version
+                </Button>
+              </span>
+            ),
           },
         ]}
       />

@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAuth } from "@/lib/auth"
 import { listRoles, listUsers, updateUser } from "@/lib/store"
-import type { Role, User } from "@/lib/types"
+import { messageFor } from "@/lib/api"
+import type { Role, RoleName, User } from "@/lib/types"
 
 function PageHeader({ count }: { count: number | null }) {
   return (
@@ -19,45 +19,54 @@ function PageHeader({ count }: { count: number | null }) {
           {count !== null && ` · ${count} users`}
         </p>
       </div>
-      <Badge variant="info">Preview data</Badge>
+      <Badge variant="info">Live data</Badge>
     </div>
   )
 }
 
 export function UsersPage() {
-  const { user: me } = useAuth()
   const [users, setUsers] = useState<User[] | null>(null)
   const [roles, setRoles] = useState<Role[]>([])
   const [editing, setEditing] = useState<User | null>(null)
-  const [draftRoles, setDraftRoles] = useState<string[]>([])
+  const [draftRoles, setDraftRoles] = useState<RoleName[]>([])
   const [draftActive, setDraftActive] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
-      setUsers(await listUsers())
-      setRoles(await listRoles())
+      try {
+        const [u, r] = await Promise.all([listUsers(), listRoles()])
+        setUsers(u)
+        setRoles(r)
+      } catch (err) {
+        setError(messageFor(err, "Could not load users."))
+        setUsers([])
+      }
     })()
   }, [])
 
-  const roleName = (id: string) => roles.find((r) => r.id === id)?.name ?? id
-
   function openEdit(u: User) {
     setEditing(u)
-    setDraftRoles([...u.roleIds])
+    setDraftRoles([...u.roleNames])
     setDraftActive(u.active)
+    setError(null)
   }
 
   async function save() {
     if (!editing) return
     setSaving(true)
+    setError(null)
     try {
       const updated = await updateUser(editing.id, {
-        roleIds: draftRoles,
+        roleNames: draftRoles,
         active: draftActive,
-      }, me?.id ?? "preview-user")
+      })
       setUsers((prev) => prev?.map((u) => (u.id === updated.id ? updated : u)) ?? null)
       setEditing(null)
+    } catch (err) {
+      // e.g. 409 "Cannot demote or deactivate the last active Super Admin."
+      setError(messageFor(err, "Could not save changes."))
     } finally {
       setSaving(false)
     }
@@ -67,7 +76,13 @@ export function UsersPage() {
     return (
       <div className="mx-auto w-full max-w-7xl space-y-3 p-4 sm:p-6">
         <PageHeader count={null} />
-        <Skeleton className="h-64 w-full" aria-label="Loading users" />
+        {error ? (
+          <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">
+            {error}
+          </p>
+        ) : (
+          <Skeleton className="h-64 w-full" aria-label="Loading users" />
+        )}
       </div>
     )
   }
@@ -88,9 +103,9 @@ export function UsersPage() {
             label: "Roles",
             render: (u) => (
               <span className="flex flex-wrap gap-1">
-                {u.roleIds.map((r) => (
+                {u.roleNames.map((r) => (
                   <Badge key={r} variant="secondary">
-                    {roleName(r)}
+                    {r}
                   </Badge>
                 ))}
               </span>
@@ -131,12 +146,12 @@ export function UsersPage() {
               <label key={r.id} className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={draftRoles.includes(r.id)}
+                  checked={draftRoles.includes(r.name)}
                   onChange={(e) =>
                     setDraftRoles((prev) =>
                       e.target.checked
-                        ? [...prev, r.id]
-                        : prev.filter((id) => id !== r.id),
+                        ? [...prev, r.name]
+                        : prev.filter((name) => name !== r.name),
                     )
                   }
                   className="size-4 accent-[var(--primary)]"
@@ -154,6 +169,11 @@ export function UsersPage() {
             />
             Account active
           </label>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setEditing(null)}>
               Cancel

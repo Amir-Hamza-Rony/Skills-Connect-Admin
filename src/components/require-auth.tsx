@@ -25,8 +25,12 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 /**
- * UX-only permission gate. Mirrors server-side enforcement for display;
- * the future backend MUST re-check every permission on each request.
+ * UX-only permission gate.
+ *
+ * Hiding a page the caller cannot use is a courtesy, NOT a control. The server
+ * re-derives permissions from the database on every request and enforces them
+ * with `requirePermission`, so navigating straight to a forbidden URL gets a
+ * 403 from the API even when this component is bypassed.
  */
 export function RequirePermission({
   perm,

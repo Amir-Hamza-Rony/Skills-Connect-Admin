@@ -24,9 +24,25 @@ export interface User {
   name: string
   email: string
   phone: string
-  roleIds: string[]
+  /**
+   * Role NAMES, not ids — matches the API. The matrix is server-owned
+   * (`server/src/services/permissions.ts`), so the SPA never needs role ids.
+   */
+  roleNames: RoleName[]
   active: boolean
   lastLoginAt: string | null
+}
+
+/**
+ * Name-only staff reference, from `GET /users/directory`.
+ *
+ * Screens that merely render an actor (task assignees, document reviewers,
+ * audit rows, order timelines) need a name and nothing else — and most roles
+ * cannot call the `GET /users` admin route, which stays `users.manage`-gated.
+ */
+export interface UserRef {
+  id: string
+  name: string
 }
 
 export type AgentType = "sales_closing" | "certificate_source" | "rto_contact"
@@ -203,13 +219,33 @@ export type PaymentStatus =
 
 export type TaskStatus = "Todo" | "In Progress" | "Done" | "Blocked"
 
+/** A single contact method for a client (Spec §4B — multiple allowed). */
+export interface ClientContact {
+  label: string // e.g. "Mobile", "Work", "Emergency"
+  type: "phone" | "email" | "whatsapp"
+  value: string
+  primary: boolean
+}
+
+/** A single address for a client (Spec §4B — multiple allowed). */
+export interface ClientAddress {
+  label: string // e.g. "Home", "Mailing", "Billing"
+  street: string
+  city: string
+  state: string
+  postalCode: string
+  country: string
+  primary: boolean
+}
+
 export interface Client {
   id: string
   legalName: string
   preferredName: string
-  phone: string
+  /** Primary email — the dedupe key. Richer contact methods live in `contacts`. */
   email: string
-  address: string
+  contacts: ClientContact[]
+  addresses: ClientAddress[]
   status: string
   sourceAgentId: string | null
   notes: string
@@ -239,6 +275,8 @@ export interface Order {
   supplierCostSnapshot: number
   otherCost: number
   currency: "AUD"
+  /** Calculated server-side from invoices + payments (Spec §6). */
+  paymentStatus: PaymentStatus
   createdAt: string
   updatedAt: string
   completedAt: string | null
@@ -250,7 +288,6 @@ export interface OrderDocument {
   clientId: string
   orderId: string
   type: string
-  storageKey: string
   version: number
   status: DocumentStatus
   receivedAt: string | null
@@ -362,4 +399,39 @@ export interface AuditEvent {
   action: string
   before: string
   after: string
+}
+
+/* ================= Saved views & Communications (Spec §7, §13) ========= */
+
+/** A saved operational queue filter (Spec §13). Per-user, per-scope. */
+export type SavedViewScope = "orders" | "documents" | "finance" | "clients"
+
+export interface SavedView {
+  id: string
+  userId: string
+  name: string
+  scope: SavedViewScope
+  filters: Record<string, unknown>
+  isDefault: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CommChannel = "email" | "sms" | "whatsapp" | "phone" | "letter"
+export type CommDirection = "inbound" | "outbound"
+export type CommStatus = "sent" | "delivered" | "read" | "failed" | "bounced"
+
+/** A logged client communication — email / SMS / WhatsApp (Spec §7). */
+export interface Communication {
+  id: string
+  clientId: string
+  orderId: string | null
+  channel: CommChannel
+  direction: CommDirection
+  message: string
+  status: CommStatus
+  sentAt: string | null
+  externalReference: string | null
+  createdAt: string
+  updatedAt: string
 }

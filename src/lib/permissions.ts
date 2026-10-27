@@ -2,9 +2,12 @@ import type { Permission, RoleName } from "@/lib/types"
 
 /**
  * RBAC matrix — Spec §11 roles mapped to granular permissions.
- * IMPORTANT: UI guards mirror this matrix for UX only. The future backend
- * MUST re-enforce every permission server-side; frontend hiding alone
- * never grants or denies access.
+ *
+ * ⚠️  DISPLAY ONLY. The single source of truth is
+ *     `server/src/services/permissions.ts`; the API serves it at
+ *     `GET /roles` and `GET /auth/permissions`, and `requirePermission` enforces
+ *     it on every route. This copy exists so the SPA can hide nav links and
+ *     buttons it knows will fail — it never grants or denies access.
  */
 export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
   "Super Admin": [

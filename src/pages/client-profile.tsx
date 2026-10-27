@@ -13,25 +13,35 @@ import {
 } from "@/components/status-badge"
 import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
-import { getClient, grossMargin, listDocuments, listOrders } from "@/lib/ops-store"
+import {
+  formatAddress,
+  getClient,
+  grossMargin,
+  listDocuments,
+  listOrders,
+  primaryEmail,
+  primaryPhone,
+} from "@/lib/ops-store"
 import { financeSummary, listInvoices, listPayments } from "@/lib/fin-store"
+import { createCommunication, listCommunications } from "@/lib/queues"
 import {
   listAgents,
   listQualifications,
   listRtos,
-  listUsers,
+  listUserDirectory,
   qualificationLabel,
 } from "@/lib/store"
 import type {
   Agent,
   Client,
+  Communication,
   Invoice,
   Order,
   OrderDocument,
   Payment,
   Qualification,
   Rto,
-  User,
+  UserRef,
 } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -39,6 +49,8 @@ const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
 
 const TABS = [
   "Orders",
+  "Contacts",
+  "Communications",
   "Documents",
   "Payments",
   "Invoices",
@@ -61,12 +73,13 @@ export function ClientProfilePage() {
   const [quals, setQuals] = useState<Qualification[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [rtos, setRtos] = useState<Rto[]>([])
-  const [users, setUsers] = useState<User[]>([])
+  const [users, setUsers] = useState<UserRef[]>([])
   const [tab, setTab] = useState<Tab>("Orders")
   const [finPaid, setFinPaid] = useState<number | null>(null)
   const [finInvoiced, setFinInvoiced] = useState<number | null>(null)
   const [finInvoices, setFinInvoices] = useState<Invoice[]>([])
   const [finPayments, setFinPayments] = useState<Payment[]>([])
+  const [comms, setComms] = useState<Communication[]>([])
 
   useEffect(() => {
     void (async () => {
@@ -77,7 +90,7 @@ export function ClientProfilePage() {
         listQualifications(),
         listAgents(),
         listRtos(),
-        listUsers(),
+        listUserDirectory(),
       ])
       setClient(c ?? null)
       setOrders(o)
@@ -98,6 +111,7 @@ export function ClientProfilePage() {
       ])
       setFinInvoices(invs)
       setFinPayments(pays)
+      setComms(await listCommunications({ clientId: id }).catch(() => []))
     })()
   }, [id])
 
@@ -148,7 +162,7 @@ export function ClientProfilePage() {
             {client.legalName}
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {client.preferredName} · {client.phone} · {client.email}
+            {client.preferredName} · {primaryPhone(client) || "No phone"} · {primaryEmail(client)}
           </p>
         </div>
         <Badge variant={client.status === "Active" ? "success" : "warning"}>
@@ -240,6 +254,57 @@ export function ClientProfilePage() {
               </Link>
             ))}
           </div>
+        )}
+
+        {tab === "Contacts" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-xl border bg-card p-4">
+              <h2 className="pb-3 text-sm font-semibold">Contact methods</h2>
+              {(client.contacts ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No contact methods recorded.</p>
+              ) : (
+                <ul className="divide-y">
+                  {(client.contacts ?? []).map((ct, i) => (
+                    <li key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{ct.value}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {ct.label} · {ct.type}
+                        </span>
+                      </span>
+                      {ct.primary && <Badge variant="success">Primary</Badge>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section className="rounded-xl border bg-card p-4">
+              <h2 className="pb-3 text-sm font-semibold">Addresses</h2>
+              {(client.addresses ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No addresses recorded.</p>
+              ) : (
+                <ul className="divide-y">
+                  {(client.addresses ?? []).map((a, i) => (
+                    <li key={i} className="flex items-start justify-between gap-3 py-2 text-sm">
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{a.label}</span>
+                        <span className="block text-xs text-muted-foreground">
+                          {[a.street, a.city, a.state, a.postalCode, a.country]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </span>
+                      </span>
+                      {a.primary && <Badge variant="success">Primary</Badge>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        )}
+
+        {tab === "Communications" && (
+          <CommunicationsPanel clientId={client.id} initial={comms} />
         )}
 
         {tab === "Documents" && (
@@ -337,7 +402,7 @@ export function ClientProfilePage() {
           <div className="rounded-xl border bg-card p-4 text-sm">
             <p>{client.notes || "No notes recorded."}</p>
             <p className="pt-2 text-xs text-muted-foreground">
-              Address: {client.address || "—"} · Communication log connects with messaging later.
+              Address: {formatAddress(client) || "—"}
             </p>
           </div>
         )}
@@ -360,6 +425,162 @@ export function ClientProfilePage() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+const COMM_CHANNELS: Array<Communication["channel"]> = [
+  "email",
+  "sms",
+  "whatsapp",
+  "phone",
+  "letter",
+]
+const COMM_STATUSES: Array<Communication["status"]> = [
+  "sent",
+  "delivered",
+  "read",
+  "failed",
+  "bounced",
+]
+
+/**
+ * Communications log (Spec §7): lists email / SMS / WhatsApp / phone / letter
+ * exchanges for the client and lets an operator record a new one.
+ */
+function CommunicationsPanel({
+  clientId,
+  initial,
+}: {
+  clientId: string
+  initial: Communication[]
+}) {
+  const [items, setItems] = useState<Communication[]>(initial)
+  const [channel, setChannel] = useState<Communication["channel"]>("email")
+  const [direction, setDirection] = useState<Communication["direction"]>("outbound")
+  const [status, setStatus] = useState<Communication["status"]>("sent")
+  const [message, setMessage] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onLog(e: React.FormEvent) {
+    e.preventDefault()
+    if (!message.trim()) {
+      setError("A message is required.")
+      return
+    }
+    setError(null)
+    setSaving(true)
+    try {
+      const created = await createCommunication({
+        clientId,
+        channel,
+        direction,
+        status,
+        message: message.trim(),
+        sentAt: new Date().toISOString(),
+      })
+      setItems((prev) => [created, ...prev])
+      setMessage("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not log communication.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={onLog} className="rounded-xl border bg-card p-4">
+        <h2 className="pb-3 text-sm font-semibold">Log a communication</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <label htmlFor="comm-channel" className="text-sm font-medium">Channel</label>
+            <select
+              id="comm-channel"
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as Communication["channel"])}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {COMM_CHANNELS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="comm-direction" className="text-sm font-medium">Direction</label>
+            <select
+              id="comm-direction"
+              value={direction}
+              onChange={(e) => setDirection(e.target.value as Communication["direction"])}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="outbound">outbound</option>
+              <option value="inbound">inbound</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="comm-status" className="text-sm font-medium">Status</label>
+            <select
+              id="comm-status"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as Communication["status"])}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {COMM_STATUSES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="space-y-1.5 pt-3">
+          <label htmlFor="comm-message" className="text-sm font-medium">Message</label>
+          <textarea
+            id="comm-message"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="What was said…"
+            rows={2}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        {error && <p role="alert" className="pt-1 text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end pt-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            {saving ? "Logging…" : "Log communication"}
+          </button>
+        </div>
+      </form>
+
+      <div className="space-y-2">
+        {items.length === 0 && (
+          <p className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+            No communications logged yet.
+          </p>
+        )}
+        {items.map((c) => (
+          <div key={c.id} className="rounded-xl border bg-card p-3.5 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium capitalize">
+                {c.channel} · {c.direction}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <Badge variant={c.status === "failed" || c.status === "bounced" ? "destructive" : "outline"}>
+                  {c.status}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {c.sentAt ? new Date(c.sentAt).toLocaleString() : new Date(c.createdAt).toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <p className="pt-1.5 text-muted-foreground">{c.message}</p>
+          </div>
+        ))}
       </div>
     </div>
   )

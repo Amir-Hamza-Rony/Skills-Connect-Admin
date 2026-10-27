@@ -8,6 +8,7 @@ import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
 import { OrderStatusBadge } from "@/components/status-badge"
+import { SavedViewsBar, type PresetView, type ViewFilter } from "@/components/saved-views"
 import { createOrder, grossMargin, listClients, listOrders } from "@/lib/ops-store"
 import {
   agentLabel,
@@ -24,6 +25,15 @@ const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
 const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
+
+/** The operational queues called out in Spec §13. */
+const QUEUE_PRESETS: PresetView[] = [
+  { id: "documents-missing", name: "Documents Missing", filter: { status: "Awaiting Documents" } },
+  { id: "payment-overdue", name: "Payment Overdue", filter: { paymentStatus: "Overdue" } },
+  { id: "ready-for-rto", name: "Ready for RTO", filter: { status: "Ready for Submission" } },
+  { id: "under-assessment", name: "Under Assessment", filter: { status: "Under Assessment" } },
+  { id: "certificate-issued", name: "Certificate Issued", filter: { status: "Certificate Issued" } },
+]
 
 /**
  * Orders queue with filters + creation. Each order keeps sales agent,
@@ -44,6 +54,7 @@ export function OrdersPage() {
   const [fQual, setFQual] = useState("")
   const [fAgent, setFAgent] = useState("")
   const [fRto, setFRto] = useState("")
+  const [fPay, setFPay] = useState("")
 
   const [creating, setCreating] = useState(searchParams.get("client") !== null)
   const [clientId, setClientId] = useState(searchParams.get("client") ?? "")
@@ -88,10 +99,30 @@ export function OrdersPage() {
           (!fStatus || o.status === fStatus) &&
           (!fQual || o.qualificationId === fQual) &&
           (!fAgent || o.salesAgentId === fAgent || o.sourceAgentId === fAgent) &&
-          (!fRto || o.rtoId === fRto),
+          (!fRto || o.rtoId === fRto) &&
+          (!fPay || o.paymentStatus === fPay),
       ),
-    [orders, fStatus, fQual, fAgent, fRto],
+    [orders, fStatus, fQual, fAgent, fRto, fPay],
   )
+
+  const currentFilter = useMemo(
+    () => ({
+      status: fStatus,
+      qualificationId: fQual,
+      agentId: fAgent,
+      rtoId: fRto,
+      paymentStatus: fPay,
+    }),
+    [fStatus, fQual, fAgent, fRto, fPay],
+  )
+
+  function applyFilter(f: ViewFilter) {
+    setFStatus(f.status ?? "")
+    setFQual(f.qualificationId ?? "")
+    setFAgent(f.agentId ?? "")
+    setFRto(f.rtoId ?? "")
+    setFPay(f.paymentStatus ?? "")
+  }
 
   function closeCreate() {
     setCreating(false)
@@ -147,7 +178,7 @@ export function OrdersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="info">Preview data</Badge>
+          <Badge variant="success">Live data</Badge>
           <Button size="sm" onClick={() => setCreating(true)}>
             New order
           </Button>
@@ -183,7 +214,21 @@ export function OrdersPage() {
             <option key={r.id} value={r.id}>{rtoLabel(r)}</option>
           ))}
         </select>
+        <select aria-label="Filter by payment status" value={fPay} onChange={(e) => setFPay(e.target.value)} className={inputCls}>
+          <option value="">All payment statuses</option>
+          {["Unpaid", "Part Paid", "Paid", "Overdue", "Refunded"].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
+
+      <SavedViewsBar
+        scope="orders"
+        presets={QUEUE_PRESETS}
+        current={currentFilter}
+        onApply={applyFilter}
+        className="pb-4"
+      />
 
       <DataTable<Order>
         rows={visible}
@@ -226,6 +271,25 @@ export function OrdersPage() {
             label: "Price / Margin",
             render: (o) => (
               <span className="tabular-nums">{aud(o.sellingPrice)} <span className="text-muted-foreground">/ {aud(grossMargin(o))}</span></span>
+            ),
+          },
+          {
+            key: "payment",
+            label: "Payment",
+            render: (o) => (
+              <Badge
+                variant={
+                  o.paymentStatus === "Paid"
+                    ? "success"
+                    : o.paymentStatus === "Overdue"
+                      ? "destructive"
+                      : o.paymentStatus === "Part Paid"
+                        ? "info"
+                        : "warning"
+                }
+              >
+                {o.paymentStatus}
+              </Badge>
             ),
           },
           {

@@ -1,0 +1,33 @@
+# Keep the build context small and prevent host artefacts leaking into images.
+# NOTE: patterns are anchored with a leading `/` where they must match only the
+# repo root — an unanchored `src` would also swallow `server/src` and break the
+# build stage.
+
+.git
+.gitignore
+
+node_modules
+**/node_modules
+
+# Frontend-only paths. The API image never needs these; `server/src` MUST stay.
+index.html
+/public
+/src
+/dist
+**/dist
+/vercel.json
+/vite.config.ts
+/tsconfig*.json
+
+# Never bake secrets into an image layer.
+.env
+**/.env
+*.docx
+*.xlsx
+
+# Local tooling / docs
+.vscode
+.idea
+*.md
+coverage
+**/coverage
