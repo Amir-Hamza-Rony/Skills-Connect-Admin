@@ -5,6 +5,8 @@
   "framework": "vite",
   "routes": [
     { "src": "/(auth|clients|communications|documents|finance|invoices|orders|payment-plans|payments|qualifications|reports|rtos|supplier-routes|integrations|roles|saved-views|users|workflow|audit|health)(.*)", "dest": "/api/index.js" },
+    { "src": "/assets/(.*)", "status": 200 },
+    { "src": "/favicon.ico", "status": 200 },
     { "src": "/(.*)", "dest": "/index.html", "status": 200 }
   ]
 }
