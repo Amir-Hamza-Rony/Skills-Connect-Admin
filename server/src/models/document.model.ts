@@ -8,28 +8,33 @@ import type { DocumentStatus } from "../types/workflow.js";
  * ## Versions supersede, never overwrite (Spec §8)
  *
  * Every upload of the same document type creates a new version with its own
- * storage key. The previous version keeps its bytes and its status; it is
+ * stored bytes. The previous version keeps its bytes and its status; it is
  * marked `Superseded` only once a replacement exists. An approved document is
  * therefore never silently replaced — the audit trail and the file stay in step.
  *
- * ## The storage key is server-only
+ * ## File bytes live in MongoDB
  *
- * `storageKey` is how the file is fetched from object storage, and the raw key
- * is never returned by the API (BACKEND-PLAN §6: "raw storage key never reaches
- * client"). Clients get a presigned URL instead, so a key cannot be guessed or
- * enumerated across clients.
+ * `data` holds the file's binary contents directly in the database document.
+ * There is no object storage (no S3, no MinIO, no R2) — every file byte is
+ * backed up, queried, and recovered together with the rest of the business
+ * data. The raw binary is never sent to the browser; downloads are served
+ * through `GET /documents/:id/download` which streams `data` with the
+ * document's `contentType`.
  */
+
 export interface DocumentAttrs {
   orderId: Types.ObjectId;
   clientId: Types.ObjectId;
   type: string;
   version: number;
-  /** Object-storage key. Never serialised into an API response. */
-  storageKey: string;
-  /** Declared at request time; verified against the bucket on confirm-upload. */
+  /** Original filename from the client upload. */
+  fileName: string;
+  /** MIME type declared at upload time. */
   contentType: string;
-  /** Real byte count from the bucket's HEAD response. Null until confirmed. */
-  sizeBytes: number | null;
+  /** Real byte count of `data`, computed on write. */
+  sizeBytes: number;
+  /** File binary stored directly in MongoDB. Never serialised into an API response. */
+  data: Buffer;
   status: DocumentStatus;
   receivedAt: Date | null;
   reviewedAt: Date | null;
@@ -46,9 +51,14 @@ const documentSchema = new Schema<DocumentAttrs>(
     clientId: { type: Schema.Types.ObjectId, ref: "Client", required: true },
     type: { type: String, required: true, trim: true },
     version: { type: Number, required: true, min: 1 },
-    storageKey: { type: String, required: true },
-    contentType: { type: String, required: true, default: "application/octet-stream" },
-    sizeBytes: { type: Number, default: null, min: 0 },
+    fileName: { type: String, required: true, trim: true },
+    contentType: {
+      type: String,
+      required: true,
+      default: "application/octet-stream",
+    },
+    sizeBytes: { type: Number, required: true, min: 0 },
+    data: { type: Buffer, required: true },
     status: {
       type: String,
       required: true,
@@ -85,7 +95,7 @@ export type DocumentLean = DocumentAttrs & { _id: Types.ObjectId };
 export const Document: Model<DocumentAttrs> = model<DocumentAttrs>("Document", documentSchema);
 
 /**
- * Who looked at what, and when (BACKEND-PLAN B4 "document access logging").
+ * Who looked at what, and when.
  *
  * A separate collection from the document itself because access is a stream of
  * events — a passport scan may be downloaded a dozen times — and because the

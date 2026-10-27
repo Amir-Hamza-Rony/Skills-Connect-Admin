@@ -12,7 +12,6 @@ import {
   type DocumentLean,
 } from "../models/document.model.js";
 import { Order } from "../models/order.model.js";
-import { getStorage } from "../integrations/storage/s3.js";
 import { recordAudit } from "./audit.service.js";
 
 export interface ActorMeta {
@@ -23,24 +22,25 @@ export interface ActorMeta {
 }
 
 /**
- * Document DTO — deliberately excludes `storageKey`.
+ * Document DTO — deliberately excludes `data` (the raw file bytes).
  *
- * The key is how a file is fetched from object storage. Sending it to the browser
- * would let a client enumerate other clients' files by guessing paths, which is
- * the exact thing presigned URLs exist to prevent. Every response that returns a
- * document goes through `toDocumentDTO`, so the omission is structural rather
- * than a convention someone has to remember.
+ * The file binary lives in MongoDB and is served through
+ * `GET /documents/:id/download`. The browser never receives the raw Buffer;
+ * it receives metadata plus a download endpoint it can fetch.
+ * Every response that returns a document goes through `toDocumentDTO`,
+ * so the omission is structural rather than a convention someone has to remember.
  */
-export type DocumentDTO = Omit<DocumentAttrs, "storageKey" | "orderId" | "clientId"> & {
+export type DocumentDTO = Omit<DocumentAttrs, "data" | "orderId" | "clientId"> & {
   id: string;
   orderId: string;
   clientId: string;
 };
 
 export function toDocumentDTO(doc: DocumentLean): DocumentDTO {
-  const { storageKey: _storageKey, ...rest } = doc;
+  const { data: _data, ...rest } = doc;
   return {
     ...rest,
+    sizeBytes: rest.sizeBytes ?? 0,
     id: String(doc._id),
     orderId: String(doc.orderId),
     clientId: String(doc.clientId),
@@ -56,55 +56,81 @@ export async function listDocuments(orderId: string): Promise<DocumentDTO[]> {
   return docs.map(toDocumentDTO);
 }
 
-/**
- * Builds the storage key for a version.
- *
- * The path mirrors the business hierarchy — client → order → type → version — so
- * a listing in the bucket is readable by a human, and the type is sanitised
- * because it is free text from a form.
- */
-function storageKeyFor(clientId: string, orderId: string, type: string, version: number): string {
-  const slug = type
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return `clients/${clientId}/orders/${orderId}/${slug}/v${version}`;
+/** `GET /documents/:id/data` — returns the stored file binary for download. */
+export async function getDocumentData(documentId: string): Promise<{
+  data: Buffer;
+  fileName: string;
+  contentType: string;
+}> {
+  if (!Types.ObjectId.isValid(documentId)) {
+    throw AppError.notFound("Document not found.");
+  }
+  const doc = await Document.findById(documentId)
+    .select("data fileName contentType status")
+    .lean<DocumentLean>();
+  if (!doc) throw AppError.notFound("Document not found.");
+  if (doc.status === "Not Received" || doc.status === "Requested") {
+    throw AppError.unprocessable(
+      "NOT_RECEIVED",
+      "This document has not been received yet, so there is no file to download.",
+    );
+  }
+  return {
+    data: doc.data ?? Buffer.alloc(0),
+    fileName: doc.fileName,
+    contentType: doc.contentType,
+  };
 }
 
-export interface UploadUrlResult {
-  uploadUrl: string;
+/**
+ * `POST /documents/upload`
+ *
+ * Accepts `multipart/form-data` with fields: `file` (the file), `orderId`,
+ * `type`. The server stores the file bytes directly in MongoDB — no object
+ * storage, no presigned URLs, no S3 bucket.
+ *
+ * Needs `documents.view` rather than `documents.review` because uploading is
+ * part of collecting documents, not judging them — a sales agent gathering
+ * evidence should be able to upload without also being able to approve.
+ *
+ * A new version makes the previous ones historical. Their bytes and their
+ * review outcomes are preserved — only the status changes — so an approved
+ * document is never silently overwritten. The replacement must be reviewed
+ * on its own merits.
+ */
+export interface UploadResult {
   document: DocumentDTO;
 }
 
-/**
- * `POST /documents/upload-url`
- *
- * Creates the document row for a new version and returns a presigned PUT URL.
- *
- * The version number is computed here, not sent by the client, so two
- * concurrent uploads cannot collide on the same version and a client cannot
- * request "version 1" to overwrite an approved document.
- *
- * The document starts life as `Not Received`: the row exists so the client has
- * something to show and the key is reserved, but nothing claims the file is
- * there until `confirmUpload` checks the bucket.
- */
-export async function requestUploadUrl(
+export async function uploadDocument(
   orderId: string,
+  file: { buffer: Buffer; originalname: string; mimetype: string; size: number },
   type: string,
-  contentType: string,
   actor: ActorMeta,
-): Promise<UploadUrlResult> {
-  const storage = getStorage();
-  if (!storage) throw AppError.unprocessable("STORAGE_NOT_CONFIGURED", storageMessage());
-
+): Promise<UploadResult> {
   if (!Types.ObjectId.isValid(orderId)) {
     throw AppError.badRequest("INVALID_ID", "Invalid order id.");
   }
 
   const order = await Order.findById(orderId).lean();
   if (!order) throw AppError.notFound("Order not found.");
+
+  const allowed = allowedUpload(file.mimetype);
+  if (!allowed) {
+    throw AppError.unprocessable(
+      "CONTENT_TYPE_NOT_ALLOWED",
+      `"${file.mimetype}" is not an accepted document type.`,
+    );
+  }
+  if (file.size > allowed.maxBytes) {
+    throw AppError.unprocessable(
+      "FILE_TOO_LARGE",
+      `${allowed.label} files must be under ${Math.round(allowed.maxBytes / (1024 * 1024))} MB.`,
+    );
+  }
+  if (file.size === 0) {
+    throw AppError.unprocessable("FILE_EMPTY", "The uploaded file is empty.");
+  }
 
   // The version is computed from what already exists, so two concurrent
   // uploads of the same type can both read "no prior versions" and both try to
@@ -115,7 +141,6 @@ export async function requestUploadUrl(
   for (let attempt = 0; attempt < 5 && !doc; attempt += 1) {
     const prior = await Document.find({ orderId: order._id, type }).lean<DocumentLean[]>();
     const version = prior.length === 0 ? 1 : Math.max(...prior.map((d) => d.version)) + 1;
-    const storageKey = storageKeyFor(String(order.clientId), orderId, type, version);
 
     try {
       doc = await Document.create({
@@ -123,11 +148,12 @@ export async function requestUploadUrl(
         clientId: order.clientId,
         type,
         version,
-        storageKey,
-        contentType,
-        sizeBytes: null,
-        status: "Not Received",
-        receivedAt: null,
+        fileName: file.originalname,
+        contentType: file.mimetype,
+        sizeBytes: file.size,
+        data: file.buffer,
+        status: "Received",
+        receivedAt: new Date(),
         reviewedAt: null,
         reviewedBy: null,
         rejectionReason: null,
@@ -148,8 +174,8 @@ export async function requestUploadUrl(
 
   // A new version makes the previous ones historical. Their files and their
   // review outcomes are preserved — only the status changes — so an approved
-  // document is never silently overwritten. The replacement must be reviewed on
-  // its own merits.
+  // document is never silently overwritten. The replacement must be reviewed
+  // on its own merits.
   //
   // `version: { $lt: doc.version }` is the important part. Without the ceiling,
   // two concurrent uploads resolve to v1 and v2, and whichever calls this last
@@ -167,10 +193,6 @@ export async function requestUploadUrl(
     { $set: { status: "Superseded" } },
   );
 
-  // Signed after the row exists so the URL always matches the stored key, even
-  // when a retry bumped the version.
-  const uploadUrl = await storage.presignUpload(doc.storageKey, contentType);
-
   await recordAccessLog({
     documentId: doc._id,
     actorId: actor.id,
@@ -184,123 +206,13 @@ export async function requestUploadUrl(
     actorEmail: actor.email,
     ip: actor.ip ?? null,
     requestId: actor.requestId ?? null,
-    action: "document.upload-url",
+    action: "document.upload",
     entityType: "document",
     entityId: String(doc._id),
-    after: { orderId, type, version: doc.version, contentType },
+    after: { orderId, type, version: doc.version, contentType: file.mimetype, sizeBytes: file.size },
   });
 
-  return { uploadUrl, document: toDocumentDTO(doc.toObject() as DocumentLean) };
-}
-
-/**
- * `POST /documents/:id/confirm-upload`
- *
- * Marks a document received, but only if the object is actually in the bucket.
- *
- * Trusting the client's word would let someone mark a document received without
- * uploading it, and the whole review workflow downstream is built on "received"
- * meaning a file exists. A `HeadObject` call is cheap and settles it.
- *
- * The same HEAD gives the real byte count, which is the only trustworthy size:
- * the browser's claim is unverified because the bytes never pass through the
- * API. An oversized or empty object is rejected here rather than sitting in the
- * review queue until a human notices.
- */
-export async function confirmUpload(
-  documentId: string,
-  actor: ActorMeta,
-): Promise<DocumentDTO> {
-  const doc = await Document.findById(documentId);
-  if (!doc) throw AppError.notFound("Document not found.");
-
-  const storage = getStorage();
-  // Distinguish "storage is not configured" from "the file is missing". Both
-  // used to surface as UPLOAD_NOT_FOUND, which told the operator their upload
-  // had gone missing when in fact nothing had ever been configured.
-  if (!storage) {
-    throw AppError.unprocessable(
-      "STORAGE_NOT_CONFIGURED",
-      "Document storage is not configured, so uploads cannot be confirmed.",
-    );
-  }
-
-  const sizeBytes = await storage.objectSize(doc.storageKey);
-  if (sizeBytes === null) {
-    throw AppError.unprocessable(
-      "UPLOAD_NOT_FOUND",
-      "No file found at this document's storage location. Upload it before confirming.",
-    );
-  }
-
-  const allowed = allowedUpload(doc.contentType);
-  const cap = allowed?.maxBytes ?? MAX_UPLOAD_BYTES;
-  if (sizeBytes > cap) {
-    throw AppError.unprocessable(
-      "FILE_TOO_LARGE",
-      `The uploaded file is ${Math.round(sizeBytes / (1024 * 1024))} MB, over the ${Math.round(cap / (1024 * 1024))} MB limit for ${allowed?.label ?? "this file type"}.`,
-    );
-  }
-  if (sizeBytes === 0) {
-    throw AppError.unprocessable("FILE_EMPTY", "The uploaded file is empty.");
-  }
-
-  doc.status = "Received";
-  doc.receivedAt = new Date();
-  doc.sizeBytes = sizeBytes;
-  await doc.save();
-
-  await recordAudit({
-    actorId: actor.id,
-    actorEmail: actor.email,
-    ip: actor.ip ?? null,
-    requestId: actor.requestId ?? null,
-    action: "document.received",
-    entityType: "document",
-    entityId: String(doc._id),
-    after: { status: "Received", receivedAt: doc.receivedAt },
-  });
-
-  return toDocumentDTO(doc.toObject() as DocumentLean);
-}
-
-/**
- * `GET /documents/:id/download-url`
- *
- * Returns a presigned GET URL and writes an access-log row.
- *
- * The log is written even though the file itself never touches the API — that is
- * the point of the feature: "who looked at this client's passport scan" is a
- * question the business can answer after the fact.
- */
-export async function requestDownloadUrl(
-  documentId: string,
-  actor: ActorMeta,
-): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
-  const doc = await Document.findById(documentId);
-  if (!doc) throw AppError.notFound("Document not found.");
-
-  const storage = getStorage();
-  if (!storage) throw AppError.unprocessable("STORAGE_NOT_CONFIGURED", storageMessage());
-
-  if (doc.status === "Not Received" || doc.status === "Requested") {
-    throw AppError.unprocessable(
-      "NOT_RECEIVED",
-      "This document has not been received yet, so there is no file to download.",
-    );
-  }
-
-  const downloadUrl = await storage.presignDownload(doc.storageKey);
-
-  await recordAccessLog({
-    documentId: doc._id,
-    actorId: actor.id,
-    action: "download",
-    ip: actor.ip ?? null,
-    requestId: actor.requestId ?? null,
-  });
-
-  return { downloadUrl, expiresInSeconds: 15 * 60 };
+  return { document: toDocumentDTO(doc.toObject() as DocumentLean) };
 }
 
 /**
@@ -396,8 +308,4 @@ async function recordAccessLog(
     // trail: a logging outage is logged, not surfaced.
     logger.error({ err, documentId: String(entry.documentId), action: entry.action }, "Access log write failed");
   }
-}
-
-function storageMessage(): string {
-  return "Object storage is not configured. Set S3_BUCKET in server/.env.";
 }

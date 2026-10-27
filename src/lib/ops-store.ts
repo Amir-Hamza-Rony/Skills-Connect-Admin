@@ -1,4 +1,4 @@
-import { api } from "@/lib/api"
+import { api, uploadFile, getAccessToken, ApiError } from "@/lib/api"
 import {
   DOC_CHECKLISTS,
   type Client,
@@ -14,14 +14,13 @@ import {
 /**
  * Operations data-access layer.
  *
- * CUTOVER STATE (Phase B4): clients, orders, workflow tasks and documents all
- * come from the real API now. Every function keeps its original async
- * signature, so pages never change — only the body behind it does.
+ * CUTOVER STATE: clients, orders, workflow tasks and documents all come from
+ * the real API now. Every function keeps its original async signature, so
+ * pages never change — only the body behind it does.
  *
- * Documents no longer carry a `storageKey`: files live in object storage and
- * are fetched with a short-lived presigned URL, so the raw key never reaches
- * the browser. Uploading is a two-step dance — `requestUploadUrl` then
- * `confirmUpload` — rather than a single call.
+ * Document file bytes are stored directly in MongoDB — there is no object
+ * storage, no S3 bucket, and no presigned URLs. Uploading is a single
+ * `multipart/form-data` POST; downloading streams bytes back from the API.
  */
 
 /* ---------- Clients (real API) ---------- */
@@ -147,36 +146,40 @@ export async function listDocuments(orderId: string): Promise<OrderDocument[]> {
 }
 
 /**
- * Step 1 of an upload: ask the server for a presigned PUT URL.
- *
- * The server picks the version and the storage key; the client only learns the
- * signed URL. The file bytes go straight to storage, never through the API.
+ * Upload a document file. Sends `multipart/form-data` with fields: `file`,
+ * `orderId`, `type`. The server stores the bytes directly in MongoDB and
+ * returns the document metadata.
  */
-export async function requestUploadUrl(
+export async function uploadDocument(
   orderId: string,
+  file: File,
   type: string,
-  contentType: string,
   _actorId = "preview-user",
-): Promise<{ uploadUrl: string; document: OrderDocument }> {
-  return api.post("/documents/upload-url", { orderId, type, contentType })
+): Promise<{ document: OrderDocument }> {
+  const formData = new FormData()
+  formData.append("file", file)
+  formData.append("orderId", orderId)
+  formData.append("type", type)
+  return uploadFile(`/documents/upload`, formData)
 }
 
-/** Step 2 of an upload: confirm the file landed so the status becomes Received. */
-export async function confirmUpload(
+/** Download a document's file bytes from the API. Returns a Blob. */
+export async function downloadDocument(
   documentId: string,
-  _actorId = "preview-user",
-): Promise<OrderDocument> {
-  const data = await api.post<{ document: OrderDocument }>(
-    `/documents/${documentId}/confirm-upload`,
-  )
-  return data.document
-}
-
-/** A short-lived download URL. The server logs the access. */
-export async function requestDownloadUrl(
-  documentId: string,
-): Promise<{ downloadUrl: string; expiresInSeconds: number }> {
-  return api.get(`/documents/${documentId}/download-url`)
+): Promise<Blob> {
+  const res = await fetch(`${(import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "")}/documents/${documentId}/download`, {
+    method: "GET",
+    headers: {
+      Accept: "*/*",
+      ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
+    },
+    credentials: "include",
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new ApiError(res.status, "DOWNLOAD_FAILED", text || `Download failed with status ${res.status}.`)
+  }
+  return res.blob()
 }
 
 export async function reviewDocument(

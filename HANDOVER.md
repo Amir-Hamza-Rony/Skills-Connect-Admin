@@ -43,10 +43,12 @@ running API and the real Atlas database.
 - **Masters** — `agents`, `qualifications`, `rtos` and `supplier_routes` now
   exist as real collections, which is what an order needs in order to be
   created.
-- **Documents** — real collection in object storage. Uploads use short-lived
-  presigned URLs so file bytes never pass through the API; the raw storage key
-  is never sent to the browser. Versions supersede rather than overwrite, and
-  every upload, download and review is access-logged.
+- **Documents** — real collection in MongoDB. File bytes are stored directly as
+  BSON Binary in each document — there is no object storage, no S3 bucket, and
+  no presigned URLs. Uploads go through `POST /documents/upload`
+  (multipart/form-data); downloads stream through `GET /documents/:id/download`.
+  Versions supersede rather than overwrite, and every upload, download and
+  review is access-logged.
 - **Finance** — invoices (server-allocated numbers, void never delete), payment
   plans with unlimited instalments, payments and refunds. Allocation is
   server-authoritative: the client sends an amount and the server decides where
@@ -136,12 +138,12 @@ a status transition writing its history row and its stage task together.
 ## B4 acceptance — verified (59/59 live, 105/105 automated)
 
 The B4 smoke run adds: document list returns an empty list for an unknown
-order · upload-url fails cleanly with `STORAGE_NOT_CONFIGURED` when no bucket
-is set (a named 422, not a 500) · anonymous upload-url → 401.
+order · upload rejects an unallowed content type with a named 422 · anonymous
+upload → 401.
 
 The automated suite proves the B4 criteria against a real MongoDB: the
-upload → review → v2 flow with a version superseding the first · the string
-`storageKey` appearing in no API response while being present in the database ·
+upload → review → v2 flow with a version superseding the first · the `data`
+field appearing in no JSON API response while being present in the database ·
 access-log rows for upload, download and review with the actor attributed.
 
 ## B2 acceptance — verified live (45/45)
@@ -163,15 +165,16 @@ immediately · password reset invalidates a token minted in the *same second* ·
   API. The "failed → retry → Synced, exactly one record" criterion is
   unproven until credentials and an OAuth-authorised company exist.
 - Seed data is synthetic (DEMO codes) — migration + reconciliation pending.
-- `docker-compose.yml` (Redis + MinIO) and the Dockerfile are still unverified:
-  Docker Desktop is not installed on the dev machine. The Redis fallback means
-  the API works without it, but the queue has never run against a real Redis.
+- `docker-compose.yml` (Redis only — no MinIO) and the Dockerfile are still
+  unverified: Docker Desktop is not installed on the dev machine. The API works
+  without Redis (inline fallback), but the queue has never run against a real
+  Redis.
 
 ## External blockers (unchanged)
 
-MongoDB access · S3-compatible bucket · Redis/queue · QuickBooks sandbox +
-credentials · `RTO & Onboarding Master Hub.xlsx` · QuickBooks export ·
-production hosting access.
+MongoDB access · Redis/queue · QuickBooks sandbox + credentials ·
+`RTO & Onboarding Master Hub.xlsx` · QuickBooks export · production hosting
+access.
 
 ## Suggested merge path (user runs git)
 

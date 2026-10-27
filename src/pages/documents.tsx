@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { Link } from "react-router-dom"
 
 import { Badge } from "@/components/ui/badge"
@@ -11,12 +11,11 @@ import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
 import {
   checklistFor,
-  confirmUpload,
+  downloadDocument,
   listClients,
   listDocuments,
   listOrders,
-  requestDownloadUrl,
-  requestUploadUrl,
+  uploadDocument,
   reviewDocument,
 } from "@/lib/ops-store"
 import { listQualifications, listUserDirectory, qualificationLabel } from "@/lib/store"
@@ -56,8 +55,10 @@ function inQueue(d: OrderDocument, q: Queue): boolean {
 /**
  * Documents workspace: cross-order queues (Missing / Under Review /
  * Rejected / …), approve/reject with reason, and new versions that
- * supersede instead of overwriting. Real signed-URL upload arrives
- * with the backend — versions here record the metadata contract.
+ * supersede instead of overwriting. File bytes are stored directly in
+ * MongoDB — there is no S3 bucket, no object storage, and no presigned
+ * URLs. Uploading is a single form-data POST; downloading streams bytes
+ * back from the API.
  */
 export function DocumentsPage() {
   const { user, permissions } = useAuth()
@@ -77,6 +78,11 @@ export function DocumentsPage() {
   const [formError, setFormError] = useState<string | null>(null)
 
   const [orderFilter, setOrderFilter] = useState("")
+
+  // Upload form state
+  const [uploading, setUploading] = useState<OrderDocument | null>(null)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void (async () => {
@@ -139,61 +145,47 @@ export function DocumentsPage() {
     }
   }
 
-  /** Confirms an upload so the document flips from Not Received to Received. */
-  async function onConfirm(d: OrderDocument) {
-    setFormError(null)
-    try {
-      const updated = await confirmUpload(d.id, user?.id ?? "preview-user")
-      setDocs((prev) => prev?.map((x) => (x.id === updated.id ? updated : x)) ?? null)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Could not confirm the upload.")
-    }
-  }
-
-  /** Opens a short-lived signed download URL. */
+  /** Downloads the stored file bytes and opens them in the browser. */
   async function onDownload(d: OrderDocument) {
     setFormError(null)
     try {
-      const { downloadUrl } = await requestDownloadUrl(d.id)
-      window.open(downloadUrl, "_blank", "noopener")
+      setSaving(true)
+      const blob = await downloadDocument(d.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, "_blank", "noopener")
+      // Revoke the object URL after a short delay so the browser can consume it.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Could not get a download link.")
+      setFormError(err instanceof Error ? err.message : "Could not download the file.")
+    } finally {
+      setSaving(false)
     }
   }
 
-  /**
-   * Starts a new version of a document type.
-   *
-   * With real object storage the upload is a two-step flow: ask for a
-   * presigned URL, PUT the file straight to storage, then confirm. The
-   * presigned URL is short-lived, so the file input must be wired to it
-   * immediately — this just creates the row and returns the URL.
-   */
-  function onNewVersion(d: OrderDocument) {
-    const type = window.prompt(
-      "File type",
-      d.type,
-    )
-    if (!type?.trim()) return
+  /** Handles picking a file for a new version of a document type. */
+  function onFileSelected(d: OrderDocument, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadFile(file)
+    setUploading(d)
+  }
 
-    const contentType = window.prompt("File MIME type", "application/pdf") ?? "application/pdf"
-
-    void (async () => {
-      try {
-        const { uploadUrl, document } = await requestUploadUrl(
-          d.orderId,
-          type.trim(),
-          contentType,
-          user?.id ?? "preview-user",
-        )
-        // The row is created optimistically so the list updates immediately;
-        // the status flips to Received once the file is confirmed uploaded.
-        setDocs((prev) => (prev ? [document, ...prev] : [document]))
-        window.open(uploadUrl, "_blank", "noopener")
-      } catch (err) {
-        setFormError(err instanceof Error ? err.message : "Could not start the upload.")
-      }
-    })()
+  /** Submits the selected file as a new document version. */
+  async function onSubmitUpload() {
+    if (!uploading || !uploadFile) return
+    setFormError(null)
+    setSaving(true)
+    try {
+      const { document } = await uploadDocument(uploading.orderId, uploadFile, uploading.type)
+      setDocs((prev) => (prev ? [document, ...prev] : [document]))
+      setUploadFile(null)
+      setUploading(null)
+      fileInputRef.current!.value = ""
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not upload the file.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (!docs) {
@@ -228,8 +220,7 @@ export function DocumentsPage() {
               queue === q
                 ? "border-primary/50 bg-accent text-accent-foreground"
                 : "text-muted-foreground hover:text-foreground",
-            )}
-          >
+            )}>
             {q} <span className="text-xs tabular-nums">({counts.get(q) ?? 0})</span>
           </button>
         ))}
@@ -254,6 +245,7 @@ export function DocumentsPage() {
           {formError}
         </p>
       )}
+
       <DataTable<OrderDocument>
         rows={visible}
         emptyMessage={`Nothing in the ${queue} queue.`}
@@ -267,6 +259,7 @@ export function DocumentsPage() {
                 <span className="font-medium">{d.type}</span>
                 <span className="block text-xs text-muted-foreground">
                   v{d.version} · {clientById.get(d.clientId)?.legalName ?? d.clientId}
+                  {` · ${d.fileName} (${Math.round(d.sizeBytes / 1024)} KB)`}
                   {" · "}
                   <Link to={`/orders/${d.orderId}`} className="text-primary underline-offset-4 hover:underline">
                     {orderById.get(d.orderId) && qualById.get(orderById.get(d.orderId)!.qualificationId)
@@ -295,59 +288,86 @@ export function DocumentsPage() {
           {
             key: "actions",
             label: "Actions",
-            render: (d) => (
-              <span className="flex flex-wrap gap-1.5">
-                {canReview && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setReviewing(d)
-                      setVerdict("Approved")
-                      setReason("")
-                    }}
-                  >
-                    Review
-                  </Button>
-                )}
-                {d.status === "Not Received" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title="Confirm the uploaded file landed"
-                    onClick={() => void onConfirm(d)}
-                  >
-                    Confirm
-                  </Button>
-                )}
-                {d.status !== "Not Received" && d.status !== "Requested" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    title="Download via a short-lived signed URL"
-                    onClick={() => void onDownload(d)}
-                  >
-                    Download
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onNewVersion(d)}
-                  title="Upload a new version of this document"
-                >
-                  + Version
-                </Button>
-              </span>
-            ),
+            render: (d) => {
+              const isBeingUploaded = uploading?.id === d.id
+              return (
+                <span className="flex flex-wrap gap-1.5">
+                  {canReview && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setReviewing(d)
+                        setVerdict("Approved")
+                        setReason("")
+                      }}
+                    >
+                      Review
+                    </Button>
+                  )}
+                  {d.status === "Not Received" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Confirm the uploaded file landed"
+                      disabled
+                    >
+                      Confirm
+                    </Button>
+                  )}
+                  {d.status !== "Not Received" && d.status !== "Requested" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Download the stored file from the API"
+                      onClick={() => void onDownload(d)}
+                    >
+                      Download
+                    </Button>
+                  )}
+                  {isBeingUploaded ? (
+                    <Button size="sm" variant="outline" disabled onClick={onSubmitUpload}>
+                      Uploading…
+                    </Button>
+                  ) : (
+                    <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="sr-only"
+                        onChange={(e) => void onFileSelected(d, e)}
+                        accept=".pdf,.jpg,.jpeg,.png,.heic,.webp,.docx,.xlsx,.csv,.txt"
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => fileInputRef.current?.click()}
+                        title={`Upload a new version of ${d.type} (v${d.version})`}
+                      >
+                        + Version
+                      </Button>
+                      {uploadFile && uploadFile.name && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={onSubmitUpload}
+                          disabled={saving}
+                        >
+                          Upload {uploadFile.name}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </span>
+              )
+            },
           },
         ]}
       />
 
       <p className="pt-3 text-xs text-muted-foreground">
-        Checklist per qualification: {checklistFor("").length} standard types. File bytes move to
-        signed-URL object storage with the backend; versions here already follow the
-        never-overwrite contract.
+        Checklist per qualification: {checklistFor("").length} standard types. File bytes are stored
+        directly in MongoDB — no S3 bucket, no object storage, no presigned URLs.
       </p>
 
       <Dialog

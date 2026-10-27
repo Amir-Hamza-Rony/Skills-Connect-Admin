@@ -31,7 +31,7 @@ describe("env validation", () => {
   });
 
   it("applies documented defaults for blank values", async () => {
-    blank("PORT", "HOST", "LOG_LEVEL", "MONGODB_DB", "REDIS_URL", "STORAGE_PROVIDER");
+    blank("PORT", "HOST", "LOG_LEVEL", "MONGODB_DB", "REDIS_URL");
     vi.stubEnv("MONGODB_URI", "mongodb+srv://user:pass@example.invalid/db");
     vi.resetModules();
 
@@ -42,7 +42,6 @@ describe("env validation", () => {
     expect(env.LOG_LEVEL).toBe("info");
     expect(env.MONGODB_DB).toBe("skills_connect_admin");
     expect(env.REDIS_URL).toBe("redis://localhost:6379");
-    expect(env.STORAGE_PROVIDER).toBe("minio");
   });
 
   it("treats a blank PORT as unset instead of coercing it to 0", async () => {
@@ -77,23 +76,4 @@ describe("env validation", () => {
     await expect(import("../src/config/env.js")).rejects.toThrow();
   });
 
-  it("leaves storage credentials optional until B4", async () => {
-    blank("S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY", "S3_SECRET_KEY");
-    vi.stubEnv("MONGODB_URI", "mongodb+srv://example.invalid/db");
-    vi.resetModules();
-
-    const { env } = await import("../src/config/env.js");
-
-    expect(env.S3_ENDPOINT).toBeUndefined();
-    expect(env.S3_BUCKET).toBeUndefined();
-    expect(env.S3_FORCE_PATH_STYLE).toBe(true);
-  });
-
-  it("rejects an unknown STORAGE_PROVIDER", async () => {
-    vi.stubEnv("STORAGE_PROVIDER", "dropbox");
-    vi.stubEnv("MONGODB_URI", "mongodb+srv://example.invalid/db");
-    vi.resetModules();
-
-    await expect(import("../src/config/env.js")).rejects.toThrow();
-  });
 });

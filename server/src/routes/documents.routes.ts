@@ -1,65 +1,56 @@
 import { Router } from "express";
 import { z } from "zod";
+import multer from "multer";
 
 import { AppError } from "../lib/app-error.js";
 import { param } from "../lib/params.js";
-import { ALLOWED_UPLOAD_TYPES, allowedUpload } from "../lib/uploads.js";
 import { requireAuth } from "../middleware/require-auth.js";
 import { requirePermission } from "../middleware/require-permission.js";
 import {
   accessLog,
-  confirmUpload,
-  requestDownloadUrl,
-  requestUploadUrl,
+  getDocumentData,
   reviewDocument,
+  uploadDocument,
 } from "../services/document.service.js";
 import { auditContextFrom } from "../services/audit.service.js";
+
+/** Memory storage — file bytes stay in RAM and are written straight to MongoDB. */
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB hard ceiling
+});
 
 export const documentsRouter: Router = Router();
 
 documentsRouter.use(requireAuth);
 
-const uploadBody = z.object({
-  orderId: z.string().min(1),
-  type: z.string().trim().min(1).max(120),
-  // Validated against the allowlist below rather than accepted as free text.
-  // See `lib/uploads.ts` for why the API is the only place this can be decided.
-  contentType: z.string().trim().min(1).max(200),
-  fileName: z.string().trim().max(200).optional(),
-  sizeBytes: z.number().int().positive().optional(),
-});
-
 /**
- * `POST /documents/upload-url`
+ * `POST /documents/upload`
  *
- * Returns a presigned PUT URL and the new document row. The client uploads the
- * file bytes straight to storage; the API never sees them.
- *
- * Needs `documents.view` rather than `documents.review` because uploading is
- * part of collecting documents, not judging them — a sales agent gathering
- * evidence should be able to upload without also being able to approve.
+ * Accepts `multipart/form-data` with fields: `file`, `orderId`, `type`.
+ * Stores the file bytes directly in MongoDB — no object storage, no S3,
+ * no presigned URLs.
  */
 documentsRouter.post(
-  "/upload-url",
+  "/upload",
   requirePermission("documents.view"),
+  upload.single("file"),
   async (req, res) => {
-    const body = uploadBody.parse(req.body);
+    const file = req.file;
+    const orderId = req.body.orderId;
+    const type = req.body.type;
 
-    const allowed = allowedUpload(body.contentType);
-    if (!allowed) {
-      throw AppError.unprocessable(
-        "CONTENT_TYPE_NOT_ALLOWED",
-        `"${body.contentType}" is not an accepted document type. Allowed: ${ALLOWED_UPLOAD_TYPES.map((t) => t.label).join(", ")}.`,
-      );
+    if (!file) {
+      throw AppError.badRequest("NO_FILE", "No file was uploaded. Use the `file` form field.");
     }
-    if (body.sizeBytes !== undefined && body.sizeBytes > allowed.maxBytes) {
-      throw AppError.unprocessable(
-        "FILE_TOO_LARGE",
-        `${allowed.label} files must be under ${Math.round(allowed.maxBytes / (1024 * 1024))} MB.`,
-      );
+    if (!orderId || typeof orderId !== "string") {
+      throw AppError.badRequest("INVALID_ORDER_ID", "orderId is required.");
+    }
+    if (!type || typeof type !== "string") {
+      throw AppError.badRequest("INVALID_TYPE", "type is required.");
     }
 
-    const result = await requestUploadUrl(body.orderId, body.type, body.contentType, {
+    const result = await uploadDocument(orderId, file, type, {
       ...auditContextFrom(req),
       id: req.auth!.userId,
       email: req.auth!.email,
@@ -68,36 +59,24 @@ documentsRouter.post(
   },
 );
 
-/** `POST /documents/:id/confirm-upload` — verify the file landed, mark received. */
-documentsRouter.post(
-  "/:id/confirm-upload",
-  requirePermission("documents.view"),
-  async (req, res) => {
-    const document = await confirmUpload(param(req, "id"), {
-      ...auditContextFrom(req),
-      id: req.auth!.userId,
-      email: req.auth!.email,
-    });
-    res.json({ document });
-  },
-);
-
 /**
- * `GET /documents/:id/download-url`
+ * `GET /documents/:id/download`
  *
- * Returns a presigned GET URL and records the access. The raw storage key is
- * never in the response.
+ * Streams the stored file bytes from MongoDB with the document's content type.
+ * The raw binary never reaches the browser as JSON — it is served as an
+ * octet-stream download with the original filename.
  */
 documentsRouter.get(
-  "/:id/download-url",
+  "/:id/download",
   requirePermission("documents.view"),
   async (req, res) => {
-    const result = await requestDownloadUrl(param(req, "id"), {
-      ...auditContextFrom(req),
-      id: req.auth!.userId,
-      email: req.auth!.email,
-    });
-    res.json(result);
+    const { data, fileName, contentType } = await getDocumentData(param(req, "id"));
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Length", String(data.length));
+    res.setHeader("X-Request-Id", req.headers["x-request-id"] ?? "");
+    res.send(data);
   },
 );
 

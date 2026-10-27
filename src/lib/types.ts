@@ -289,6 +289,9 @@ export interface OrderDocument {
   orderId: string
   type: string
   version: number
+  fileName: string
+  contentType: string
+  sizeBytes: number
   status: DocumentStatus
   receivedAt: string | null
   reviewedAt: string | null

@@ -107,19 +107,6 @@ const schema = z.object({
     z.string().min(1).default("redis://localhost:6379"),
   ),
 
-  // ---- Object storage (D4: MinIO in dev, Cloudflare R2 in prod) ----
-  /** Left unset until B4 — storage must not be required to boot the API. */
-  STORAGE_PROVIDER: z.preprocess(
-    blankToUndefined,
-    z.enum(["minio", "s3", "r2"]).default("minio"),
-  ),
-  S3_ENDPOINT: optionalText,
-  S3_REGION: z.preprocess(blankToUndefined, z.string().min(1).default("auto")),
-  S3_BUCKET: optionalText,
-  S3_ACCESS_KEY: optionalText,
-  S3_SECRET_KEY: optionalText,
-  S3_FORCE_PATH_STYLE: booleanFromEnv(true),
-
   // ---- HTTP ----
   CORS_ORIGINS: csv("http://localhost:5173,http://127.0.0.1:5173"),
   JSON_BODY_LIMIT: z.preprocess(blankToUndefined, z.string().min(1).default("1mb")),

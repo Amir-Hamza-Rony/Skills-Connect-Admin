@@ -37,7 +37,7 @@ Copy-Item server/.env.example server/.env
 #    set SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD / SEED_ADMIN_NAME first
 npm run server:seed
 
-# 5. Start local infra (Redis for B5, MinIO for B4)
+# 5. Start local infra (Redis for B5)
 docker compose up -d
 ```
 

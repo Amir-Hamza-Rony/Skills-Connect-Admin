@@ -48,9 +48,9 @@ Everything references this chain. The database is normalized to support multiple
 ## 5. Document request, upload, review, versioning
 
 1. Per-order checklist derived from `document_requirements` (qualification → required documents). Types include identity, USI/transcript, employment evidence, reference letters, photos/skills evidence, RTO enrolment kit, certificate (Spec §9).
-2. Lifecycle: `POST /documents/upload-url` → signed URL → upload to S3-compatible storage (`/clients/{clientId}/orders/{orderId}/{documentType}/{version}`) → metadata in MongoDB (`type, storageKey, version, status, receivedAt, reviewedAt, reviewedBy`). Drive links retained only as `legacyExternalLink` during migration.
+2. Lifecycle: `POST /documents/upload` (multipart/form-data) → file bytes stored directly in MongoDB (`/clients/{clientId}/orders/{orderId}/{documentType}/{version}` logical path) → metadata in MongoDB (`type, fileName, contentType, sizeBytes, version, status, receivedAt, reviewedAt, reviewedBy`). Drive links retained only as `legacyExternalLink` during migration.
 3. Review (`PATCH /documents/:id/review`): approve/reject with reason; versions immutable — a new version **supersedes**, never overwrites an approved version.
-4. Raw storage keys never exposed; temporary signed URLs only.
+4. Raw binary never exposed to the browser; downloads stream through `GET /documents/:id/download`.
 
 ## 6. Statuses — never a single generic field (Spec §5–§6)
 
@@ -114,7 +114,7 @@ Known quality risks: RTO name/abbreviation variants; blank Target RTO rows; free
 - **Day 4 — Finance, QuickBooks, dashboards, audit/search/migration.** Invoices, unlimited instalment plans, payments + allocation + refunds, async idempotent QB sync + retry UI, role dashboards + reports + saved views, audit log, Excel import + reconciliation scaffolding. *Deps: QuickBooks sandbox/credentials, source workbook `RTO & Onboarding Master Hub.xlsx`, QuickBooks export for reconciliation.*
 - **Day 5 — Integration, security, responsive/theme testing, deployment, UAT/handover.** End-to-end chain test, RBAC/security review (no secrets in client/logs), responsive + theme-flash testing, deployment verification, UAT on migrated records, archive-freeze handover. *Deps: production DB/host access, stakeholder UAT availability.*
 
-External requirements that can block Day 4–5: database access, S3 bucket, Redis (if BullMQ), QuickBooks credentials + API access, source workbook + Drive files, deployment credentials. Do not promise production integrations or full reconciliation without them.
+External requirements that can block Day 4–5: database access, Redis (if BullMQ), QuickBooks credentials + API access, source workbook + Drive files, deployment credentials. Do not promise production integrations or full reconciliation without them.
 
 ---
 
@@ -126,7 +126,7 @@ Status key: **Planned** (documented, no code) · **In Progress** · **Implemente
 
 | # | Requirement (spec) | Module | Dependencies | Acceptance test | Status |
 |---|---|---|---|---|---|
-| A1 | React+TS frontend; Node+Express+TS backend; MongoDB; JWT/session auth; S3-compat storage; BullMQ+Redis/equiv; Docker deploy | Platform | Hosting, DB, bucket, Redis decisions | Scaffold boots; health check; env-separated config | Planned |
+| A1 | React+TS frontend; Node+Express+TS backend; MongoDB; JWT/session auth; BullMQ+Redis/equiv; Docker deploy | Platform | Hosting, DB, Redis decisions | Scaffold boots; health check; env-separated config | Planned |
 | A2 | Central logs + error monitoring | Observability | Deploy target | API + QB failures traceable | Planned |
 | A3 | Normalized model: 1 client→N orders; 1 order→1 client+1 qualification; 1 order→N payments/docs/history/invoices | Data model | Status-enum dictionary | Multi-order, multi-payment, route-change fixtures pass | Planned |
 
@@ -203,7 +203,7 @@ All 15 acceptance criteria (C1–C3, F1–F3, E1–E3, G1–G2, H1–H2, permiss
 1. No git repository/branch exists in this folder — expected `rony-dev` could not be confirmed; no Phase 1/1.1 code to review.
 2. Workbook `RTO & Onboarding Master Hub.xlsx` and QuickBooks export referenced by the spec were not present in this folder — migration and reconciliation cannot be verified without them.
 3. Exact RBAC permission matrix, commission rules, completion-criteria per qualification, and document-type catalogue need business confirmation.
-4. Stack details (Vite vs other bundler, Mongoose confirmation, session vs JWT rotation, S3 provider, BullMQ vs equivalent, Docker target, log vendor) are recommendations until scaffolding pins them.
+4. Stack details (Vite vs other bundler, Mongoose confirmation, session vs JWT rotation, BullMQ vs equivalent, Docker target, log vendor) are recommendations until scaffolding pins them.
 5. DOCX images (`image1–4.png`) and custom XML were not extracted as requirements — assumed illustrative; flag if any contains normative workflow.
 
 ---
@@ -217,8 +217,8 @@ days (not 5 days); ~6–8 spent.
 
 **Decisions D1–D4 confirmed by owner:** JWT access + rotating httpOnly refresh (D1) ·
 same-repo `server/` with npm workspaces (D2) · **MongoDB Atlas only, no local
-Docker Mongo (D3)** · **MinIO in dev, Cloudflare R2 in prod (D4 — an env-only
-switch, since all three are S3-compatible)**.
+Docker Mongo (D3)** · **Document bytes stored directly in MongoDB (D4 — no object
+storage provider needed)**.
 
 | Phase | Work | Days | Key dependencies | Done when |
 |---|---|---|---|---|
@@ -234,10 +234,10 @@ copy is UI-only. Frontend cutover so far covers auth + users + roles — the mas
 stores switch over in B3.
 | **B2** Auth + RBAC | User/Role models, argon2id, access+refresh rotation, revoke/logout, rate-limit, `requirePermission` everywhere, audit middleware, real frontend login | 3–4 | D1–D3 locked | Wrong password rejected; Sales gets 403 on `/users` |
 | **B3** Masters + Clients/Orders | 17 collections (incl. new `certificates`), dedupe report, immutable snapshots, transactional transitions + history + tasks, stores → API calls | 4–5 | Mongo access | Multi-order + snapshot + history in one transaction |
-| **B4** Documents + storage | S3 adapter, 15-min signed URLs, checklist templates, version-supersede, review, access logging | 3–4 | D4 locked, bucket creds | Raw storage key never reaches client |
+| **B4** Documents + storage | MongoDB binary storage (Buffer in document), checklist templates, version-supersede, review, access logging | 3–4 | None (no bucket creds needed) | File data stored in MongoDB, served via API |
 | **B5** Finance + QuickBooks | Invoices/plans/payments server-side, allocation + overdue calc, BullMQ idempotent QB sync + webhook + retry | 4–5 | QB sandbox creds, Redis | Retry creates exactly one QB record |
 | **B6** Reports + Audit + Migration + Deploy | Aggregation pipelines, audit indexes, Excel import + reconciliation, Docker prod image, staging deploy, UAT | 5–7 | Workbook, QB export, hosting | DB totals reconcile workbook vs QB |
 
-External blockers: MongoDB Atlas URL/db/IP-allowlist (offered, pending) · storage choice+creds ·
+External blockers: MongoDB Atlas URL/db/IP-allowlist (offered, pending) ·
 Redis · QuickBooks creds · source workbook · hosting target. Frontend cutover needs
 no page rewrites (`api.ts` adapter, same store signatures, delete `src/mocks/*`).

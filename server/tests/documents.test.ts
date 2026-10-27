@@ -3,7 +3,6 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../src/app.js";
 import { Document, DocumentAccessLog } from "../src/models/document.model.js";
-import { setStorageOverride } from "../src/integrations/storage/s3.js";
 import {
   clearTestDb,
   createUser,
@@ -13,9 +12,9 @@ import {
 } from "./helpers/test-db.js";
 
 /**
- * B4 acceptance criteria:
- *  - upload → review → v2 flow
- *  - the raw storage key never reaches the client
+ * B4 acceptance criteria (MongoDB storage):
+ *  - upload → review → v2 flow (bytes stored in MongoDB)
+ *  - the raw file `data` never reaches the client as JSON
  *  - access-log rows exist
  */
 setupTestDatabase();
@@ -31,46 +30,6 @@ beforeEach(async () => {
   await clearTestDb();
   await seedRoles();
 });
-
-/**
- * A fake storage adapter.
- *
- * The real key is server-generated and never leaves the server, so a test cannot
- * know it in advance. `existAll()` lets a test say "the file is there" without
- * guessing the key; the default is that nothing exists, which is what the
- * "refuses to confirm" guard needs.
- */
-function fakeStorage() {
-  const existing = new Set<string>();
-  const sizes = new Map<string, number>();
-  let allExist = false;
-  return {
-    existing,
-    async presignUpload(key: string) {
-      return `https://storage.test/upload/${encodeURIComponent(key)}?sig=abc`;
-    },
-    async presignDownload(key: string) {
-      return `https://storage.test/download/${encodeURIComponent(key)}?sig=xyz`;
-    },
-    async keyExists(key: string) {
-      return allExist || existing.has(key);
-    },
-    /** The real size the bucket reports — drives the upload size cap. */
-    async objectSize(key: string) {
-      if (!(allExist || existing.has(key))) return null;
-      return sizes.get(key) ?? 1024;
-    },
-    /** Test helper: simulate the client having PUT the file. */
-    put(key: string, sizeBytes = 1024) {
-      existing.add(key);
-      sizes.set(key, sizeBytes);
-    },
-    /** Test helper: every key is reported as present. */
-    existAll() {
-      allExist = true;
-    },
-  };
-}
 
 async function signIn(email: string, roleNames: string[] = ["Super Admin"]): Promise<string> {
   await createUser({ email, password: PASSWORD, roleNames });
@@ -96,35 +55,51 @@ async function makeOrder(token: string): Promise<string> {
   return order.body.order.id as string;
 }
 
+/** Uploads a file as multipart/form-data. */
+async function uploadFile(
+  token: string,
+  orderId: string,
+  type: string,
+  content: Buffer | string = Buffer.from("test file content"),
+  fileName = "test.pdf",
+  mimeType = "application/pdf",
+) {
+  return request(app)
+    .post("/documents/upload")
+    .set(authed(token))
+    .attach("file", content, fileName)
+    .field("orderId", orderId)
+    .field("type", type);
+}
+
 /* ==================== upload → review → v2 ==================== */
 
 describe("upload → review → v2 flow", () => {
   it("walks a document from upload to review to a second version", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    // 1. Ask for an upload URL.
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "Identity (passport / licence)", contentType: "image/jpeg" });
+    // 1. Upload a file (multipart, bytes stored directly in MongoDB).
+    const up = await uploadFile(
+      token,
+      orderId,
+      "Identity (passport / licence)",
+      Buffer.from("passport scan bytes"),
+      "passport.pdf",
+      "application/pdf",
+    );
 
     expect(up.status).toBe(201);
-    expect(up.body.uploadUrl).toContain("https://storage.test/upload/");
-    expect(up.body.document.status).toBe("Not Received");
+    expect(up.body.document.status).toBe("Received");
     expect(up.body.document.version).toBe(1);
+    expect(up.body.document.fileName).toBe("passport.pdf");
+    expect(up.body.document.contentType).toBe("application/pdf");
+    expect(up.body.document.sizeBytes).toBeGreaterThan(0);
 
-    // 2. Client uploads, then confirms.
-    storage.existAll();
-    const confirm = await request(app)
-      .post(`/documents/${up.body.document.id}/confirm-upload`)
-      .set(authed(token));
-    expect(confirm.status).toBe(200);
-    expect(confirm.body.document.status).toBe("Received");
+    // The raw `data` field must never appear in JSON responses.
+    expect(JSON.stringify(up.body)).not.toContain("data");
 
-    // 3. Reviewer approves.
+    // 2. Reviewer approves.
     const review = await request(app)
       .patch(`/documents/${up.body.document.id}/review`)
       .set(authed(token))
@@ -133,17 +108,17 @@ describe("upload → review → v2 flow", () => {
     expect(review.body.document.status).toBe("Approved");
     expect(review.body.document.reviewedBy).toEqual(expect.any(String));
 
-    // 4. A second version supersedes the first.
-    const up2 = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "Identity (passport / licence)", contentType: "image/jpeg" });
+    // 3. A second version supersedes the first.
+    const up2 = await uploadFile(
+      token,
+      orderId,
+      "Identity (passport / licence)",
+      Buffer.from("updated passport scan bytes"),
+      "passport-v2.pdf",
+      "application/pdf",
+    );
     expect(up2.status).toBe(201);
     expect(up2.body.document.version).toBe(2);
-
-    await request(app)
-      .post(`/documents/${up2.body.document.id}/confirm-upload`)
-      .set(authed(token));
 
     const list = await request(app).get(`/orders/${orderId}/documents`).set(authed(token));
     expect(list.status).toBe(200);
@@ -156,52 +131,108 @@ describe("upload → review → v2 flow", () => {
   });
 });
 
-/* ==================== the storage key never leaves the server ==================== */
+/* ==================== file data never leaves as JSON ==================== */
 
-describe("storage key containment", () => {
-  it("is absent from every API response", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
+describe("file data containment", () => {
+  it("is absent from every JSON API response", async () => {
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    const up = await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("transcript content"),
+      "transcript.pdf",
+      "application/pdf",
+    );
 
-    expect(JSON.stringify(up.body)).not.toContain("storageKey");
-    expect(JSON.stringify(up.body)).not.toContain("clients/");
-
-    storage.existAll();
-    await request(app)
-      .post(`/documents/${up.body.document.id}/confirm-upload`)
-      .set(authed(token));
+    expect(JSON.stringify(up.body)).not.toContain("data");
 
     const list = await request(app).get(`/orders/${orderId}/documents`).set(authed(token));
-    expect(JSON.stringify(list.body)).not.toContain("storageKey");
-
-    const down = await request(app)
-      .get(`/documents/${up.body.document.id}/download-url`)
-      .set(authed(token));
-    expect(down.status).toBe(200);
-    expect(JSON.stringify(down.body)).not.toContain("storageKey");
-    expect(down.body.downloadUrl).toContain("https://storage.test/download/");
+    expect(JSON.stringify(list.body)).not.toContain("data");
   });
 
-  it("is present in the database, where it belongs", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
+  it("is stored in the database as a Buffer", async () => {
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("transcript content bytes here"),
+      "transcript.pdf",
+      "application/pdf",
+    );
 
-    const doc = await Document.findById(up.body.document.id).lean();
-    expect(doc?.storageKey).toMatch(/^clients\/.*\/v1$/);
+    const list = await request(app).get(`/orders/${orderId}/documents`).set(authed(token));
+    const docId = list.body.documents[0].id;
+
+    const doc = await Document.findById(docId).lean();
+    expect(doc?.data).toBeInstanceOf(Buffer);
+    expect(Buffer.compare(doc!.data, Buffer.from("transcript content bytes here"))).toBe(0);
+  });
+});
+
+/* ==================== download ==================== */
+
+describe("document download", () => {
+  it("streams stored bytes with correct content type", async () => {
+    const token = await signIn("admin@example.com");
+    const orderId = await makeOrder(token);
+
+    const up = await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("download me please"),
+      "transcript.pdf",
+      "application/pdf",
+    );
+
+    const down = await request(app)
+      .get(`/documents/${up.body.document.id}/download`)
+      .set(authed(token));
+
+    expect(down.status).toBe(200);
+    expect(down.headers["content-type"]).toContain("application/pdf");
+    expect(Buffer.compare(down.body, Buffer.from("download me please"))).toBe(0);
+    expect(down.headers["content-disposition"]).toContain("transcript.pdf");
+  });
+
+  it("refuses download before the file is received", async () => {
+    const token = await signIn("admin@example.com");
+    const orderId = await makeOrder(token);
+
+    const up = await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("content"),
+      "transcript.pdf",
+      "application/pdf",
+    );
+    // Upload sets status to "Received" directly; to test "Not Received" path,
+    // we directly create a document with status "Not Received".
+    const doc = await Document.create({
+      orderId,
+      clientId: new (require("mongoose").Types.ObjectId)(),
+      type: "USI transcript",
+      version: 1,
+      fileName: "x.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 1,
+      data: Buffer.alloc(1),
+      status: "Not Received",
+    });
+
+    const down = await request(app)
+      .get(`/documents/${doc.id}/download`)
+      .set(authed(token));
+
+    expect(down.status).toBe(422);
+    expect(down.body.error.code).toBe("NOT_RECEIVED");
   });
 });
 
@@ -209,20 +240,22 @@ describe("storage key containment", () => {
 
 describe("document access logging", () => {
   it("records an upload, a download and a review", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    const up = await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("content"),
+      "transcript.pdf",
+      "application/pdf",
+    );
     const docId = up.body.document.id as string;
 
-    storage.existAll();
-    await request(app).post(`/documents/${docId}/confirm-upload`).set(authed(token));
-    await request(app).get(`/documents/${docId}/download-url`).set(authed(token));
+    await request(app)
+      .get(`/documents/${docId}/download`)
+      .set(authed(token));
     await request(app)
       .patch(`/documents/${docId}/review`)
       .set(authed(token))
@@ -241,17 +274,19 @@ describe("document access logging", () => {
   });
 
   it("writes access rows even when the document is never downloaded", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("content"),
+      "transcript.pdf",
+      "application/pdf",
+    );
 
-    const rows = await DocumentAccessLog.find({ documentId: up.body.document.id }).lean();
+    const rows = await DocumentAccessLog.find({}).lean();
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0]?.action).toBe("upload");
   });
@@ -260,57 +295,45 @@ describe("document access logging", () => {
 /* ==================== guards ==================== */
 
 describe("document guards", () => {
-  it("refuses to confirm an upload that never happened", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
+  it("rejects an unallowed content type", async () => {
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    const res = await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("x"),
+      "evil.exe",
+      "application/x-msdownload",
+    );
 
-    // storage.existAll() deliberately NOT called — the file is not there.
-    const confirm = await request(app)
-      .post(`/documents/${up.body.document.id}/confirm-upload`)
-      .set(authed(token));
-
-    expect(confirm.status).toBe(422);
-    expect(confirm.body.error.code).toBe("UPLOAD_NOT_FOUND");
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("CONTENT_TYPE_NOT_ALLOWED");
   });
 
-  it("refuses a download before the file is received", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
+  it("rejects an empty file", async () => {
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    const res = await uploadFile(token, orderId, "USI transcript", Buffer.alloc(0), "empty.pdf", "application/pdf");
 
-    const down = await request(app)
-      .get(`/documents/${up.body.document.id}/download-url`)
-      .set(authed(token));
-
-    expect(down.status).toBe(422);
-    expect(down.body.error.code).toBe("NOT_RECEIVED");
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("FILE_EMPTY");
   });
 
   it("requires a rejection reason", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
-    storage.existAll();
-    await request(app).post(`/documents/${up.body.document.id}/confirm-upload`).set(authed(token));
+    const up = await uploadFile(
+      token,
+      orderId,
+      "USI transcript",
+      Buffer.from("content"),
+      "transcript.pdf",
+      "application/pdf",
+    );
 
     const res = await request(app)
       .patch(`/documents/${up.body.document.id}/review`)
@@ -322,18 +345,24 @@ describe("document guards", () => {
   });
 
   it("refuses to review a document that was never received", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    // Create a document directly with status "Requested" (never received).
+    const doc = await Document.create({
+      orderId,
+      clientId: new (require("mongoose").Types.ObjectId)(),
+      type: "USI transcript",
+      version: 1,
+      fileName: "x.pdf",
+      contentType: "application/pdf",
+      sizeBytes: 0,
+      data: Buffer.alloc(0),
+      status: "Requested",
+    });
 
     const res = await request(app)
-      .patch(`/documents/${up.body.document.id}/review`)
+      .patch(`/documents/${doc.id}/review`)
       .set(authed(token))
       .send({ verdict: "Approved" });
 
@@ -342,20 +371,12 @@ describe("document guards", () => {
   });
 
   it("assigns version numbers so concurrent uploads cannot collide", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const token = await signIn("admin@example.com");
     const orderId = await makeOrder(token);
 
     const [a, b] = await Promise.all([
-      request(app)
-        .post("/documents/upload-url")
-        .set(authed(token))
-        .send({ orderId, type: "USI transcript", contentType: "application/pdf" }),
-      request(app)
-        .post("/documents/upload-url")
-        .set(authed(token))
-        .send({ orderId, type: "USI transcript", contentType: "application/pdf" }),
+      uploadFile(token, orderId, "USI transcript", Buffer.from("a"), "a.pdf", "application/pdf"),
+      uploadFile(token, orderId, "USI transcript", Buffer.from("b"), "b.pdf", "application/pdf"),
     ]);
 
     const versions = [a.body.document?.version, b.body.document?.version].sort();
@@ -363,37 +384,21 @@ describe("document guards", () => {
   });
 });
 
-/* ==================== storage not configured ==================== */
-
-describe("without storage configured", () => {
-  it("fails cleanly instead of crashing", async () => {
-    setStorageOverride(null);
-    const token = await signIn("admin@example.com");
-    const orderId = await makeOrder(token);
-
-    const res = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(token))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
-
-    expect(res.status).toBe(422);
-    expect(res.body.error.code).toBe("STORAGE_NOT_CONFIGURED");
-  });
-});
-
 /* ==================== RBAC ==================== */
 
 describe("RBAC on documents", () => {
   it("lets a Document Reviewer upload but not manage users", async () => {
-    const storage = fakeStorage();
-    setStorageOverride(storage);
     const reviewer = await signIn("review@example.com", ["Document Reviewer"]);
     const orderId = await makeOrder(await signIn("admin@example.com"));
 
-    const up = await request(app)
-      .post("/documents/upload-url")
-      .set(authed(reviewer))
-      .send({ orderId, type: "USI transcript", contentType: "application/pdf" });
+    const up = await uploadFile(
+      reviewer,
+      orderId,
+      "USI transcript",
+      Buffer.from("content"),
+      "transcript.pdf",
+      "application/pdf",
+    );
     expect(up.status).toBe(201);
 
     expect((await request(app).get("/users").set(authed(reviewer))).status).toBe(403);
