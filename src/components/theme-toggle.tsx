@@ -1,3 +1,4 @@
+"use client"
 import { useEffect, useRef, useState } from "react"
 import { Check, Monitor, Moon, Sun } from "lucide-react"
 
@@ -21,9 +22,17 @@ const OPTIONS: Array<{
 export function ThemeToggle({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme()
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const ActiveIcon = OPTIONS.find((o) => o.value === theme)?.icon ?? Monitor
+  // The stored preference is only readable in the browser. Rendering the
+  // neutral "System" icon until mount keeps server and client markup identical.
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const ActiveIcon =
+    (mounted && OPTIONS.find((o) => o.value === theme)?.icon) || Monitor
 
   useEffect(() => {
     if (!open) return

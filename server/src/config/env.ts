@@ -115,7 +115,7 @@ const schema = z.object({
   ),
 
   // ---- HTTP ----
-  CORS_ORIGINS: csv("http://localhost:5173,http://127.0.0.1:5173"),
+  CORS_ORIGINS: csv("http://localhost:3000,http://127.0.0.1:3000"),
   JSON_BODY_LIMIT: z.preprocess(blankToUndefined, z.string().min(1).default("1mb")),
 
   // ---- Auth (D1: JWT access + rotating refresh) ----

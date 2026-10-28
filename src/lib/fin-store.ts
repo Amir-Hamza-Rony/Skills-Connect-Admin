@@ -14,10 +14,10 @@ import type {
 /**
  * Finance data-access layer.
  *
- * CUTOVER STATE (Phase B5): invoices, payment plans, payments and the
- * QuickBooks sync queue all come from the real API. The audit trail stays on
- * the in-memory preview store until B6 builds the audit viewer — the server
- * already writes its own append-only audit rows for every mutation.
+ * CUTOVER STATE (Phases B5–B6): invoices, payment plans, payments, the
+ * QuickBooks sync queue and the audit trail all come from the real API. The
+ * server writes its own append-only audit rows for every mutation; the client
+ * only reads them via `GET /audit`.
  *
  * Every function keeps its original async signature, so pages never change —
  * only the body behind it does.
@@ -148,38 +148,21 @@ export async function retryQBSync(
   return api.post(`/integrations/quickbooks/sync/${entityType}/${entityId}`)
 }
 
-/* ---------- Audit (preview until B6) ---------- */
+/* ---------- Audit (real API, B6 cutover) ---------- */
 
-const latency = () => new Promise((r) => setTimeout(r, 120))
-
-let audit: AuditEvent[] = []
-
+/**
+ * Reads the append-only audit trail from `GET /audit`. Server-side filtering
+ * and pagination mean we never pull the whole collection to the browser.
+ * `entityId` is passed as a search term so callers can scope to one record.
+ */
 export async function listAudit(entityId?: string): Promise<AuditEvent[]> {
-  await latency()
-  return entityId ? audit.filter((a) => a.entityId === entityId) : [...audit]
-}
-
-export function auditLog(
-  entityType: string,
-  entityId: string,
-  action: string,
-  before: string,
-  after: string,
-  actorId: string,
-) {
-  audit = [
-    {
-      id: `a-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`,
-      timestamp: new Date().toISOString(),
-      actorId,
-      entityType,
-      entityId,
-      action,
-      before,
-      after,
-    },
-    ...audit,
-  ]
+  const params = new URLSearchParams()
+  if (entityId) params.set("search", entityId)
+  params.set("pageSize", "100")
+  const data = await api.get<{ events: AuditEvent[]; total: number }>(
+    `/audit?${params.toString()}`,
+  )
+  return data.events
 }
 
 export type { Instalment, InvoiceStatus }

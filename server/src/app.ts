@@ -1,3 +1,5 @@
+import { join, resolve } from "node:path";
+
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Express } from "express";
@@ -101,6 +103,45 @@ export function createApp(): Express {
   app.use("/saved-views", savedViewsRouter);
   app.use("/users", usersRouter);
   app.use("/workflow", workflowRouter);
+
+  // ---------------------------------------------------------------
+  // Serve built frontend (Vite dist) from the same process.
+  // This lets us run API + frontend on ONE Render web service.
+  // ---------------------------------------------------------------
+  const frontendDist = resolve(import.meta.dirname, "../../dist");
+  app.use(express.static(frontendDist));
+
+  // SPA fallback: any non-API route serves index.html (React Router)
+  app.use((req, res, next) => {
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/auth") ||
+      req.path.startsWith("/agents") ||
+      req.path.startsWith("/clients") ||
+      req.path.startsWith("/communications") ||
+      req.path.startsWith("/documents") ||
+      req.path.startsWith("/finance") ||
+      req.path.startsWith("/invoices") ||
+      req.path.startsWith("/orders") ||
+      req.path.startsWith("/payment-plans") ||
+      req.path.startsWith("/payments") ||
+      req.path.startsWith("/qualifications") ||
+      req.path.startsWith("/reports") ||
+      req.path.startsWith("/rtos") ||
+      req.path.startsWith("/supplier-routes") ||
+      req.path.startsWith("/integrations") ||
+      req.path.startsWith("/roles") ||
+      req.path.startsWith("/saved-views") ||
+      req.path.startsWith("/users") ||
+      req.path.startsWith("/workflow") ||
+      req.path.startsWith("/health") ||
+      req.path.startsWith("/assets") ||
+      req.path === "/favicon.ico"
+    ) {
+      return next();
+    }
+    res.sendFile(join(frontendDist, "index.html"));
+  });
 
   app.use(notFoundHandler);
   app.use(errorHandler);

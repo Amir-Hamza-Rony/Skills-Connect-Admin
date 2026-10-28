@@ -1,3 +1,4 @@
+"use client"
 import { useEffect, type ReactNode } from "react"
 
 /**
@@ -53,7 +54,6 @@ export function Dialog({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            ref={(el) => el?.focus()}
             className="rounded-md p-1.5 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             ✕

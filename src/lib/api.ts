@@ -19,7 +19,7 @@ import type { Permission, RoleName } from "@/lib/types"
  * as a replay and revoke the whole session family.
  */
 
-const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "")
+const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "")
 
 /** Endpoints that must never trigger the auto-refresh path (it would loop). */
 const NO_REFRESH = ["/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all"]
@@ -34,13 +34,21 @@ export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly requestId: string | undefined
+  readonly details: Array<{ path: string; message: string }>
 
-  constructor(status: number, code: string, message: string, requestId?: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    requestId?: string,
+    details: Array<{ path: string; message: string }> = [],
+  ) {
     super(message)
     this.name = "ApiError"
     this.status = status
     this.code = code
     this.requestId = requestId
+    this.details = details
   }
 
   /** Credentials were rejected — the login form should show the message. */
@@ -93,7 +101,12 @@ export function onSessionLost(listener: () => void): () => void {
 /* ---------------- internals ---------------- */
 
 interface ErrorEnvelope {
-  error?: { code?: string; message?: string; requestId?: string }
+  error?: {
+    code?: string
+    message?: string
+    requestId?: string
+    details?: Array<{ path: string; message: string }>
+  }
 }
 
 function toApiError(status: number, payload: unknown): ApiError {
@@ -103,6 +116,7 @@ function toApiError(status: number, payload: unknown): ApiError {
     envelope?.error?.code ?? "HTTP_ERROR",
     envelope?.error?.message ?? `Request failed with status ${status}.`,
     envelope?.error?.requestId,
+    envelope?.error?.details ?? [],
   )
 }
 

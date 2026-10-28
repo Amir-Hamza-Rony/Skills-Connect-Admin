@@ -7,10 +7,11 @@
     "server"
   ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "lint": "oxlint",
-    "preview": "vite preview",
+    "typecheck": "next typegen && tsc --noEmit && npm run server:typecheck",
     "server:dev": "npm run dev --workspace=@sc/server",
     "server:build": "npm run build --workspace=@sc/server",
     "server:start": "npm run start --workspace=@sc/server",
@@ -18,27 +19,25 @@
     "server:smoke": "npm run smoke --workspace=@sc/server",
     "server:verify:queue": "npm run verify:queue --workspace=@sc/server",
     "server:test": "npm run test --workspace=@sc/server",
-    "server:typecheck": "npm run typecheck --workspace=@sc/server",
-    "typecheck": "tsc -b && npm run server:typecheck"
+    "server:typecheck": "npm run typecheck --workspace=@sc/server"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.53.0",
+    "next": "^16.4.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.4",
-    "tailwind-merge": "^3.7.0",
-    "tailwindcss": "^4.3.3"
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
-    "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.2"
   }
 }

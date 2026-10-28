@@ -8,7 +8,7 @@ import { env } from "../config/env.js";
  * httpOnly  — JavaScript (including any XSS payload) cannot read it, which is
  *             the entire reason this cookie exists.
  * SameSite  — `lax` for same-site deployments (API and SPA on one site, which
- *             includes localhost:5173 -> localhost:4000). Cross-site hosting
+ *             includes localhost:3000 -> localhost:4000). Cross-site hosting
  *             requires COOKIE_SAME_SITE=none, and browsers then also require
  *             Secure, which is why COOKIE_SECURE is forced true in production.
  * path      — scoped to /auth so the cookie is not attached to every API call.

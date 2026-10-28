@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { connectDb, disconnectDb } from "../config/db.js";
 import { env } from "../config/env.js";
 import { hashPassword, PASSWORD_MIN_LENGTH } from "../lib/password.js";
+import { Types } from "mongoose";
 import { logger } from "../lib/logger.js";
 import { Role } from "../models/role.model.js";
 import { User } from "../models/user.model.js";
@@ -50,19 +51,39 @@ export async function seed(): Promise<{ roles: number; adminCreated: boolean }> 
 
   const email = env.SEED_ADMIN_EMAIL.toLowerCase();
   const existing = await User.findOne({ email });
-  if (existing) {
-    logger.info({ email }, "Admin already exists — left untouched");
-    return { roles: ROLE_NAMES.length, adminCreated: false };
-  }
-
   const superAdmin = await Role.findOne({ name: "Super Admin" });
   if (!superAdmin) throw new Error("Super Admin role missing — cannot create the admin account.");
+
+  const passwordHash = await hashPassword(env.SEED_ADMIN_PASSWORD);
+
+  if (existing) {
+    // Re-seeding: sync the admin's password, name and role from .env so the
+    // credentials on disk always match what's in the database.
+    existing.name = env.SEED_ADMIN_NAME ?? "Super Admin";
+    existing.passwordHash = passwordHash;
+    existing.passwordChangedAt = new Date();
+    existing.active = true;
+    existing.roleIds = [superAdmin._id as unknown as Types.ObjectId];
+    await existing.save();
+
+    await recordAuditLog({
+      actorId: existing.id as unknown as Types.ObjectId,
+      actorEmail: email,
+      action: "user.seed_admin_resync",
+      entityType: "user",
+      entityId: existing.id,
+      after: { email, role: "Super Admin", resynced: true },
+    });
+
+    logger.info({ email, id: existing.id }, "Super Admin resynced from .env");
+    return { roles: ROLE_NAMES.length, adminCreated: false };
+  }
 
   const admin = await User.create({
     email,
     name: env.SEED_ADMIN_NAME ?? "Super Admin",
     phone: "",
-    passwordHash: await hashPassword(env.SEED_ADMIN_PASSWORD),
+    passwordHash,
     passwordChangedAt: new Date(),
     roleIds: [superAdmin._id],
     active: true,

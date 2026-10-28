@@ -69,8 +69,8 @@ These are external dependencies — the code cannot supply them:
 
 **Root `.env` (frontend)** — copy from `.env.example`:
 ```
-VITE_API_BASE_URL=https://your-api.onrender.com
-VITE_APP_NAME=Skills Connect Admin
+NEXT_PUBLIC_API_BASE_URL=https://your-api.onrender.com
+NEXT_PUBLIC_APP_NAME=Skills Connect Admin
 ```
 
 **`server/.env`** — copy from `server/.env.example` and fill:
@@ -107,9 +107,10 @@ SEED_ADMIN_NAME=Super Admin
 |---------|------|--------------|---------------|
 | API | Web Service | `npm ci && npm run server:build` | `npm run server:start` |
 | Worker | Background Worker | `npm ci && npm run server:build` | `node server/dist/worker.js` |
-| Frontend | Static Site | `npm ci && npm run build` | (static) `dist/` |
+| Frontend | Web Service (Node) | `npm ci && npm run build` | `npm run start` |
 
-Set all env vars from `server/.env` on API and Worker. Set `VITE_API_BASE_URL` on Frontend.
+Set all env vars from `server/.env` on API and Worker. Set
+`NEXT_PUBLIC_API_BASE_URL` on Frontend (it is baked in at build time).
 
 ### 3. Seed the database
 
