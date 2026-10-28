@@ -1,0 +1,146 @@
+# ============================================================================
+# Skills Connect Admin — Render Production Deployment Blueprint
+# Frontend: https://skills-connect-admin.onrender.com
+# API:      https://skills-connect-admin-api.onrender.com
+# ============================================================================
+
+services:
+  # ---------------------------------------------------------------
+  # Backend API (Web Service) — REST API on port 4000
+  # ---------------------------------------------------------------
+  - type: web
+    name: skills-connect-admin-api
+    env: node
+    plan: standard
+    region: oregon
+    buildCommand: "npm ci && npm run server:build"
+    startCommand: "npm run server:start"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: HOST
+        value: 0.0.0.0
+      - key: LOG_LEVEL
+        value: info
+      - key: TRUST_PROXY
+        value: 1
+      - key: START_BACKGROUND_JOBS
+        value: true
+      - key: MONGODB_URI
+        sync: false    # Set manually in Render dashboard
+      - key: MONGODB_DB
+        value: skills_connect_admin
+      - key: MONGODB_TIMEOUT_MS
+        value: 10000
+      - key: REDIS_URL
+        sync: false    # Set manually from your Redis service
+      - key: CORS_ORIGINS
+        value: https://skills-connect-admin.onrender.com
+      - key: JSON_BODY_LIMIT
+        value: 1mb
+      - key: JWT_ACCESS_SECRET
+        sync: false    # Generate 32+ random chars — never commit
+      - key: JWT_REFRESH_SECRET
+        sync: false    # MUST differ from JWT_ACCESS_SECRET
+      - key: ACCESS_TOKEN_TTL_MIN
+        value: 15
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: 7
+      - key: COOKIE_SECURE
+        value: true
+      - key: COOKIE_SAME_SITE
+        value: lax
+      - key: LOGIN_RATE_LIMIT_MAX
+        value: 5
+      - key: LOGIN_RATE_LIMIT_WINDOW_MIN
+        value: 15
+      - key: GLOBAL_RATE_LIMIT_MAX
+        value: 300
+      - key: GLOBAL_RATE_LIMIT_WINDOW_MIN
+        value: 1
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_ADMIN_NAME
+        value: Super Admin
+      # QuickBooks (optional)
+      - key: QB_REALM_ID
+        sync: false
+      - key: QB_CLIENT_ID
+        sync: false
+      - key: QB_CLIENT_SECRET
+        sync: false
+      - key: QB_SANDBOX
+        value: false
+      - key: QB_WEBHOOK_SECRET
+        sync: false
+      - key: QB_INCOME_ACCOUNT_ID
+        value: 1
+    healthCheckPath: /health/ready
+    autoDeploy: false
+
+  # ---------------------------------------------------------------
+  # Background Worker — BullMQ queue + hourly overdue sweep
+  # Runs separately so jobs stay alive 24/7
+  # ---------------------------------------------------------------
+  - type: worker
+    name: skills-connect-admin-worker
+    env: node
+    plan: standard
+    region: oregon
+    buildCommand: "npm ci && npm run server:build"
+    startCommand: "node server/dist/worker.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: skills_connect_admin
+      - key: REDIS_URL
+        sync: false
+      - key: QB_REALM_ID
+        sync: false
+      - key: QB_CLIENT_ID
+        sync: false
+      - key: QB_CLIENT_SECRET
+        sync: false
+      - key: QB_SANDBOX
+        value: false
+
+  # ---------------------------------------------------------------
+  # Frontend (Static Site) — serves dist/ with SPA fallback
+  # ---------------------------------------------------------------
+  - type: web
+    name: skills-connect-admin-frontend
+    env: static
+    plan: standard
+    region: oregon
+    buildCommand: "npm ci && npm run build"
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://skills-connect-admin-api.onrender.com
+      - key: VITE_APP_NAME
+        value: Skills Connect Admin
+    routes:
+      - type: rewrite
+        source: /assets/(*)
+        dest: /assets/$1
+      - type: rewrite
+        source: /favicon.ico
+        dest: /favicon.ico
+      - type: rewrite
+        source: /(*)
+        dest: /index.html
+        status: 200
+
+databases:
+  - name: skills-connect-redis
+    plan: starter
+    region: oregon
