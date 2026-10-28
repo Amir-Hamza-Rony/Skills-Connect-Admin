@@ -64,8 +64,18 @@ function lazyClient(kind: "commands" | "queue") {
   let unreachable = false;
 
   const build = (): Redis => {
+    const { host, port } = parseRedisUrl(env.REDIS_URL);
+    // A placeholder hostname (e.g. `<your-upstash-host>`) is not a real Redis
+    // endpoint. Attempting DNS resolution would spam ENOTFOUND errors on every
+    // retry. Detect it up-front so the client never connects and callers fall
+    // back to inline execution silently.
+    if (!host || /^[<>\s]*$/.test(host) || /^<.*>$/.test(host)) {
+      throw new Error(`Redis URL is a placeholder: ${env.REDIS_URL}`);
+    }
+
     const options: RedisOptions = {
-      ...parseRedisUrl(env.REDIS_URL),
+      host,
+      port,
       connectTimeout: CONNECT_TIMEOUT_MS,
       // BullMQ blocks on commands that must wait indefinitely, so it requires
       // this to be null; ordinary commands need the opposite or a Redis stall

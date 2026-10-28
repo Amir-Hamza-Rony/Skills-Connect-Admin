@@ -1,5 +1,6 @@
+"use client"
 import { useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import Link from "next/link"
 import { Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -106,7 +107,7 @@ export function GlobalSearch() {
           {hits.map((h, i) => (
             <li key={i}>
               <Link
-                to={h.to}
+                href={h.to}
                 onClick={() => setOpen(false)}
                 className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
               >

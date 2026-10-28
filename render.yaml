@@ -114,31 +114,23 @@ services:
         value: false
 
   # ---------------------------------------------------------------
-  # Frontend (Static Site) — serves dist/ with SPA fallback
+  # Frontend (Next.js web service)
   # ---------------------------------------------------------------
   - type: web
     name: skills-connect-admin-frontend
-    env: static
+    env: node
     plan: standard
     region: oregon
     buildCommand: "npm ci && npm run build"
-    staticPublishPath: dist
+    startCommand: "npm run start"
     envVars:
-      - key: VITE_API_BASE_URL
+      - key: NODE_VERSION
+        value: 24
+      # NEXT_PUBLIC_* values are baked into the browser bundle at build time.
+      - key: NEXT_PUBLIC_API_BASE_URL
         value: https://skills-connect-admin-api.onrender.com
-      - key: VITE_APP_NAME
+      - key: NEXT_PUBLIC_APP_NAME
         value: Skills Connect Admin
-    routes:
-      - type: rewrite
-        source: /assets/(*)
-        dest: /assets/$1
-      - type: rewrite
-        source: /favicon.ico
-        dest: /favicon.ico
-      - type: rewrite
-        source: /(*)
-        dest: /index.html
-        status: 200
 
 databases:
   - name: skills-connect-redis

@@ -12,18 +12,19 @@ QuickBooks sync, dashboards, reports, and audit.
 
 ## Stack
 
-- React 19 + Vite 8 + TypeScript 6
+- Next.js 16 (App Router) + React 19 + TypeScript 6
 - Tailwind CSS v4 + shadcn/ui (new-york) + Lucide icons
-- react-router-dom (BrowserRouter, SPA fallback)
+- next/navigation (file-based App Router)
 
 ## Quickstart
 
 ```powershell
 npm install
-npm run dev      # local dev server
-npm run build    # production build (dist/)
-npm run preview  # serve the production build
-npm run lint     # oxlint
+npm run dev        # Next.js dev server on http://localhost:3000
+npm run build      # production build (.next/)
+npm run start      # serve the production build
+npm run typecheck  # Next route types + tsc + server typecheck
+npm run lint       # oxlint
 ```
 
 ## Demo accounts (preview auth — any password works)
@@ -42,21 +43,21 @@ resets on reload. Real data arrives via migration — see `HANDOVER.md`.
 
 ## Project layout
 
-- `src/pages/` — route screens (clients, orders, documents, finance, …)
+- `src/app/` — App Router routes (layouts, pages, providers, root theme script)
+- `src/views/` — route screens (clients, orders, documents, finance, …)
 - `src/components/` — shell, dashboard, ui primitives, dialogs, tables
 - `src/lib/` — types, RBAC matrix, auth, theme, stores (API-shaped)
-- `src/mocks/` — clearly-labeled preview seed data
 - `design.md` / `architecture.md` / `workflow.md` — source-of-truth docs
 
 ## Environment
 
-Copy `.env.example` to `.env` when backend variables exist. Never commit
-`.env`. `localStorage` holds only the non-sensitive theme preference
-(`sc-theme`) and the preview session id — never tokens or secrets.
+Copy `.env.example` to `.env.local` when you need to override values. Never
+commit secrets. Next.js inlines every `NEXT_PUBLIC_*` value into the browser
+bundle at build time. `localStorage` holds only the non-sensitive theme
+preference (`sc-theme`) and the sidebar collapse flag — never tokens or secrets.
 
 ## Deployment
 
-Static hosting of `dist/` (any static host) serves the current shell.
-`vite preview` already serves it with SPA fallback. Production deployment
-with backend, database (MongoDB), and QuickBooks wiring follows
-`HANDOVER.md`.
+Next.js runs as a normal Node server (`npm run build && npm run start`) or is
+deployed natively to Vercel. Production deployment with backend, database
+(MongoDB), and QuickBooks wiring follows `DEPLOYMENT.md` and `HANDOVER.md`.

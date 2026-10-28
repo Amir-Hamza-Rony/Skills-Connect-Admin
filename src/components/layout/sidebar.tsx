@@ -1,6 +1,8 @@
+"use client"
 import { useEffect } from "react"
 import { LogOut } from "lucide-react"
-import { NavLink } from "react-router-dom"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 import { useAuth } from "@/lib/auth"
 import { NAV_SECTIONS } from "@/components/layout/nav"
@@ -50,6 +52,7 @@ function NavList({
   collapsed?: boolean
 }) {
   const { permissions } = useAuth()
+  const pathname = usePathname()
   return (
     <nav
       aria-label="Primary"
@@ -71,27 +74,29 @@ function NavList({
             <ul className="space-y-0.5">
               {visible.map((item) => {
                 const Icon = item.icon
+                const isActive =
+                  pathname === item.href ||
+                  pathname.startsWith(`${item.href}/`)
                 return (
                   <li key={item.href}>
-                    <NavLink
-                      to={item.href}
+                    <Link
+                      href={item.href}
                       onClick={() => onNavigate?.()}
                       title={collapsed ? item.label : undefined}
                       aria-label={collapsed ? item.label : undefined}
-                      className={({ isActive }) =>
-                        cn(
-                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors outline-none",
-                          "focus-visible:ring-2 focus-visible:ring-ring",
-                          collapsed && "justify-center px-0",
-                          isActive
-                            ? "bg-accent text-accent-foreground"
-                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                        )
-                      }
+                      aria-current={isActive ? "page" : undefined}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors outline-none",
+                        "focus-visible:ring-2 focus-visible:ring-ring",
+                        collapsed && "justify-center px-0",
+                        isActive
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                      )}
                     >
                       <Icon className="size-4 shrink-0" aria-hidden />
                       {!collapsed && item.label}
-                    </NavLink>
+                    </Link>
                   </li>
                 )
               })}
