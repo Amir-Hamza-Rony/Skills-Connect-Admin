@@ -26,15 +26,14 @@
 | D1 | Auth strategy | **JWT access (15 min) + rotating refresh in httpOnly cookie** (spec §3 permits JWT/session) | B2 |
 | D2 | Repo layout | **Same repo, `server/` folder, npm workspaces** (atomic commits, shared types) | B1 — done |
 | D3 | Mongo for dev | **MongoDB Atlas only** — no local Docker Mongo | B1 |
-| D4 | Object storage | **MinIO locally (dev), Cloudflare R2 in production** | B4 |
+| D4 | Document storage | **Document bytes stored directly in MongoDB — no object storage provider** | B4 |
 
 **D3 consequence:** `docker-compose.yml` has **no mongo service** — the database is remote.
 Atlas needs a database name (`skills_connect_admin`) plus an IP allowlist entry per developer
 machine. Never open `0.0.0.0/0`.
 
-**D4 consequence:** MinIO, S3 and R2 are all S3-compatible behind one adapter, so the provider
-is an **env-only switch** (`STORAGE_PROVIDER` + `S3_*`) with zero code change. Nothing depends
-on the choice, which is why B1–B3 were never blocked waiting for it.
+**D4 consequence:** Removed — document bytes live directly in MongoDB. No object storage
+provider, no bucket credentials, no `STORAGE_PROVIDER` / `S3_*` environment variables.
 
 Atlas URL is consumed as `MONGODB_URI` from `server/.env` only — never in chat, code, or git.
 
@@ -182,33 +181,32 @@ the report is the control for historical data.
 
 | Item | State |
 |---|---|
-| S3 adapter (`integrations/storage/s3.ts`) — MinIO / S3 / R2 behind one env-only switch | done |
-| 15-min presigned upload + download URLs | done |
-| Raw storage key never leaves the server (structurally omitted from the DTO) | done |
-| `documents` collection + `document_requirements` + checklist template | done |
+| MongoDB BSON Binary storage (`document.data`) — no S3 adapter, no bucket, no presigned URLs | done |
+| Direct multipart upload + streamed download through the API | done |
+| Raw file `data` never leaves the server as JSON (structurally omitted from the DTO) | done |
+| `documents` collection with `data` (Buffer) + `document_requirements` + checklist template | done |
 | Version-supersede: a new version marks prior ones `Superseded`, never overwriting | done |
 | Concurrent-upload version race handled (unique index + recompute-and-retry) | done |
-| Confirm-upload verifies the object exists before marking `Received` | done |
+| Upload verifies type/size before storing bytes in MongoDB | done |
 | Approve / reject with mandatory rejection reason | done |
 | `document_access_logs` — upload / download / review, with actor, IP, request id | done |
-| Document routes: list, upload-url, confirm-upload, download-url, review, access-log | done |
+| Document routes: list, upload (multipart), download (stream), review, access-log | done |
 | Frontend: `ops-store.ts` documents → real API; `ops-seed.ts` deleted | done |
 | **59/59 live smoke** (45 B2 + 10 B3 + 4 B4) · **105/105 automated** | done |
 
 **The B4 acceptance criteria, verified:**
 - **Upload → review → v2 flow** — a document moves `Not Received` → `Received`
-  (only after the object is confirmed in the bucket) → `Approved`, and a second
+  (bytes stored directly in MongoDB on upload) → `Approved`, and a second
   version supersedes the first.
-- **Raw storage key never reaches the client** — `toDocumentDTO` strips it, and a
-  test asserts the string `storageKey` appears in no API response. Clients get a
-  presigned URL instead.
+- **File data never reaches the client as JSON** — `toDocumentDTO` omits `data`,
+  and downloads stream through `GET /documents/:id/download`. A test asserts
+  `data` appears in no JSON API response.
 - **Access log rows exist** — upload, download and review each write a row with
   the actor, IP and request id.
 
-**Storage is an env-only switch.** `STORAGE_PROVIDER` + `S3_*` select MinIO, S3
-or R2 with no code change, per D4. The adapter is the only file that names any of
-them. When no bucket is configured the endpoints return a clean 422
-`STORAGE_NOT_CONFIGURED` rather than crashing — B1–B3 all work without storage.
+**Storage is not a separate concern.** Document bytes live in MongoDB documents;
+there is no bucket to configure and no `STORAGE_PROVIDER` / `S3_*` variables.
+B1–B3 work without any storage setup.
 
 ### B1 — Server foundation · ✅ COMPLETE
 
@@ -225,7 +223,7 @@ them. When no bucket is configured the endpoints return a clean 422
 | Graceful shutdown (SIGTERM/SIGINT with 10s cap) | done — `server.ts` |
 | Vitest + Supertest harness | done, green (18 B1 tests, 68 total after B2) |
 | Server typecheck + build | done, clean |
-| `docker-compose.yml` — redis + minio + bucket init (**no mongo**, per D3) | written — **unverified: Docker Desktop not installed on this machine** |
+| `docker-compose.yml` — redis only (**no mongo**, per D3; **no MinIO**, storage is in MongoDB) | written — **unverified: Docker Desktop not installed on this machine** |
 | `server/Dockerfile` + `.dockerignore` | written — **unverified: Docker Desktop not installed** |
 | **Live Atlas connection** | ✅ **verified — `MongoDB connected`, `GET /health/ready` → 200 `{"status":"ready","db":"connected"}`** |
 
@@ -245,7 +243,7 @@ placeholders only — verified no credential is present in it or anywhere in git
 Admin SC/
 ├─ package.json            # workspaces: ["server"]; also hosts server:* scripts
 ├─ package-lock.json
-├─ docker-compose.yml      # redis + minio + bucket init  (NO mongo — D3 uses Atlas)
+├─ docker-compose.yml      # redis only  (NO mongo — D3 uses Atlas; NO MinIO — storage is in MongoDB)
 ├─ .dockerignore
 ├─ server/                 # Node + Express + TypeScript (ESM, NodeNext)
 │  ├─ package.json         # @sc/server
@@ -256,7 +254,7 @@ Admin SC/
 │  ├─ .env.example         # committed; placeholders only
 │  ├─ .env                 # LOCAL ONLY, git-ignored, never committed
 │  ├─ src/
-│  │  ├─ config/           # B1: env.ts (zod), db.ts   ·  B5: redis.ts  ·  B4: s3.ts  ·  B5: qb.ts
+│  │  ├─ config/           # B1: env.ts (zod), db.ts   ·  B5: redis.ts  ·  B5: qb.ts
 │  │  ├─ lib/              # app-error.ts, logger.ts, version.ts
 │  │  ├─ middleware/       # B1: request-log, error-handler, not-found
 │  │  │                    # B2: requireAuth, requirePermission, auditLog, rateLimit
@@ -280,10 +278,10 @@ between packages.
 
 | Phase | Work | Days | Done when |
 |---|---|---|---|
-| **B1** Server foundation | Express+TS app, zod env config, Mongo connect, Redis client, error handler, request log, docker-compose (redis/minio), Vitest+Supertest harness, npm workspaces | 3–4 | ✅ **done** — typecheck clean, tests green, Atlas connected, `/health/ready` → 200 |
+| **B1** Server foundation | Express+TS app, zod env config, Mongo connect, Redis client, error handler, request log, docker-compose (redis), Vitest+Supertest harness, npm workspaces | 3–4 | ✅ **done** — typecheck clean, tests green, Atlas connected, `/health/ready` → 200 |
 | **B2** Auth + RBAC | User/Role models, argon2id hashing, access JWT + rotating httpOnly refresh, revoke/logout, login rate-limit, `requirePermission` on every route, audit middleware. Frontend: real login via `api.ts` | 3–4 | ✅ **done** — wrong password rejected; refresh rotation + reuse detection tested; Sales gets 403 on `/users`; 68/68 unit + 45/45 live smoke |
 | **B3** Masters + Clients/Orders | Remaining collections (incl. new `certificates`, `document_requirements`), client CRUD + dedupe report, order CRUD with **immutable price snapshots** + transactional transitions + history, tasks. Frontend stores → API calls | 4–5 | Multi-order client, snapshot survives matrix edit, transition writes history+task in one transaction |
-| **B4** Documents + storage | S3 adapter (MinIO dev), **15-min signed upload/download URLs**, checklist templates, version-supersede, approve/reject, **document access logging**. Decision D4 locked | 3–4 | Upload→review→v2 flow; raw storage key never reaches client; access log rows exist |
+| **B4** Documents + storage | MongoDB binary storage (Buffer in document), checklist templates, version-supersede, approve/reject, **document access logging**. No bucket credentials needed. | 3–4 | Upload→review→v2 flow; file data stored in MongoDB; raw binary never reaches client |
 | **B5** Finance + QuickBooks | Invoices, plans, instalments, payments, **server-authoritative allocation + overdue calc**, QB idempotent sync via BullMQ worker (same key = no duplicates), webhook/import, permission-gated retry | 4–5 | ✅ **code complete** — 145/145 tests, queue + worker + transport + webhook built. ⚠️ **criterion unproven end-to-end: no request has reached QuickBooks.** Needs QB sandbox creds + an OAuth'd company + one mapped client |
 | **B6** Reports + Audit + Migration + Deploy | Aggregation pipelines (dashboard/reports), audit viewer indexes, Excel import scripts + reconciliation report, Docker prod image, staging deploy, UAT on migrated data | 5–7 | Dashboard numbers equal DB aggregations; import totals reconcile workbook vs DB vs QB; needs workbook + QB export + hosting |
 
@@ -448,43 +446,43 @@ Getting there exposed two more defects the suite could not have caught:
   `.env.example`, with production kept at the default 5). The per-account lockout
   at 10 failures is unchanged and remains the real brute-force control.
 
-### B6 � Reports + Audit Viewer � ? BUILT
+### B6 � Reports + Audit Viewer � ? BUILT
 
 | Item | State |
 |---|---|
-| `reports.service.ts` � one derivation per number | done |
-| `GET /reports/finance` � invoiced/collected/outstanding/overdue | done |
-| `GET /reports/revenue` � by qualification, by sales agent | done |
-| `GET /reports/margin` � by qualification with margin % | done |
-| `GET /reports/funnel` � orders by stage + conversion % | done |
-| `GET /reports/ageing` � overdue bucketed 1�30 / 31�60 / 61�90 / 90+ | done |
-| `GET /reports/collections` � invoiced vs collected by month | done |
-| `GET /reports/rto-turnaround` � completion time by RTO | done |
-| Shared filter (agent / RTO / qualification / stage / date range) | done � UAT criterion 12 |
-| `audit-query.service.ts` � paged, filterable, `$toString` search over Mixed | done |
+| `reports.service.ts` � one derivation per number | done |
+| `GET /reports/finance` � invoiced/collected/outstanding/overdue | done |
+| `GET /reports/revenue` � by qualification, by sales agent | done |
+| `GET /reports/margin` � by qualification with margin % | done |
+| `GET /reports/funnel` � orders by stage + conversion % | done |
+| `GET /reports/ageing` � overdue bucketed 1�30 / 31�60 / 61�90 / 90+ | done |
+| `GET /reports/collections` � invoiced vs collected by month | done |
+| `GET /reports/rto-turnaround` � completion time by RTO | done |
+| Shared filter (agent / RTO / qualification / stage / date range) | done � UAT criterion 12 |
+| `audit-query.service.ts` � paged, filterable, `$toString` search over Mixed | done |
 | `GET /audit` + `GET /audit/filters` | done |
 | Frontend cutover: `reports.tsx` and `audit.tsx` off the preview store | done |
 
 **Why the reports moved server-side.** The page used to pull every order,
 client, qualification, agent and invoice and group them in the browser, so the
-numbers came from a *different code path* than the dashboard � a report could
+numbers came from a *different code path* than the dashboard � a report could
 disagree with the dashboard and neither could be proven wrong. B6's criterion is
 "dashboard numbers equal DB aggregations", which needs one implementation.
 
 **`audit.view` was granted to nobody.** The permission existed and `GET /audit`
-was gated on it, but no role in the matrix held it � only Super Admin could open
+was gated on it, but no role in the matrix held it � only Super Admin could open
 the viewer. Now held by Finance, Operations and Read Only / Manager, which are
 the oversight roles. This is the same class of gap as the missing master
 endpoints: a permission defined but unreachable.
 
-**194/194 automated � 89/89 live smoke** (20 new B6 checks in the smoke suite).
+**194/194 automated � 89/89 live smoke** (20 new B6 checks in the smoke suite).
 
-### B6 � still outstanding
+### B6 � still outstanding
 
-- **Excel import + reconciliation** � needs `RTO & Onboarding Master Hub.xlsx`
+- **Excel import + reconciliation** � needs `RTO & Onboarding Master Hub.xlsx`
   and the QuickBooks export. The three-way tie-out (workbook vs DB vs QB) is the
   one criterion that cannot be produced without them.
-- **Docker prod image + staging deploy** � the Dockerfile has never been run
+- **Docker prod image + staging deploy** � the Dockerfile has never been run
   end-to-end (B1 noted Docker Desktop was absent); it is now installed, so this
   is unblocked and just needs doing.
 - **UAT on migrated data.**
@@ -495,7 +493,7 @@ endpoints: a permission defined but unreachable.
 |---|---|---|
 | Global rate limit (§6) | **absent** — only `/auth/login` was limited; `/payments`, `/users`, `qb.retry` and everything else was unthrottled | `middleware/global-rate-limit.ts`, mounted in `app.ts`, 300 req/min per IP, skipped for health probes |
 | Overdue cron job (§6) | **absent** — an invoice past its due date kept reading `Sent` until an unrelated payment event; `InstalmentStatus "Overdue"` was an unreachable enum value | `jobs/overdue.job.ts`, hourly `setInterval`, sweeps invoices and instalments |
-| Upload type/size whitelist (§6) | **absent** — `contentType` was a free 200-char string; no size was accepted or checked anywhere | `lib/uploads.ts` allowlist enforced at the route, and the real byte count verified from the bucket on confirm-upload |
+| Upload type/size whitelist (§6) | **absent** — `contentType` was a free 200-char string; no size was accepted or checked anywhere | `lib/uploads.ts` allowlist enforced at the route before bytes reach MongoDB |
 | Full RBAC matrix test (§7) | **absent** — `Operations`, `RTO / Sourcing Manager` and `Read Only / Manager` were never asserted against anything | `tests/coverage.test.ts` walks all 7 roles × 15 routes |
 | Margin test (§7) | **absent** — `grossMargin` was exported but imported nowhere, while the frontend had its own copy | tested against the server, including the negative-margin case |
 | Filter sanitization (§6) | ad-hoc, duplicated in two files, no test | one shared `escapeRegex`, with a test proving `.*` does not become match-all |
@@ -514,7 +512,7 @@ endpoints: a permission defined but unreachable.
 | clients | `GET /clients`, `POST /clients`, `GET /clients/:id` (profile), `GET /clients/duplicates`, `PATCH /clients/:id` |
 | orders | `GET /orders` (filters), `POST /orders` (body carries `clientId`), `GET /orders/:id`, `GET /orders/:id/checklist`, `GET /orders/:id/certificate` |
 | workflow | `PATCH /orders/:id/status`, `PATCH /orders/:id/dimensions`, `GET /orders/:id/timeline`, `GET /workflow/tasks`, `PATCH /workflow/tasks/:id` |
-| documents | `GET /orders/:id/documents`, `POST /documents/upload-url` (allocates the next version itself, so there is no separate `/versions` route), `POST /documents/:id/confirm-upload`, `GET /documents/:id/download-url`, `PATCH /documents/:id/review`, `GET /orders/:id/documents/access-log` |
+| documents | `GET /orders/:id/documents`, `POST /documents/upload` (multipart, allocates next version), `GET /documents/:id/download` (streams file bytes), `PATCH /documents/:id/review`, `GET /documents/:id/access-log` |
 | invoices | `GET /invoices`, `POST /invoices`, `POST /invoices/:id/void` |
 | plans/payments | `GET/POST /orders/:id/payment-plan`, `POST /payment-plans/:id/instalments`, `GET /payments`, `POST /payments`, `POST /payments/:id/refund` |
 | reports | `GET /reports/finance`, `GET /reports/*` (revenue, ageing, margin, funnel) |
@@ -542,16 +540,16 @@ allocation, `INV-YYYY-NNNN`). `document_access_logs` lives inside the documents
 model file and is likewise infrastructure, not a spec §7 entity.
 
 Enforced in Mongoose: order price snapshots immutable after create; document version
-unique per (order, type, version); `audit_logs` append-only (query middleware);
-instalments unlimited; routes soft-expire only. **`clients.email` is deliberately
-NOT unique** — see the B3 note.
+unique per (order, type, version); document `data` stored as BSON Binary;
+`audit_logs` append-only (query middleware); instalments unlimited; routes soft-expire only.
+**`clients.email` is deliberately NOT unique** — see the B3 note.
 
 ## 6. Security design
 
 - Passwords: argon2id. Access JWT 15 min (memory only). Refresh: httpOnly + SameSite + Secure cookie, rotation with reuse detection, server revocation table.
 - Every route: `requireAuth` → `requirePermission('<perm>')` — frontend hiding is UX only. Four deliberate exceptions (`/auth/me`, `/auth/permissions`, `/auth/logout-all`, `/users/directory`) need auth but no permission.
 - Audit middleware captures actor, entity, before/after, IP on all mutations. Implemented as 28 explicit `recordAudit()` call sites rather than middleware — coverage is complete but it is a convention, not an enforced invariant.
-- Files: private bucket, 15-min signed URLs, **type/size whitelist** (`lib/uploads.ts`, enforced at the route and verified against the bucket's real byte count on confirm-upload), path `/clients/{c}/orders/{o}/{type}/{v}`.
+- Files: stored as BSON Binary in MongoDB documents, **type/size whitelist** (`lib/uploads.ts`, enforced at the route before bytes reach the database), served via `GET /documents/:id/download`.
 - Hardening: helmet, CORS allowlist, **login + global rate limits** (Redis-backed, in-process fallback), zod on every body, filter sanitization (`escapeRegex`, shared), **overdue cron job** (`jobs/overdue.job.ts`).
 
 ## 7. Testing strategy
@@ -573,7 +571,7 @@ without credentials.
 1. ~~MongoDB Atlas~~ — ✅ **supplied and verified.** URI lives in git-ignored `server/.env`;
    `skills_connect_admin` reachable from the dev machine; `GET /health/ready` returns 200.
    Reminder: if that password is ever reused elsewhere, rotate it in Atlas and update `.env`.
-2. Storage: **R2 credentials** (bucket + API token) — D4 locked, consumed in B4.
+2. ~~Storage: R2 credentials~~ — removed; document bytes live in MongoDB, no bucket credentials needed.
 3. Redis: local Docker compose, no external blocker. **Docker Desktop is not installed** on the
    dev machine, so `docker compose up` and the Dockerfile remain unverified.
 4. QuickBooks: sandbox app creds + realm ID + export for reconciliation (B5/B6).

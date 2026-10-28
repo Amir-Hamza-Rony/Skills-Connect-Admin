@@ -58,5 +58,5 @@ Copy `.env.example` to `.env` when backend variables exist. Never commit
 
 Static hosting of `dist/` (any static host) serves the current shell.
 `vite preview` already serves it with SPA fallback. Production deployment
-with backend, database, object storage, and QuickBooks wiring follows
+with backend, database (MongoDB), and QuickBooks wiring follows
 `HANDOVER.md`.

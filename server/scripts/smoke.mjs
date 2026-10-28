@@ -386,7 +386,7 @@ console.log("\nB3 — clients, orders, workflow");
   check("anonymous /clients -> 401", anonClient.status === 401, `got ${anonClient.status}`);
 }
 
-// ---------------------------------------------------------- B4: documents
+// ---------------------------------------------------------- B4: documents (MongoDB storage)
 console.log("\nB4 — documents");
 {
   const login = await call("/auth/login", { method: "POST", body: { email: ADMIN, password: PASSWORD } });
@@ -395,26 +395,21 @@ console.log("\nB4 — documents");
   const list = await call("/orders/000000000000000000000000/documents", { token: admin });
   check("GET /orders/:id/documents returns an empty list", list.status === 200 && list.json?.documents?.length === 0, `got ${list.status}`);
 
-  // Storage is not configured in every environment, but the endpoint must fail
-  // cleanly with a named reason rather than a 500.
-  const up = await call("/documents/upload-url", {
+  // POST /documents/upload requires multipart/form-data; without auth it must
+  // return 401 before any storage or validation logic runs.
+  const anon = await call("/documents/upload", {
+    method: "POST",
+    body: { orderId: "x", type: "y" },
+  });
+  check("anonymous upload -> 401", anon.status === 401, `got ${anon.status}`);
+
+  // With auth but no file, the endpoint must fail cleanly (400/422, never 500).
+  const noFile = await call("/documents/upload", {
     method: "POST",
     token: admin,
-    body: { orderId: "000000000000000000000000", type: "USI transcript", contentType: "application/pdf" },
+    body: { orderId: "000000000000000000000000", type: "USI transcript" },
   });
-  // Storage is configured in this environment (docker-compose MinIO), so the
-  // endpoint proceeds past the storage check. With a nonexistent order it then
-  // returns 404 NOT_FOUND. Either way it must fail cleanly, never a 500.
-  check("POST /documents/upload-url fails cleanly", up.status === 422 || up.status === 404, `got ${up.status}`);
-  if (up.status !== 422) {
-    check("configured storage reaches the order check", up.json?.error?.code === "NOT_FOUND", up.json?.error?.code);
-  }
-
-  const anon = await call("/documents/upload-url", {
-    method: "POST",
-    body: { orderId: "x", type: "y", contentType: "z" },
-  });
-  check("anonymous upload-url -> 401", anon.status === 401, `got ${anon.status}`);
+  check("upload without file fails cleanly", noFile.status === 400 || noFile.status === 422, `got ${noFile.status}`);
 }
 
 // ------------------------------------------------------------- B5: finance
@@ -454,7 +449,7 @@ console.log("\nB5 — finance + QuickBooks");
 
 
 // ------------------------------------------------------------- B6: reports
-console.log("\nB6 � reports + audit");
+console.log("\nB6 � reports + audit");
 {
   const login = await call("/auth/login", { method: "POST", body: { email: ADMIN, password: PASSWORD } });
   const admin = login.json.accessToken;

@@ -12,18 +12,30 @@ import { logger } from "./lib/logger.js";
 /** Hard cap so a stuck socket cannot block the shutdown forever. */
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
+/**
+ * Background jobs (QB worker + overdue sweep) are only started when
+ * START_BACKGROUND_JOBS=true. On serverless platforms (Vercel) these run
+ * separately via a dedicated worker service or cron. Set this to true on
+ * Render / Docker / VPS deployments where the API runs as a long-lived process.
+ */
+const START_BACKGROUND_JOBS = env.START_BACKGROUND_JOBS;
+
 async function main(): Promise<void> {
   // Fail fast: an API without a database is worse than no API at all.
   await connectDb();
 
-  // Started after the database and before the listener: a job that starts
-  // polling must be able to read its record. Returns null without Redis, in
-  // which case the queue module runs those jobs inline instead.
-  await startQBWorker();
+  let stopOverdueSweep: (() => void) | undefined;
 
-  // Invoices and instalments go overdue by the calendar passing, not by
-  // anything happening in the application, so this cannot be event-driven.
-  const stopOverdueSweep = startOverdueSweep();
+  if (START_BACKGROUND_JOBS) {
+    // Started after the database and before the listener: a job that starts
+    // polling must be able to read its record. Returns null without Redis, in
+    // which case the queue module runs those jobs inline instead.
+    await startQBWorker();
+
+    // Invoices and instalments go overdue by the calendar passing, not by
+    // anything happening in the application, so this cannot be event-driven.
+    stopOverdueSweep = startOverdueSweep();
+  }
 
   const server = createServer(createApp());
 
@@ -43,7 +55,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, "Shutdown requested — draining");
 
-    stopOverdueSweep();
+    if (stopOverdueSweep) stopOverdueSweep();
 
     const timer = setTimeout(() => {
       logger.error("Forced exit: shutdown timed out");

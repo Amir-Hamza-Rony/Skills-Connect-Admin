@@ -1,21 +1,13 @@
 /**
- * Upload allowlist (BACKEND-PLAN §6, "type/size whitelist").
+ * Upload allowlist (type/size whitelist).
  *
  * ## Why this is a whitelist and not a blacklist
  *
- * The browser sends `Content-Type` when it asks for an upload URL, and the
- * server hands that value straight to the presigned `PutObject`. Without a
- * list, any caller could request a presigned URL for an executable, an HTML
- * document (stored XSS when later served from the same origin) or a 5 GB file —
- * and because the bytes never pass through the API, the API is the only place
- * the decision can be made.
- *
- * ## The size cap is enforced twice, deliberately
- *
- * `ContentLengthRange` on the presigned POST policy is the real enforcement:
- * S3 itself rejects an oversized upload. The declared size on the document row
- * exists so the UI can show it and so `confirm-upload` can compare it against
- * what actually landed.
+ * The client sends `Content-Type` when it uploads a file, and the server
+ * validates it here before storing bytes in MongoDB. Without a list, any
+ * caller could upload an executable, an HTML document (stored XSS risk) or
+ * a 5 GB file — and because the server is the only place that touches the
+ * bytes before they reach the database, the decision is made here.
  *
  * ## `application/octet-stream` is allowed
  *

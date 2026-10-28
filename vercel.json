@@ -1,4 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "buildCommand": "npm run build && npm run server:build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.js" },
+    { "src": "/assets/(.*)", "status": 200 },
+    { "src": "/favicon.ico", "status": 200 },
+    { "src": "/(.*)", "dest": "/index.html", "status": 200 }
+  ]
 }

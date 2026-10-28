@@ -14,13 +14,13 @@
 | Database | MongoDB | Clients, orders, qualifications, RTOs, agents, payments, documents, tasks, invoices |
 | ODM | Mongoose (if consistent with implementation chosen at scaffolding) | Schemas, validation, references, middleware for audit/snapshots |
 | Auth | Secure session strategy **or** appropriately implemented JWT + refresh-token rotation | Login, RBAC, session security |
-| File storage | S3-compatible object-storage abstraction | Evidence, ID, certificates, invoices, supporting docs (metadata in MongoDB, bytes in object storage) |
+| File storage | MongoDB BSON Binary (document bytes stored directly in the database) | Evidence, ID, certificates, invoices, supporting docs (metadata and bytes in MongoDB) |
 | Jobs | BullMQ + Redis or equivalent | Email reminders, QuickBooks sync, overdue checks, background processing |
 | External | QuickBooks integration layer (async + auditable) | Invoice/payment sync with idempotency |
 | Deploy | Docker + managed cloud hosting | Repeatable production deployment and scaling |
 | Observability | Central logs + error monitoring | Auditability, API/integration troubleshooting |
 
-REST shape follows Spec §14 (`/auth/login`, `/clients`, `/clients/:id/orders`, `/orders`, `/orders/:id/status`, `/qualifications`, `/rtos`, `/supplier-routes`, `/invoices`, `/payments`, `/orders/:id/payment-plan`, `/documents/upload-url`, `/documents/:id/review`, `/orders/:id/timeline`, `/integrations/quickbooks/sync/*`, `/reports/finance`).
+REST shape follows Spec §14 (`/auth/login`, `/clients`, `/clients/:id/orders`, `/orders`, `/orders/:id/status`, `/qualifications`, `/rtos`, `/supplier-routes`, `/invoices`, `/payments`, `/orders/:id/payment-plan`, `/documents/upload`, `/documents/:id/download`, `/documents/:id/review`, `/orders/:id/timeline`, `/integrations/quickbooks/sync/*`, `/reports/finance`).
 
 ### 1.2 Core entities and relationships (Spec §7–§8)
 
@@ -33,10 +33,10 @@ Critical business distinction (non-negotiable): **Sales/Closing Agent** (who bro
 - **agents** (`name, type, contact, commissionRule, active`) with `type ∈ {sales_closing, certificate_source, rto_contact}`; RTO contacts may additionally link to an **rtos** record (`rtos.contacts[]`).
 - **rtos** (`legalName, tradingName, rtoCode, cricosCode, contacts[], status, website`, risk/compliance status + effective dates).
 - **supplier_routes** (`qualificationId, sourceAgentId, rtoId, wholesaleCost, effectiveFrom, effectiveTo, status`) — the qualification → agent → RTO pricing matrix; history preserved (never overwrite a price used by an old order).
-- **documents** (`clientId, orderId, type, storageKey, version, status, receivedAt, reviewedAt, reviewedBy`) — many per order; versions immutable (new version supersedes, never overwrites an approved version). Storage path convention: `/clients/{clientId}/orders/{orderId}/{documentType}/{version}`; signed URLs only; raw keys never exposed to clients.
+- **documents** (`clientId, orderId, type, fileName, contentType, sizeBytes, data, version, status, receivedAt, reviewedAt, reviewedBy`) — many per order; versions immutable (new version supersedes, never overwrites an approved version). File bytes stored as BSON Binary in MongoDB; raw binary never exposed to clients.
 - **workflow_tasks** (`orderId, stage, title, assigneeId, dueDate, status, priority`) + order-level status history (timestamp, actor, before → after).
 - **invoices** (`orderId, invoiceNumber, total, dueDate, status, quickBooksInvoiceId`) — linked to the correct order; **payment_plans** (`orderId, total, instalments[]` with unlimited schedules) — distinct from **payments** (`orderId, invoiceId, amount, date, method, reference, allocatedAmount, status`).
-- **certificates** (`orderId, qualificationId, certificateNumber, issueDate, storageKey, deliveredAt`) — required before an order reports Issued (unless authorised override).
+- **certificates** (`orderId, qualificationId, certificateNumber, issueDate, deliveredAt`) — required before an order reports Issued (unless authorised override). Certificate files, like documents, are stored as BSON Binary in MongoDB.
 - **communications** (optional Phase-1 log: `clientId, orderId, channel, direction, message, sentAt, status`).
 - **audit_logs** (`actorId, entityType, entityId, action, before, after, timestamp, ip`) — immutable; covers status, financial, document, and RTO-route changes plus sensitive document access.
 - **QuickBooks records/fields** (`quickBooksCustomerId, quickBooksInvoiceId, quickBooksPaymentId, quickBooksSyncStatus ∈ {Not Synced, Pending, Synced, Failed}, quickBooksLastSyncAt, quickBooksSyncError`) stored on invoice/payment (and customer link) for idempotent sync.
@@ -51,9 +51,9 @@ Recommended Order shape (Spec §8) snapshots `sellingPrice`, `supplierCostSnapsh
 
 ### 1.4 Security boundaries and data flow
 
-- Browser → API (auth-required; RBAC enforced **server-side**; frontend hiding is not enforcement) → MongoDB / object storage / job queue → QuickBooks (server-side only).
+- Browser → API (auth-required; RBAC enforced **server-side**; frontend hiding is not enforcement) → MongoDB / job queue → QuickBooks (server-side only).
 - Auth: short-lived access credential + rotated refresh/session; server-side token/secret storage; no QB passwords/tokens in frontend; no secrets in `localStorage` (theme preference only).
-- Documents: metadata in MongoDB, bytes in S3-compatible storage; upload/download via short-lived signed URLs generated by `POST /documents/upload-url`; every sensitive access logged.
+- Documents: metadata and bytes in MongoDB; upload via `POST /documents/upload` (multipart/form-data), download via `GET /documents/:id/download`; every sensitive access logged.
 - QuickBooks sync is **asynchronous and idempotent**: create-in-Skills-Connect → enqueue with idempotency key + external IDs → save QB IDs on success; import/webhook path for QB-created invoices/payments; `syncStatus/lastSyncAt/syncError` visible; authorised retry; duplicate-invoice-on-retry is a defect.
 - Audit log is append-only; finance/admin mutations record actor, entity, before/after, timestamp, IP.
 
@@ -76,7 +76,7 @@ Treat as **proposed/planned until confirmed in code**: Mongoose vs alternative O
 
 ## 4. External dependencies and configuration
 
-- **Required before production:** MongoDB access/connection string, S3-compatible bucket + credentials (server-side env only), Redis (if BullMQ chosen), QuickBooks app credentials + sandbox, source workbook `RTO & Onboarding Master Hub.xlsx` + legacy Drive files, deployment host access.
+- **Required before production:** MongoDB access/connection string, Redis (if BullMQ chosen), QuickBooks app credentials + sandbox, source workbook `RTO & Onboarding Master Hub.xlsx` + legacy Drive files, deployment host access.
 - **Never invent:** API credentials, provider IDs, confirmed integrations, production URLs, RTO codes, commission rates. Placeholders must be labelled `PLACEHOLDER — not a real credential`.
 - **Config rules:** secrets via environment/secret manager only; never commit `.env`; never log or print secret values; QB sync config server-side; `localStorage` holds only the theme preference.
 

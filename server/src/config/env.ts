@@ -89,6 +89,13 @@ const schema = z.object({
   PORT: port(4000),
   HOST: z.preprocess(blankToUndefined, z.string().min(1).default("0.0.0.0")),
   LOG_LEVEL: logLevel,
+  /**
+   * Set to "true" only on long-lived server deployments (Render web service,
+   * Docker, VPS) where the BullMQ worker + overdue sweep should run inside the
+   * API process. Leave blank/false on Vercel serverless — run a separate
+   * background worker instead (see server/src/worker.ts).
+   */
+  START_BACKGROUND_JOBS: booleanFromEnv(false),
   /** Set to a number only when running behind a proxy you control. */
   TRUST_PROXY: positiveInt(0).optional(),
 
@@ -106,19 +113,6 @@ const schema = z.object({
     blankToUndefined,
     z.string().min(1).default("redis://localhost:6379"),
   ),
-
-  // ---- Object storage (D4: MinIO in dev, Cloudflare R2 in prod) ----
-  /** Left unset until B4 — storage must not be required to boot the API. */
-  STORAGE_PROVIDER: z.preprocess(
-    blankToUndefined,
-    z.enum(["minio", "s3", "r2"]).default("minio"),
-  ),
-  S3_ENDPOINT: optionalText,
-  S3_REGION: z.preprocess(blankToUndefined, z.string().min(1).default("auto")),
-  S3_BUCKET: optionalText,
-  S3_ACCESS_KEY: optionalText,
-  S3_SECRET_KEY: optionalText,
-  S3_FORCE_PATH_STYLE: booleanFromEnv(true),
 
   // ---- HTTP ----
   CORS_ORIGINS: csv("http://localhost:5173,http://127.0.0.1:5173"),

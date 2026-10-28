@@ -208,6 +208,54 @@ export const api = {
   patch: <T>(path: string, body?: unknown) => apiFetch<T>(path, { method: "PATCH", body }),
 }
 
+/**
+ * Uploads a file as `multipart/form-data`. Used for document uploads where
+ * the file bytes travel through the API into MongoDB (no presigned URLs,
+ * no S3 bucket).
+ *
+ * The access token is sent as a Bearer header (not in FormData) so the
+ * server's auth middleware can read it. The refresh-cookie still travels
+ * automatically via `credentials: "include"`.
+ */
+export async function uploadFile<T>(
+  path: string,
+  formData: FormData,
+  options: RequestOptions = {},
+): Promise<T> {
+  const { method = "POST", anonymous = false } = options
+
+  let res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      Accept: "application/json",
+      ...(anonymous ? {} : { Authorization: `Bearer ${accessToken ?? ""}` }),
+    },
+    credentials: "include",
+    body: formData,
+  })
+
+  if (res.status === 401 && !anonymous && !NO_REFRESH.includes(path)) {
+    const token = await refreshAccessToken()
+    if (token) {
+      res = await fetch(`${BASE}${path}`, {
+        method,
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: formData,
+      })
+    } else {
+      clearSession()
+    }
+  }
+
+  const payload = await readBody(res)
+  if (!res.ok) throw toApiError(res.status, payload)
+  return payload as T
+}
+
 /** Human-readable message for anything thrown by `apiFetch`. */
 export function messageFor(err: unknown, fallback = "Something went wrong."): string {
   if (err instanceof ApiError) return err.message
