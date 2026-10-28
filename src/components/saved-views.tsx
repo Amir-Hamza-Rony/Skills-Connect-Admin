@@ -1,3 +1,4 @@
+"use client"
 import { useEffect, useState, type FormEvent } from "react"
 import { Bookmark, Trash2 } from "lucide-react"
 

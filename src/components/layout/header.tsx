@@ -1,5 +1,7 @@
+"use client"
 import { Bell, Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react"
-import { Link, useLocation } from "react-router-dom"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 import { useAuth } from "@/lib/auth"
 import { GlobalSearch } from "@/components/global-search"
@@ -37,7 +39,7 @@ export function Header({
   onToggleCollapse: () => void
   collapsed?: boolean
 }) {
-  const { pathname } = useLocation()
+  const pathname = usePathname()
   const { user } = useAuth()
   const [parent, current] = CRUMBS[pathname] ?? ["Overview", "Dashboard"]
   const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose
@@ -87,7 +89,7 @@ export function Header({
       </button>
 
       <Link
-        to="/users"
+        href="/users"
         title={user ? `${user.name} — ${user.email}` : "Account"}
         aria-label="Account"
         className="hidden size-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"

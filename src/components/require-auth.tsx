@@ -1,5 +1,7 @@
-import type { ReactNode } from "react"
-import { Navigate, useLocation } from "react-router-dom"
+"use client"
+
+import { useEffect, type ReactNode } from "react"
+import { usePathname, useRouter } from "next/navigation"
 
 import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
@@ -9,7 +11,17 @@ import { Skeleton } from "@/components/ui/skeleton"
 /** Redirects anonymous visitors to /login (preserves intended route). */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, authLoading } = useAuth()
-  const location = useLocation()
+  const pathname = usePathname()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (authLoading || user) return
+    const from =
+      pathname && pathname !== "/login"
+        ? `?from=${encodeURIComponent(pathname)}`
+        : ""
+    router.replace(`/login${from}`)
+  }, [authLoading, user, pathname, router])
 
   if (authLoading) {
     return (
@@ -19,7 +31,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     )
   }
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+    return null
   }
   return <>{children}</>
 }

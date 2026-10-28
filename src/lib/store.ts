@@ -76,6 +76,22 @@ export async function updateUser(
   return data.user
 }
 
+/** Create a new staff account (needs `users.manage`). */
+export async function createUser(input: {
+  email: string
+  name: string
+  phone?: string
+  password: string
+  roleNames: RoleName[]
+  active?: boolean
+}): Promise<User> {
+  const data = await apiFetch<{ user: User }>("/users", {
+    method: "POST",
+    body: input,
+  })
+  return data.user
+}
+
 /* ---------- Qualifications ---------- */
 
 export async function listQualifications(): Promise<Qualification[]> {

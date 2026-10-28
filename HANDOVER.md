@@ -12,7 +12,7 @@ credentials described below.
 npm install
 npm run server:seed     # 7 roles + one Super Admin (idempotent)
 npm run server:dev      # API on :4000
-npm run dev             # SPA on :5173
+npm run dev             # Next.js app on :3000
 ```
 
 Sign in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `server/.env`.
