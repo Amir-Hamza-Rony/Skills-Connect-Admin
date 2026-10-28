@@ -89,6 +89,13 @@ const schema = z.object({
   PORT: port(4000),
   HOST: z.preprocess(blankToUndefined, z.string().min(1).default("0.0.0.0")),
   LOG_LEVEL: logLevel,
+  /**
+   * Set to "true" only on long-lived server deployments (Render web service,
+   * Docker, VPS) where the BullMQ worker + overdue sweep should run inside the
+   * API process. Leave blank/false on Vercel serverless — run a separate
+   * background worker instead (see server/src/worker.ts).
+   */
+  START_BACKGROUND_JOBS: booleanFromEnv(false),
   /** Set to a number only when running behind a proxy you control. */
   TRUST_PROXY: positiveInt(0).optional(),
 
