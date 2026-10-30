@@ -3,25 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": [
-    "server"
-  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "oxlint",
-    "typecheck": "next typegen && tsc --noEmit && npm run server:typecheck",
-    "server:dev": "npm run dev --workspace=@sc/server",
-    "server:build": "npm run build --workspace=@sc/server",
-    "server:start": "npm run start --workspace=@sc/server",
-    "server:seed": "npm run seed --workspace=@sc/server",
-    "server:smoke": "npm run smoke --workspace=@sc/server",
-    "server:verify:queue": "npm run verify:queue --workspace=@sc/server",
-    "server:test": "npm run test --workspace=@sc/server",
-    "server:typecheck": "npm run typecheck --workspace=@sc/server"
+    "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "argon2": "^0.45.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.53.0",

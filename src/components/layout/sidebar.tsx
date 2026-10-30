@@ -10,13 +10,16 @@ import { ROUTE_PERMISSIONS, hasPermission } from "@/lib/permissions"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
-export function initialsOf(name: string): string {
+export function initialsOf(name: string | null | undefined): string {
+  if (!name || !name.trim()) {
+    return "?";
+  }
   return name
     .split(/\s+/)
     .map((p) => p.replace(/[^A-Za-z]/g, "").charAt(0))
     .join("")
     .slice(0, 2)
-    .toUpperCase()
+    .toUpperCase() || "?";
 }
 
 function Brand({ collapsed }: { collapsed?: boolean }) {

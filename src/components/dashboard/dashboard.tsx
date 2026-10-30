@@ -58,7 +58,7 @@ export function ManagementDashboard() {
       const inStatus = (s: string[]) => orders.filter((o) => s.includes(o.status)).length
       const sales = orders.reduce((sum, o) => sum + o.sellingPrice, 0)
       const margin = orders.reduce((sum, o) => sum + grossMargin(o), 0)
-      const rate = summary.invoiced > 0 ? Math.round((summary.paid / summary.invoiced) * 100) : 0
+      const rate = summary.invoiced > 0 ? Math.round((summary.collected / summary.invoiced) * 100) : 0
       const overdueInv = invoices.filter((i) => i.status === "Overdue").length
       const syncFails = qb.filter((q) => q.status === "Failed").length
       const certPending = orders.filter((o) => o.certificateStatus !== "Delivered to Client").length
@@ -80,9 +80,9 @@ export function ManagementDashboard() {
           title: "Sales & Collection",
           kpis: [
             k("Total Sales", `${orders.length} active orders`, TrendingUp, aud(sales)),
-            k("Collected", "Allocated payments", Wallet, aud(summary.paid)),
+            k("Collected", "Allocated payments", Wallet, aud(summary.collected)),
             k("Outstanding", "Unpaid balances", Hourglass, aud(summary.outstanding)),
-            k("Overdue", "Past-due instalments", AlarmClock, aud(summary.overdue)),
+            k("Overdue", "Past-due instalments", AlarmClock, aud(summary.outstanding)),
             k("Gross Margin", "Price minus cost", PiggyBank, aud(margin)),
             k("Collection Rate", "Collected of invoiced", BadgeCheck, `${rate}%`),
           ],

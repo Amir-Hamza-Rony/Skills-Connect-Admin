@@ -105,7 +105,7 @@ export function ClientProfilePage() {
       ).flat()
       setDocs(allDocs)
       const sums = await Promise.all(o.map((ord) => financeSummary(ord.id)))
-      setFinPaid(sums.reduce((s, x) => s + x.paid, 0))
+      setFinPaid(sums.reduce((s, x) => s + x.collected, 0))
       setFinInvoiced(sums.reduce((s, x) => s + x.invoiced, 0))
       const [invs, pays] = await Promise.all([
         Promise.all(o.map((ord) => listInvoices(ord.id))).then((r) => r.flat()),

@@ -40,7 +40,8 @@ export async function createInvoice(
 }
 
 export async function voidInvoice(id: string, _actorId: string): Promise<Invoice> {
-  return api.post(`/invoices/${id}/void`)
+  const data = await api.post<{ invoice: Invoice }>(`/invoices/${id}/void`)
+  return data.invoice
 }
 
 /* ---------- Payment plans (real API) ---------- */
@@ -105,16 +106,16 @@ export async function recordPayment(
 }
 
 export async function refundPayment(id: string, _actorId: string): Promise<Payment> {
-  return api.post(`/payments/${id}/refund`)
+  const data = await api.post<{ payment: Payment }>(`/payments/${id}/refund`)
+  return data.payment
 }
 
 /* ---------- Summary (real API) ---------- */
 
 export interface FinanceSummary {
   invoiced: number
-  paid: number
+  collected: number
   outstanding: number
-  overdue: number
 }
 
 export async function financeSummary(orderId?: string): Promise<FinanceSummary> {
@@ -145,7 +146,8 @@ export async function retryQBSync(
   entityId: string,
   _actorId: string,
 ): Promise<QBSyncRecord> {
-  return api.post(`/integrations/quickbooks/sync/${entityType}/${entityId}`)
+  const data = await api.post<{ record: QBSyncRecord }>(`/integrations/quickbooks/sync/${entityType}/${entityId}`)
+  return data.record
 }
 
 /* ---------- Audit (real API, B6 cutover) ---------- */
