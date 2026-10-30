@@ -167,7 +167,7 @@ export async function uploadDocument(
 export async function downloadDocument(
   documentId: string,
 ): Promise<Blob> {
-  const res = await fetch(`${(process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "")}/documents/${documentId}/download`, {
+  const res = await fetch(`/documents/${documentId}/download`, {
     method: "GET",
     headers: {
       Accept: "*/*",

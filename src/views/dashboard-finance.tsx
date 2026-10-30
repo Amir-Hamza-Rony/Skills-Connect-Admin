@@ -53,7 +53,7 @@ export function FinanceDashboardPage() {
       const overdueInv = invoices.filter((i) => i.status === "Overdue")
       const syncFails = qb.filter((q) => q.status === "Failed")
       const margin = orders.reduce((sum, o) => sum + grossMargin(o), 0)
-      const rate = summary.invoiced > 0 ? Math.round((summary.paid / summary.invoiced) * 100) : 0
+      const rate = summary.invoiced > 0 ? Math.round((summary.collected / summary.invoiced) * 100) : 0
       const refunded = payments.filter((p) => p.status === "Refunded").length
       const last = months.months[months.months.length - 1]
 
@@ -62,9 +62,9 @@ export function FinanceDashboardPage() {
           title: "Collections",
           kpis: [
             k("Invoiced", "Total raised", Receipt, aud(summary.invoiced)),
-            k("Collected", "Allocated payments", Wallet, aud(summary.paid)),
+            k("Collected", "Allocated payments", Wallet, aud(summary.collected)),
             k("Outstanding", "Unpaid balances", Hourglass, aud(summary.outstanding)),
-            k("Overdue", "Past-due balance", AlarmClock, aud(summary.overdue)),
+            k("Overdue", "Past-due balance", AlarmClock, aud(summary.outstanding)),
             k("Collection Rate", "Collected of invoiced", BadgeCheck, `${rate}%`),
           ],
         },

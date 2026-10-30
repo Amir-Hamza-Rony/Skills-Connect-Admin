@@ -95,14 +95,14 @@ export async function createUser(input: {
 /* ---------- Qualifications ---------- */
 
 export async function listQualifications(): Promise<Qualification[]> {
-  const data = await apiFetch<{ qualifications: Qualification[] }>("/qualifications")
-  return data.qualifications
+  const data = await apiFetch<{ items: Qualification[] }>("/masters/qualifications")
+  return data.items
 }
 
 export async function createQualification(
   q: Omit<Qualification, "id" | "licensingRefs">,
 ): Promise<Qualification> {
-  const data = await apiFetch<{ qualification: Qualification }>("/qualifications", {
+  const data = await apiFetch<{ qualification: Qualification }>("/masters/qualifications", {
     method: "POST",
     body: q,
   })
@@ -112,24 +112,24 @@ export async function createQualification(
 /* ---------- RTOs ---------- */
 
 export async function listRtos(): Promise<Rto[]> {
-  const data = await apiFetch<{ rtos: Rto[] }>("/rtos")
-  return data.rtos
+  const data = await apiFetch<{ items: Rto[] }>("/masters/rtos")
+  return data.items
 }
 
 export async function createRto(r: Omit<Rto, "id">): Promise<Rto> {
-  const data = await apiFetch<{ rto: Rto }>("/rtos", { method: "POST", body: r })
+  const data = await apiFetch<{ rto: Rto }>("/masters/rtos", { method: "POST", body: r })
   return data.rto
 }
 
 /* ---------- Agents ---------- */
 
 export async function listAgents(): Promise<Agent[]> {
-  const data = await apiFetch<{ agents: Agent[] }>("/agents")
-  return data.agents
+  const data = await apiFetch<{ items: Agent[] }>("/masters/agents")
+  return data.items
 }
 
 export async function createAgent(a: Omit<Agent, "id">): Promise<Agent> {
-  const data = await apiFetch<{ agent: Agent }>("/agents", { method: "POST", body: a })
+  const data = await apiFetch<{ agent: Agent }>("/masters/agents", { method: "POST", body: a })
   return data.agent
 }
 
@@ -144,8 +144,8 @@ export async function updateAgent(
 /* ---------- Supplier routes / pricing ---------- */
 
 export async function listRoutes(): Promise<SupplierRoute[]> {
-  const data = await apiFetch<{ routes: SupplierRoute[] }>("/supplier-routes")
-  return data.routes
+  const data = await apiFetch<{ items: SupplierRoute[] }>("/masters/supplier-routes")
+  return data.items
 }
 
 /**
@@ -153,7 +153,7 @@ export async function listRoutes(): Promise<SupplierRoute[]> {
  * Orders already created keep their own snapshot either way.
  */
 export async function createRoute(r: Omit<SupplierRoute, "id">): Promise<SupplierRoute> {
-  const data = await apiFetch<{ route: SupplierRoute }>("/supplier-routes", {
+  const data = await apiFetch<{ route: SupplierRoute }>("/masters/supplier-routes", {
     method: "POST",
     body: r,
   })
@@ -162,7 +162,7 @@ export async function createRoute(r: Omit<SupplierRoute, "id">): Promise<Supplie
 
 /** History is preserved: expiring sets status + effectiveTo on the server, never deletes. */
 export async function expireRoute(id: string): Promise<SupplierRoute> {
-  const data = await apiFetch<{ route: SupplierRoute }>(`/supplier-routes/${id}/expire`, {
+  const data = await apiFetch<{ route: SupplierRoute }>(`/masters/supplier-routes/${id}/expire`, {
     method: "POST",
     body: {},
   })

@@ -34,7 +34,10 @@ const inputCls =
 
 import type { PaymentPlan } from "@/lib/types"
 
-const aud = (n: number) => `AUD ${n.toLocaleString("en-AU")}`
+const aud = (n: number | null | undefined) => {
+  if (n == null || !Number.isFinite(n)) return "AUD 0.00"
+  return `AUD ${n.toLocaleString("en-AU")}`
+}
 
 const METHODS: PaymentMethod[] = ["Bank Transfer", "Card", "Cash", "Other"]
 
@@ -250,9 +253,9 @@ export function FinancePage() {
         <div className="grid grid-cols-2 gap-3 pt-4 lg:grid-cols-4">
           {[
             { label: "Invoiced", value: aud(summary.invoiced) },
-            { label: "Paid", value: aud(summary.paid) },
+            { label: "Paid", value: aud(summary.collected) },
             { label: "Outstanding", value: aud(summary.outstanding) },
-            { label: "Overdue", value: aud(summary.overdue) },
+            { label: "Overdue", value: aud(summary.outstanding) },
           ].map((k) => (
             <div key={k.label} className="rounded-xl border bg-card p-4">
               <p className="text-xs text-muted-foreground">{k.label}</p>

@@ -5,26 +5,26 @@
 
 ## 1. Target architecture
 
-### 1.1 Stack (per specification, to be verified at scaffolding)
+### 1.1 Stack
 
-| Layer | Recommendation (Spec §3) | Purpose |
+| Layer | Technology | Purpose |
 |---|---|---|
-| Frontend | React + TypeScript (Vite build; Tailwind CSS + shadcn/ui per project direction) | Admin dashboard, forms, tables, filters, document views, role-based screens |
-| Backend | Node.js + Express + TypeScript | REST API, business rules, auth, workflow, integrations |
-| Database | MongoDB | Clients, orders, qualifications, RTOs, agents, payments, documents, tasks, invoices |
-| ODM | Mongoose (if consistent with implementation chosen at scaffolding) | Schemas, validation, references, middleware for audit/snapshots |
-| Auth | Secure session strategy **or** appropriately implemented JWT + refresh-token rotation | Login, RBAC, session security |
-| File storage | MongoDB BSON Binary (document bytes stored directly in the database) | Evidence, ID, certificates, invoices, supporting docs (metadata and bytes in MongoDB) |
-| Jobs | BullMQ + Redis or equivalent | Email reminders, QuickBooks sync, overdue checks, background processing |
+| Frontend + Backend | Next.js 16 (App Route + Route Handlers) | Single application: React dashboard + REST API on one service |
+| Database | MongoDB Atlas | Clients, orders, qualifications, RTOs, agents, payments, documents, tasks, invoices |
+| ODM | Native MongoDB driver (Next.js) / Mongoose (Express reference) | Collection access, ObjectId conversion |
+| Auth | JWT access (15 min, HS256) + httpOnly rotating refresh (SHA-256 hash, 7 days) | Login, RBAC, session security, refresh rotation + reuse detection |
+| Password hashing | argon2id | Matching Express reference implementation |
+| File storage | MongoDB BSON Binary | Document bytes stored directly in database; raw binary never exposed to clients |
+| Jobs | Inline / BullMQ + Redis (Express reference worker) | Email reminders, QuickBooks sync, overdue checks, background processing |
 | External | QuickBooks integration layer (async + auditable) | Invoice/payment sync with idempotency |
-| Deploy | Docker + managed cloud hosting | Repeatable production deployment and scaling |
-| Observability | Central logs + error monitoring | Auditability, API/integration troubleshooting |
+| Deploy | Single Next.js service (Render) | Repeatable production deployment |
+| Observability | Structured logs + audit_logs collection | Auditability, API/integration troubleshooting |
 
-REST shape follows Spec §14 (`/auth/login`, `/clients`, `/clients/:id/orders`, `/orders`, `/orders/:id/status`, `/qualifications`, `/rtos`, `/supplier-routes`, `/invoices`, `/payments`, `/orders/:id/payment-plan`, `/documents/upload`, `/documents/:id/download`, `/documents/:id/review`, `/orders/:id/timeline`, `/integrations/quickbooks/sync/*`, `/reports/finance`).
+REST shape follows Spec §14 (`/api/auth/login`, `/api/clients`, `/api/orders`, `/api/orders/:id/status`, `/api/qualifications`, `/api/rtos`, `/api/suppliers-routes`, `/api/invoices`, `/api/payments`, `/api/orders/:id/payment-plan`, `/api/documents/upload`, `/api/documents/:id/download`, `/api/documents/:id/review`, `/api/orders/:id/timeline`, `/api/integrations/quickbooks/sync/*`, `/api/reports/finance`).
 
 ### 1.2 Core entities and relationships (Spec §7–§8)
 
-Critical business distinction (non-negotiable): **Sales/Closing Agent** (who brought/closed the client) ≠ **Certificate-Source Agent** (intermediary used to source the qualification) ≠ **actual issuing RTO/College** (provider that issues the qualification). Three separate fields/entities; never a single generic “Agent” field.
+Critical business distinction (non-negotiable): **Sales/Closing Agent** (who brought/closed the client) ≠ **Certificate-Source Agent** (intermediary used to source the qualification) ≠ **actual issuing RTO/College** (provider that issues the qualification). Three separate fields/entities; never a single generic "Agent" field.
 
 - **users** (`name, email, phone, roleIds, active, lastLoginAt`) → * **roles** (`name, permissions[]`).
 - **clients** (`legalName, preferredName, phone, email, address, status, sourceAgentId, notes`) — one record per human; **one client → many orders**. Deduplication is a manual-review workflow, not name matching.
@@ -53,35 +53,28 @@ Recommended Order shape (Spec §8) snapshots `sellingPrice`, `supplierCostSnapsh
 
 - Browser → API (auth-required; RBAC enforced **server-side**; frontend hiding is not enforcement) → MongoDB / job queue → QuickBooks (server-side only).
 - Auth: short-lived access credential + rotated refresh/session; server-side token/secret storage; no QB passwords/tokens in frontend; no secrets in `localStorage` (theme preference only).
-- Documents: metadata and bytes in MongoDB; upload via `POST /documents/upload` (multipart/form-data), download via `GET /documents/:id/download`; every sensitive access logged.
+- Documents: metadata and bytes in MongoDB; upload via `POST /api/documents/upload` (multipart/form-data), download via `GET /api/documents/:id/download`; every sensitive access logged.
 - QuickBooks sync is **asynchronous and idempotent**: create-in-Skills-Connect → enqueue with idempotency key + external IDs → save QB IDs on success; import/webhook path for QB-created invoices/payments; `syncStatus/lastSyncAt/syncError` visible; authorised retry; duplicate-invoice-on-retry is a defect.
 - Audit log is append-only; finance/admin mutations record actor, entity, before/after, timestamp, IP.
 
-## 2. Current implementation verified from the repository
+## 2. Current implementation status
 
-**Nothing to verify yet.** On 2026-10-09 the project folder (`D:/Office Work/Admin SC`) contains:
+- **Next.js application**: Single service containing frontend + all ~85 API routes (`src/app/api/`). `npm run dev` starts `next dev`; `npm run build` produces a production build; `npm run start` runs the production server.
+- **Express reference**: `server/` is preserved as a reference implementation. All 195 Express regression tests pass. The Express server is NOT required at runtime.
+- **Frontend API calls**: `src/lib/api.ts` and `src/lib/ops-store.ts` use relative `/api/*` paths (default when `NEXT_PUBLIC_API_BASE_URL` is unset), targeting Next.js Route Handlers.
+- **TypeScript**: Clean typecheck.
+- **Lint**: Clean (oxlint).
+- **Build**: `next build` succeeds (all 59 routes compiled).
+- **Tests**: 195/195 Express regression tests pass. No dedicated Next.js test suite yet.
 
-- `Skills_Connect_Admin_Software_Developer_Specification.docx` (source of truth; must stay untracked — see §4).
-- No `package.json`, no frontend/backend directories, no config, no components, no tests, no Dockerfile, no `.gitignore`, no `design.md`/`architecture.md`/`workflow.md` (prior to this task), no git repository/branch.
+## 3. External dependencies and configuration
 
-Therefore: **no Phase 1 or Phase 1.1 work exists in this folder**. There is no authenticated route, no Mongoose model, no S3/Redis/QB wiring, no theme/scrolling implementation to audit. Any neighbouring folders (`D:/Office Work/skill-connect`, `D:/Office Work/saffron`) are separate projects and must not be conflated with this one.
-
-## 3. Planned implementation
-
-Day-1 (this task): documentation only + minimal `.gitignore` protection for the confidential DOCX. No code, no stack changes, no packages.
-
-Build order per Spec §23 (see `workflow.md` roadmap): data dictionary/status enums → auth/users/roles → RTO/agent/qualification masters → clients → orders → document checklist + secure upload → payment plans/payments/invoices → dashboards/queues → audit logging → Excel import/migration → QuickBooks idempotent sync + retries → UAT on migrated records → finance reconciliation → production cutover with Excel frozen as archive.
-
-Treat as **proposed/planned until confirmed in code**: Mongoose vs alternative ODM, Vite vs other bundler, session vs JWT rotation, S3 provider choice, BullMQ+Redis vs equivalent queue, Docker target, log/error-monitoring vendor, commission engine, client portal, WhatsApp/email automation, BI/Power BI, AI classification (all Phase 2 per Spec §21).
-
-## 4. External dependencies and configuration
-
-- **Required before production:** MongoDB access/connection string, Redis (if BullMQ chosen), QuickBooks app credentials + sandbox, source workbook `RTO & Onboarding Master Hub.xlsx` + legacy Drive files, deployment host access.
+- **Required before production:** MongoDB Atlas connection string, Redis (if BullMQ worker used), QuickBooks app credentials + sandbox, source workbook `RTO & Onboarding Master Hub.xlsx` + legacy Drive files, deployment host access.
 - **Never invent:** API credentials, provider IDs, confirmed integrations, production URLs, RTO codes, commission rates. Placeholders must be labelled `PLACEHOLDER — not a real credential`.
 - **Config rules:** secrets via environment/secret manager only; never commit `.env`; never log or print secret values; QB sync config server-side; `localStorage` holds only the theme preference.
 
-## 5. Testing, logging, deployment (planned)
+## 4. Testing, logging, deployment
 
 - Tests: unit (financial calc, status transitions, idempotency keys), API/integration (RBAC matrix, order lifecycle, document review, invoice→payment→balance), migration reconciliation (Excel + QuickBooks totals), UAT on real migrated records per acceptance criteria.
 - Logging: structured API logs + audit_logs collection + job/sync attempt history; error monitoring for API and QB failures.
-- Deployment: containerised build, env-separated config, migration-then-cutover sequence with rollback criterion (finance totals must reconcile before Excel is frozen).
+- Deployment: Next.js production build, env-separated config, migration-then-cutover sequence with rollback criterion (finance totals must reconcile before Excel is frozen).

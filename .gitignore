@@ -16,6 +16,9 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Removed Express backend (moved out of repo):
+server/
+
 # Vite template extras
 dist-ssr
 *.local
