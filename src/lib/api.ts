@@ -19,7 +19,10 @@ import type { Permission, RoleName } from "@/lib/types"
  * as a replay and revoke the whole session family.
  */
 
-const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "")
+const BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/+$/, "");
+  // When empty (default), routes are relative to this app — Next.js API routes
+  // under /api/*. Set NEXT_PUBLIC_API_BASE_URL only when the frontend calls a
+  // separate backend service; for a single Next.js deployment leave it unset.
 
 /** Endpoints that must never trigger the auto-refresh path (it would loop). */
 const NO_REFRESH = ["/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all"]
