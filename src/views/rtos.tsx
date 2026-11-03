@@ -1,12 +1,12 @@
 "use client"
-import { useEffect, useState, type FormEvent } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { createRto, listRtos, rtoLabel } from "@/lib/store"
+import { createRto, listRtos, rtoLabel, updateRto } from "@/lib/store"
 import type { Rto, RtoStatus } from "@/lib/types"
 
 const inputCls =
@@ -20,10 +20,12 @@ const STATUS_VARIANT: Record<RtoStatus, "success" | "warning" | "destructive" | 
 }
 
 export function RtosPage() {
-  // The actor is taken from the access token by the server; no client-side id is sent.
   const [rows, setRows] = useState<Rto[] | null>(null)
   const [viewing, setViewing] = useState<Rto | null>(null)
+  const [editing, setEditing] = useState<Rto | null>(null)
   const [creating, setCreating] = useState(false)
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState<RtoStatus | "">("")
   const [legalName, setLegalName] = useState("")
   const [tradingName, setTradingName] = useState("")
   const [rtoCode, setRtoCode] = useState("")
@@ -35,6 +37,15 @@ export function RtosPage() {
   useEffect(() => {
     void (async () => setRows(await listRtos()))()
   }, [])
+
+  const visible = useMemo(() => {
+    const list = rows ?? []
+    return list.filter((r) => {
+      if (search && !rtoLabel(r).toLowerCase().includes(search.toLowerCase())) return false
+      if (statusFilter && r.status !== statusFilter) return false
+      return true
+    })
+  }, [rows, search, statusFilter])
 
   async function onCreate(e: FormEvent) {
     e.preventDefault()
@@ -52,8 +63,8 @@ export function RtosPage() {
         cricosCode: null,
         contacts: [],
         status,
-        complianceNote: "Preview record — verify against training.gov.au at migration.",
-        website: website.trim() || "https://example.invalid",
+        complianceNote: "",
+        website: website.trim() || "",
       })
       setRows((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
@@ -62,6 +73,53 @@ export function RtosPage() {
       setRtoCode("")
       setStatus("active")
       setWebsite("")
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to create RTO. The code may already exist.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onUpdate(e: FormEvent, r: Rto) {
+    e.preventDefault()
+    setError(null)
+    if (!legalName.trim() || !tradingName.trim() || !rtoCode.trim()) {
+      setError("Legal name, trading name, and RTO code are required.")
+      return
+    }
+    setSaving(true)
+    try {
+      const updated = await updateRto(r.id, {
+        legalName: legalName.trim(),
+        tradingName: tradingName.trim(),
+        rtoCode: rtoCode.trim().toUpperCase(),
+        status,
+        website: website.trim() || "",
+      })
+      setRows((prev) =>
+        prev?.map((r_) => (r_.id === updated.id ? updated : r_)) ?? null,
+      )
+      setEditing(null)
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to update RTO. The code may already exist.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleStatus(r: Rto) {
+    setError(null)
+    setSaving(true)
+    try {
+      const next: RtoStatus =
+        r.status === "active" ? "inactive" : "active"
+      const updated = await updateRto(r.id, { status: next })
+      setRows((prev) =>
+        prev?.map((r_) => (r_.id === updated.id ? updated : r_)) ?? null,
+      )
+      if (viewing?.id === r.id) setViewing(updated)
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to update RTO status.")
     } finally {
       setSaving(false)
     }
@@ -84,10 +142,10 @@ export function RtosPage() {
             RTOs & Colleges
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Provider directory · {rows.length} providers
+            Provider directory · {visible.length} providers
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="success">Live data</Badge>
           <Button size="sm" onClick={() => setCreating(true)}>
             Add RTO
@@ -95,9 +153,32 @@ export function RtosPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <div className="relative w-full md:w-64">
+          <input
+            type="search"
+            placeholder="Search trading name or code…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as RtoStatus | "")}
+          className={inputCls}
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="at-risk">At risk</option>
+          <option value="suspended">Suspended</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
       <DataTable<Rto>
-        rows={rows}
-        emptyMessage="No providers yet — add the first one."
+        rows={visible}
+        emptyMessage="No providers match the current filters."
         rowLabel={rtoLabel}
         columns={[
           { key: "tradingName", label: "Trading name" },
@@ -121,9 +202,36 @@ export function RtosPage() {
             key: "actions",
             label: "Actions",
             render: (r) => (
-              <Button size="sm" variant="outline" onClick={() => setViewing(r)}>
-                View
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setLegalName(r.legalName)
+                    setTradingName(r.tradingName)
+                    setRtoCode(r.rtoCode)
+                    setStatus(r.status)
+                    setWebsite(r.website ?? "")
+                    setEditing(r)
+                  }}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant={r.status === "active" ? "destructive" : "default"}
+                  onClick={() => toggleStatus(r)}
+                >
+                  {r.status === "active" ? "Deactivate" : "Activate"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setViewing(r)}
+                >
+                  View
+                </Button>
+              </div>
             ),
           },
         ]}
@@ -138,22 +246,45 @@ export function RtosPage() {
         <form onSubmit={onCreate} className="space-y-3">
           <div className="space-y-1.5">
             <label htmlFor="rto-legal" className="text-sm font-medium">Legal name</label>
-            <input id="rto-legal" value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="Demo Skills College Pty Ltd" className={inputCls} />
+            <input
+              id="rto-legal"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              placeholder="Demo Skills College Pty Ltd"
+              className={inputCls}
+            />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="rto-trading" className="text-sm font-medium">Trading name</label>
-              <input id="rto-trading" value={tradingName} onChange={(e) => setTradingName(e.target.value)} placeholder="Demo Skills College" className={inputCls} />
+              <input
+                id="rto-trading"
+                value={tradingName}
+                onChange={(e) => setTradingName(e.target.value)}
+                placeholder="Demo Skills College"
+                className={inputCls}
+              />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="rto-code" className="text-sm font-medium">RTO code</label>
-              <input id="rto-code" value={rtoCode} onChange={(e) => setRtoCode(e.target.value)} placeholder="DEMO4" className={inputCls} />
+              <input
+                id="rto-code"
+                value={rtoCode}
+                onChange={(e) => setRtoCode(e.target.value)}
+                placeholder="DEMO4"
+                className={inputCls}
+              />
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="rto-status" className="text-sm font-medium">Status</label>
-              <select id="rto-status" value={status} onChange={(e) => setStatus(e.target.value as RtoStatus)} className={inputCls}>
+              <select
+                id="rto-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as RtoStatus)}
+                className={inputCls}
+              >
                 <option value="active">Active</option>
                 <option value="at-risk">At risk</option>
                 <option value="suspended">Suspended</option>
@@ -162,18 +293,111 @@ export function RtosPage() {
             </div>
             <div className="space-y-1.5">
               <label htmlFor="rto-web" className="text-sm font-medium">Website</label>
-              <input id="rto-web" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://…" className={inputCls} />
+              <input
+                id="rto-web"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://…"
+                className={inputCls}
+              />
             </div>
           </div>
           {error && (
             <p role="alert" className="text-sm text-destructive">{error}</p>
           )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setCreating(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCreating(false)}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
               {saving ? "Adding…" : "Add RTO"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title="Edit RTO / college"
+        description={editing ? `Code: ${editing.rtoCode}` : undefined}
+      >
+        <form onSubmit={(e) => onUpdate(e, editing!)} className="space-y-3">
+          <div className="space-y-1.5">
+            <label htmlFor="er-legal" className="text-sm font-medium">Legal name</label>
+            <input
+              id="er-legal"
+              value={legalName}
+              onChange={(e) => setLegalName(e.target.value)}
+              placeholder="Demo Skills College Pty Ltd"
+              className={inputCls}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="er-trading" className="text-sm font-medium">Trading name</label>
+              <input
+                id="er-trading"
+                value={tradingName}
+                onChange={(e) => setTradingName(e.target.value)}
+                placeholder="Demo Skills College"
+                className={inputCls}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="er-code" className="text-sm font-medium">RTO code</label>
+              <input
+                id="er-code"
+                value={rtoCode}
+                onChange={(e) => setRtoCode(e.target.value)}
+                placeholder="DEMO4"
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="er-status" className="text-sm font-medium">Status</label>
+              <select
+                id="er-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as RtoStatus)}
+                className={inputCls}
+              >
+                <option value="active">Active</option>
+                <option value="at-risk">At risk</option>
+                <option value="suspended">Suspended</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="er-web" className="text-sm font-medium">Website</label>
+              <input
+                id="er-web"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://…"
+                className={inputCls}
+              />
+            </div>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">{error}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditing(null)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save RTO"}
             </Button>
           </div>
         </form>
@@ -187,10 +411,10 @@ export function RtosPage() {
       >
         {viewing && (
           <div className="space-y-3 text-sm">
-            <p className="text-muted-foreground">{viewing.complianceNote}</p>
+            <p className="text-muted-foreground">{viewing.complianceNote ?? "No compliance note recorded."}</p>
             <p>
               Website:{" "}
-              <span className="text-muted-foreground">{viewing.website}</span>
+              <span className="text-muted-foreground">{viewing.website ?? "—"}</span>
             </p>
             <h3 className="font-medium">Contacts ({viewing.contacts.length})</h3>
             {viewing.contacts.length === 0 ? (

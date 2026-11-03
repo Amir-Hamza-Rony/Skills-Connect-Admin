@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileText,
   GraduationCap,
+  Link,
   LayoutDashboard,
   ScrollText,
   Settings,
@@ -47,6 +48,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "RTOs & Colleges", icon: Building2, href: "/rtos" },
       { label: "Agents", icon: Briefcase, href: "/agents" },
       { label: "Pricing", icon: Tags, href: "/pricing" },
+      { label: "Qualification ↔ RTO", icon: Link, href: "/qualification-rto-mappings" },
     ],
   },
   {

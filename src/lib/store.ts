@@ -109,6 +109,17 @@ export async function createQualification(
   return data.qualification
 }
 
+export async function updateQualification(
+  id: string,
+  patch: Partial<Pick<Qualification, "code" | "title" | "trainingPackage" | "industry" | "status" | "licensingRefs">>,
+): Promise<Qualification> {
+  const data = await apiFetch<{ item: Qualification }>(`/masters/qualifications/${id}`, {
+    method: "PATCH",
+    body: patch,
+  })
+  return data.item
+}
+
 /* ---------- RTOs ---------- */
 
 export async function listRtos(): Promise<Rto[]> {
@@ -119,6 +130,17 @@ export async function listRtos(): Promise<Rto[]> {
 export async function createRto(r: Omit<Rto, "id">): Promise<Rto> {
   const data = await apiFetch<{ rto: Rto }>("/masters/rtos", { method: "POST", body: r })
   return data.rto
+}
+
+export async function updateRto(
+  id: string,
+  patch: Partial<Pick<Rto, "legalName" | "tradingName" | "rtoCode" | "cricosCode" | "contacts" | "status" | "complianceNote" | "website">>,
+): Promise<Rto> {
+  const data = await apiFetch<{ item: Rto }>(`/masters/rtos/${id}`, {
+    method: "PATCH",
+    body: patch,
+  })
+  return data.item
 }
 
 /* ---------- Agents ---------- */
@@ -135,10 +157,76 @@ export async function createAgent(a: Omit<Agent, "id">): Promise<Agent> {
 
 export async function updateAgent(
   id: string,
-  patch: Partial<Pick<Agent, "contact" | "commissionRule" | "active">>,
+  patch: Partial<Pick<Agent, "name" | "type" | "contact" | "commissionRule" | "active">>,
 ): Promise<Agent> {
-  const data = await apiFetch<{ agent: Agent }>(`/agents/${id}`, { method: "PATCH", body: patch })
-  return data.agent
+  const data = await apiFetch<{ item: Agent }>(`/masters/agents/${id}`, {
+    method: "PATCH",
+    body: patch,
+  })
+  return data.item
+}
+
+/* ---------- Qualification–RTO mappings ---------- */
+
+export interface MappingItem {
+  id: string
+  qualificationId: string
+  rtoId: string
+  status: "active" | "inactive"
+  effectiveFrom: string
+  effectiveTo: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export async function listMappings({
+  qualificationId,
+  rtoId,
+  status,
+}: {
+  qualificationId?: string
+  rtoId?: string
+  status?: string
+} = {}): Promise<MappingItem[]> {
+  const params = new URLSearchParams()
+  if (qualificationId) params.set("qualificationId", qualificationId)
+  if (rtoId) params.set("rtoId", rtoId)
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: MappingItem[]; total: number }>(
+    `/masters/qualification-rto-mappings?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createMapping(m: {
+  qualificationId: string
+  rtoId: string
+  status?: "active" | "inactive"
+  effectiveFrom?: string
+  effectiveTo?: string
+}): Promise<MappingItem> {
+  const data = await apiFetch<{ mapping: MappingItem }>("/masters/qualification-rto-mappings", {
+    method: "POST",
+    body: m,
+  })
+  return data.mapping
+}
+
+export async function updateMapping(
+  id: string,
+  patch: Partial<Pick<MappingItem, "status" | "effectiveFrom" | "effectiveTo">>,
+): Promise<MappingItem> {
+  const data = await apiFetch<{ mapping: MappingItem }>(`/masters/qualification-rto-mappings/${id}`, {
+    method: "PATCH",
+    body: patch,
+  })
+  return data.mapping
+}
+
+export async function deleteMapping(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/masters/qualification-rto-mappings/${id}`, {
+    method: "DELETE",
+  })
 }
 
 /* ---------- Supplier routes / pricing ---------- */

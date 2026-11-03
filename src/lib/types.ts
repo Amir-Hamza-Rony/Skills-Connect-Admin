@@ -110,6 +110,19 @@ export interface SupplierRoute {
   status: RouteStatus
 }
 
+export type MappingStatus = "active" | "inactive"
+
+export interface QualificationRtoMapping {
+  id: string
+  qualificationId: string
+  rtoId: string
+  status: MappingStatus
+  effectiveFrom: string
+  effectiveTo: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 /** Fine-grained permissions enforced server-side (Day-2: mirrored in UI guards). */
 export type Permission =
   | "users.manage"
