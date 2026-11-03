@@ -4,7 +4,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
+import type { AuthedRequest } from "@/middleware/auth";
+import { collection, safeObjectId } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   Lead: ["Qualified", "Lost"],
@@ -49,12 +51,33 @@ export const PATCH = withAuth("orders.manage",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
-    const { status } = await req.json();
-    if (!status)
+
+    const orderOid = safeObjectId(id);
+    if (!orderOid) {
+      return NextResponse.json(
+        { error: { code: "INVALID_ID", message: "Invalid id format." } },
+        { status: 400 },
+      );
+    }
+    const actor = (req as AuthedRequest).auth!;
+
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "Invalid request body." } },
+        { status: 400 },
+      );
+    }
+
+    const { status } = body;
+    if (!status) {
       return NextResponse.json({ error: { code: "BAD_REQUEST", message: "status required." } }, { status: 400 });
+    }
 
     const orders = await collection("orders");
-    const order = await orders.findOne({ _id: toObjectId(id) });
+    const order = await orders.findOne({ _id: orderOid });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
 
     const before = order.status;
@@ -70,12 +93,22 @@ export const PATCH = withAuth("orders.manage",
     const update: Record<string, unknown> = { status, updatedAt: now };
     if (status === "Completed") update.completedAt = now;
 
-    const historyEntry: Record<string, unknown> = { timestamp: now, field: "status", before, after: status };
+    const historyEntry: Record<string, unknown> = { timestamp: now, field: "status", before, after: status, actorId: actor.userId };
 
     await orders.updateOne(
-      { _id: toObjectId(id) },
+      { _id: orderOid },
       { $set: update, $push: { history: historyEntry } as any as any as any as any },
     );
+
+    await writeAudit({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      entityType: "order",
+      entityId: String(id),
+      action: "status_transition",
+      before: { status: before },
+      after: { status },
+    });
 
     return NextResponse.json({ ok: true, before, after: status });
   },

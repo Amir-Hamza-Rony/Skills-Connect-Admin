@@ -5,25 +5,27 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
+import type { AuthedRequest } from "@/middleware/auth";
+import { collection, safeObjectId } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 export const POST = withAuth("finance.manage",
   async (req: NextRequest, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
 
-    let paymentId;
-    try {
-      paymentId = toObjectId(id);
-    } catch {
+    const paymentOid = safeObjectId(id);
+    if (!paymentOid) {
       return NextResponse.json(
         { error: { code: "INVALID_ID", message: "Invalid payment id." } },
         { status: 400 },
       );
     }
 
+    const actor = (req as AuthedRequest).auth!;
+
     const payments = await collection("payments");
-    const payment = await payments.findOne({ _id: paymentId });
+    const payment = await payments.findOne({ _id: paymentOid });
     if (!payment) {
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Payment not found." } },
@@ -31,11 +33,23 @@ export const POST = withAuth("finance.manage",
       );
     }
 
+    const before = payment.status;
+
     await payments.updateOne(
-      { _id: paymentId },
+      { _id: paymentOid },
       { $set: { status: "Refunded", updatedAt: new Date() } },
     );
 
-    return NextResponse.json({ payment: { id: String(paymentId), status: "Refunded" } });
+    await writeAudit({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      entityType: "payment",
+      entityId: String(id),
+      action: "refund",
+      before: { status: before },
+      after: { status: "Refunded" },
+    });
+
+    return NextResponse.json({ payment: { id: String(paymentOid), status: "Refunded" } });
   },
 );

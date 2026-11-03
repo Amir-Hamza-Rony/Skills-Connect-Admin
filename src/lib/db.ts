@@ -8,15 +8,23 @@ import { MongoClient, ObjectId } from "mongodb";
 let client: MongoClient | null = null;
 let db: Awaited<ReturnType<MongoClient["db"]>> | null = null;
 
-export async function getDb() {
-  if (!db) {
-    if (!client) {
-      client = new MongoClient(process.env.MONGODB_URI!);
-      await client.connect();
-    }
-    db = client.db(process.env.MONGODB_DB ?? "skills_connect_admin");
+async function ensureClient(): Promise<MongoClient> {
+  if (!client) {
+    client = new MongoClient(process.env.MONGODB_URI!);
+    await client.connect();
   }
+  return client;
+}
+
+export async function getDb() {
+  const c = await ensureClient();
+  if (!db) db = c.db(process.env.MONGODB_DB ?? "skills_connect_admin");
   return db;
+}
+
+/** Returns the cached (and connected) MongoClient, usable for sessions/transactions. */
+export async function getClient(): Promise<MongoClient> {
+  return ensureClient();
 }
 
 /**
@@ -33,4 +41,16 @@ export type { ObjectId as ObjectIdType } from "mongodb";
 
 export function toObjectId(id: any) {
   return new ObjectId(String(id));
+}
+
+/**
+ * Parse an id to ObjectId, returning `null` instead of throwing when the id is
+ * malformed. Routes should use this and return 400 `INVALID_ID` on null.
+ */
+export function safeObjectId(id: any): import("mongodb").ObjectId | null {
+  try {
+    return new ObjectId(String(id));
+  } catch {
+    return null;
+  }
 }

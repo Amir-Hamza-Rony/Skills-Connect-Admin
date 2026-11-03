@@ -5,7 +5,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
+import type { AuthedRequest } from "@/middleware/auth";
+import { collection, safeObjectId, toObjectId } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 export const GET = withAuth("finance.view",
   async (req) => {
@@ -25,19 +27,47 @@ export const GET = withAuth("finance.view",
 
 export const POST = withAuth("finance.manage",
   async (req) => {
-    const { orderId, total, dueDate } = await req.json();
+    const actor = (req as AuthedRequest).auth!;
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Invalid request body." } }, { status: 400 });
+    }
+
+    const { orderId, total, dueDate } = body;
     if (!orderId || !total || !dueDate)
       return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Missing fields." } }, { status: 400 });
 
+    const orderOid = safeObjectId(orderId);
+    if (!orderOid) {
+      return NextResponse.json({ error: { code: "INVALID_ID", message: "Invalid order id." } }, { status: 400 });
+    }
+
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: orderOid });
+    if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+
     const resultColl = await collection("invoices");
     const result = await resultColl.insertOne({
-      orderId: toObjectId(orderId),
+      orderId: orderOid,
       invoiceNumber: `INV-${Date.now()}`,
       total: Number(total),
       dueDate: new Date(dueDate),
       status: "Draft",
       createdAt: new Date(),
     });
+
+    await writeAudit({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      entityType: "invoice",
+      entityId: String(result.insertedId),
+      action: "create",
+      before: null,
+      after: { orderId, total: Number(total), dueDate, status: "Draft" },
+    });
+
     return NextResponse.json({ invoice: { id: String(result.insertedId) } }, { status: 201 });
   },
 );

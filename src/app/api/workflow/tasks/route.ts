@@ -6,10 +6,19 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
+import type { AuthedRequest } from "@/middleware/auth";
+import { collection, safeObjectId, toObjectId } from "@/lib/db";
+import { writeAudit } from "@/lib/audit";
 
 const VALID_STATUSES = ["Todo", "In Progress", "Done", "Blocked"];
 const VALID_PRIORITIES = ["Low", "Medium", "High"];
+
+function invalidId() {
+  return NextResponse.json(
+    { error: { code: "INVALID_ID", message: "Invalid id format." } },
+    { status: 400 },
+  );
+}
 
 /** `GET /api/workflow/tasks` — optionally filtered by order, assignee or status. */
 export const GET = withAuth("orders.view",
@@ -50,41 +59,111 @@ export const PATCH = withAuth("orders.manage",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
-    const { status, assigneeId, dueDate, priority } = await req.json();
+
+    const taskOid = safeObjectId(id);
+    if (!taskOid) return invalidId();
+    const actor = (req as AuthedRequest).auth!;
+
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "Invalid request body." } },
+        { status: 400 },
+      );
+    }
+
+    const { status, assigneeId, dueDate, priority } = body;
 
     const tasks = await collection("workflow-tasks");
-    const task = await tasks.findOne({ _id: toObjectId(id) });
+    const task = await tasks.findOne({ _id: taskOid });
     if (!task) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Task not found." } }, { status: 404 });
 
-    const before = { status: task.status, assigneeId: task.assigneeId ? String(task.assigneeId) : null, dueDate: task.dueDate as any };
+    const before = {
+      status: task.status,
+      assigneeId: task.assigneeId ? String(task.assigneeId) : null,
+      dueDate: task.dueDate ? new Date(task.dueDate).toISOString() : null,
+      priority: task.priority,
+    };
 
     const set: Record<string, unknown> = { updatedAt: new Date() };
-    const changes: Array<Record<string, unknown>> = [];
+    const historyEntries: Array<Record<string, unknown>> = [];
 
-    if (status !== undefined && VALID_STATUSES.includes(status) && status !== task.status) {
-      set.status = status;
-      changes.push({ field: "status", before: String(before.status), after: status });
+    if (status !== undefined) {
+      if (!VALID_STATUSES.includes(status)) {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: `Invalid status: ${status}` } },
+          { status: 400 },
+        );
+      }
+      if (status !== task.status) {
+        set.status = status;
+        historyEntries.push({ field: "status", before: String(before.status), after: status });
+      }
     }
+
     if (assigneeId !== undefined) {
-      set.assigneeId = assigneeId ? toObjectId(assigneeId) : null;
-      changes.push({ field: "assigneeId", before: before.assigneeId, after: assigneeId });
-    }
-    if (dueDate !== undefined) {
-      set.dueDate = dueDate ? new Date(`${dueDate}T00:00:00.000Z`) : null;
-      changes.push({ field: "dueDate", before: before.dueDate, after: dueDate });
-    }
-    if (priority !== undefined && VALID_PRIORITIES.includes(priority) && priority !== task.priority as any) {
-      set.priority = priority;
-      changes.push({ field: "priority", before: String((before as any).priority ?? ""), after: priority });
+      const nextAssignee = assigneeId ? safeObjectId(assigneeId) : null;
+      if (assigneeId && !nextAssignee) return invalidId();
+      set.assigneeId = nextAssignee;
+      historyEntries.push({ field: "assigneeId", before: before.assigneeId, after: assigneeId });
     }
 
-    if (Object.keys(set).length <= 1) {
+    let parsedDueDate: Date | null = null;
+    if (dueDate !== undefined) {
+      parsedDueDate = dueDate ? new Date(`${dueDate}T00:00:00.000Z`) : null;
+      if (parsedDueDate && Number.isNaN(parsedDueDate.getTime())) {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: "Invalid dueDate." } },
+          { status: 400 },
+        );
+      }
+      set.dueDate = parsedDueDate;
+      historyEntries.push({ field: "dueDate", before: before.dueDate, after: dueDate });
+    }
+
+    if (priority !== undefined) {
+      if (!VALID_PRIORITIES.includes(priority)) {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: `Invalid priority: ${priority}` } },
+          { status: 400 },
+        );
+      }
+      if (priority !== task.priority) {
+        set.priority = priority;
+        historyEntries.push({ field: "priority", before: String(before.priority ?? ""), after: priority });
+      }
+    }
+
+    if (historyEntries.length === 0) {
       return NextResponse.json({ error: { code: "NO_CHANGES", message: "No changes supplied." } }, { status: 400 });
     }
 
-    await tasks.updateOne({ _id: toObjectId(id) }, { $set: set });
+    const now = new Date();
+    historyEntries.forEach((e) => { e.timestamp = now; e.actorId = actor.userId; });
 
-    return NextResponse.json({ ok: true });
+    await tasks.updateOne(
+      { _id: taskOid },
+      { $set: set, $push: { history: { $each: historyEntries } } as any },
+    );
+
+    await writeAudit({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      entityType: "workflow-task",
+      entityId: String(id),
+      action: "update",
+      before,
+      after: {
+        status: set.status ?? task.status,
+        assigneeId: set.assigneeId !== undefined ? (set.assigneeId ? String(set.assigneeId) : null) : before.assigneeId,
+        dueDate: set.dueDate !== undefined ? (set.dueDate ? new Date(set.dueDate as any).toISOString() : null) : before.dueDate,
+        priority: set.priority ?? task.priority,
+      },
+    });
+
+    return NextResponse.json({ ok: true, changes: historyEntries });
   },
 );
 

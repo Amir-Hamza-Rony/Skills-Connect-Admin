@@ -4,14 +4,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
+import { collection, safeObjectId } from "@/lib/db";
 
 export const GET = withAuth("orders.view",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
+
+    const orderOid = safeObjectId(id);
+    if (!orderOid) {
+      return NextResponse.json({ error: { code: "INVALID_ID", message: "Invalid id format." } }, { status: 400 });
+    }
+
     const orders = await collection("orders");
-    const order = await orders.findOne({ _id: toObjectId(id) });
+    const order = await orders.findOne({ _id: orderOid });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
 
     const margin = order.sellingPrice - order.supplierCostSnapshot - (order.otherCost ?? 0);
