@@ -71,7 +71,9 @@ export function FinancePage() {
 
   const [creatingInv, setCreatingInv] = useState(false)
   const [invOrder, setInvOrder] = useState("")
+  const [invCurrency, setInvCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
   const [invTotal, setInvTotal] = useState("")
+  const [invIssue, setInvIssue] = useState("")
   const [invDue, setInvDue] = useState("")
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -86,6 +88,7 @@ export function FinancePage() {
   const [payOrder, setPayOrder] = useState("")
   const [payInvoice, setPayInvoice] = useState("")
   const [payAmount, setPayAmount] = useState("")
+  const [payCurrency, setPayCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [payMethod, setPayMethod] = useState<PaymentMethod>("Bank Transfer")
   const [payRef, setPayRef] = useState("")
@@ -124,23 +127,37 @@ export function FinancePage() {
     e.preventDefault()
     setFormError(null)
     const total = Number(invTotal)
-    if (!invOrder || !invDue) {
-      setFormError("Order and due date are required.")
+    if (!invOrder || !invIssue || !invDue) {
+      setFormError("Order, issue date, and due date are required.")
       return
     }
     if (!Number.isFinite(total) || total <= 0) {
       setFormError("Total must be a positive number.")
       return
     }
+    const issue = new Date(invIssue)
+    const due = new Date(invDue)
+    if (Number.isNaN(issue.getTime()) || Number.isNaN(due.getTime()) || due < issue) {
+      setFormError("Invalid issue or due date.")
+      return
+    }
     setSaving(true)
     try {
-      const created = await createInvoice({ orderId: invOrder, total, dueDate: invDue }, actor)
+      const created = await createInvoice({
+        orderId: invOrder,
+        currency: invCurrency,
+        issueDate: invIssue,
+        dueDate: invDue,
+        total,
+        lineItems: [{ id: "line-1", description: "Client selling price", amount: total, currency: invCurrency, quantity: 1, taxAmount: 0, taxRate: 0 }],
+      }, actor)
       setInvoices((prev) => (prev ? [created, ...prev] : [created]))
       setQbMap((m) => ({ ...m, [created.id]: "Not Synced" }))
       setSummary(await financeSummary())
       setCreatingInv(false)
       setInvOrder("")
       setInvTotal("")
+      setInvIssue("")
       setInvDue("")
     } finally {
       setSaving(false)
@@ -170,6 +187,7 @@ export function FinancePage() {
           date: payDate,
           method: payMethod,
           reference: payRef.trim(),
+          currency: payCurrency,
         },
         actor,
       )
@@ -521,8 +539,16 @@ export function FinancePage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <label htmlFor="pay-amt" className="text-sm font-medium">Amount (AUD)</label>
-              <input id="pay-amt" type="number" min="1" step="1" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="500" className={inputCls} />
+              <label htmlFor="pay-amt" className="text-sm font-medium">Amount</label>
+              <input id="pay-amt" type="number" min="0" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} placeholder="500" className={inputCls} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="pay-currency" className="text-sm font-medium">Currency</label>
+              <select id="pay-currency" value={payCurrency} onChange={(e) => setPayCurrency(e.target.value as any)} className={inputCls}>
+                {["AUD", "BDT", "USD", "GBP", "EUR", "INR"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1.5">
               <label htmlFor="pay-date" className="text-sm font-medium">Date</label>
@@ -576,10 +602,22 @@ export function FinancePage() {
               ))}
             </select>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <label htmlFor="inv-total" className="text-sm font-medium">Total (AUD)</label>
-              <input id="inv-total" type="number" min="1" step="1" value={invTotal} onChange={(e) => setInvTotal(e.target.value)} placeholder="2500" className={inputCls} />
+              <label htmlFor="inv-total" className="text-sm font-medium">Total</label>
+              <input id="inv-total" type="number" min="1" step="0.01" value={invTotal} onChange={(e) => setInvTotal(e.target.value)} placeholder="2500" className={inputCls} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="inv-currency" className="text-sm font-medium">Currency</label>
+              <select id="inv-currency" value={invCurrency} onChange={(e) => setInvCurrency(e.target.value as any)} className={inputCls}>
+                {["AUD", "BDT", "USD", "GBP", "EUR", "INR"].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="inv-issue" className="text-sm font-medium">Issue date</label>
+              <input id="inv-issue" type="date" value={invIssue} onChange={(e) => setInvIssue(e.target.value)} className={inputCls} />
             </div>
             <div className="space-y-1.5">
               <label htmlFor="inv-due" className="text-sm font-medium">Due date</label>

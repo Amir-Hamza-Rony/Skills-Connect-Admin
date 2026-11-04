@@ -3,6 +3,7 @@ import {
   Briefcase,
   Building2,
   Calendar,
+  Cloud,
   ClipboardList,
   CreditCard,
   DollarSign,
@@ -11,6 +12,7 @@ import {
   Link,
   LayoutDashboard,
   Plus,
+  RefreshCw,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -69,6 +71,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Commission Records", icon: Calendar, href: "/commission-records" },
       { label: "Commission Payouts", icon: Wallet, href: "/commission-payouts" },
       { label: "RTO Processing", icon: FileText, href: "/rto-processing" },
+      { label: "Reconciliation", icon: RefreshCw, href: "/reconciliation" },
     ],
   },
   {
@@ -76,6 +79,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Reports", icon: ScrollText, href: "/reports" },
       { label: "Audit", icon: Bell, href: "/audit" },
+      { label: "QuickBooks", icon: Cloud, href: "/integrations/quickbooks" },
       { label: "Users", icon: UserCog, href: "/users" },
       { label: "Roles", icon: ShieldCheck, href: "/roles" },
       { label: "Settings", icon: Settings, href: "/settings" },

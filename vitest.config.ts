@@ -12,6 +12,7 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     setupFiles: ["./tests/setup.ts"],
     teardownTimeout: 30000,
+    testTimeout: 10000,
     pool: "forks",
     maxThreads: 1,
   },

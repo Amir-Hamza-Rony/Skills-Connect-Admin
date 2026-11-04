@@ -32,7 +32,22 @@ export async function listInvoices(orderId?: string): Promise<Invoice[]> {
 }
 
 export async function createInvoice(
-  o: { orderId: string; total: number; dueDate: string },
+  o: {
+    orderId: string
+    currency: string
+    issueDate: string
+    dueDate: string
+    total?: number
+    lineItems?: Array<{
+      id: string
+      description: string
+      amount: number
+      currency: string
+      quantity: number
+      taxAmount: number
+      taxRate: number
+    }>
+  },
   _actorId: string,
 ): Promise<Invoice> {
   const data = await api.post<{ invoice: Invoice }>("/invoices", o)
@@ -98,6 +113,10 @@ export async function recordPayment(
     date: string
     method: PaymentMethod
     reference: string
+    currency?: string
+    exchangeRate?: number
+    exchangeRateSource?: string
+    verificationStatus?: string
   },
   _actorId: string,
 ): Promise<Payment> {
@@ -110,17 +129,31 @@ export async function refundPayment(id: string, _actorId: string): Promise<Payme
   return data.payment
 }
 
+export async function reverseAllocation(id: string, _actorId: string): Promise<{ ok: boolean; id: string }> {
+  const data = await api.post<{ ok: boolean; id: string }>(`/payments/${id}/reverse-allocation`)
+  return data
+}
+
 /* ---------- Summary (real API) ---------- */
 
 export interface FinanceSummary {
   invoiced: number
   collected: number
   outstanding: number
+  reportCurrency: string
+  currencyBreakdown: Array<{
+    currency: string
+    invoiced: number
+    collected: number
+    outstanding: number
+  }>
 }
 
-export async function financeSummary(orderId?: string): Promise<FinanceSummary> {
-  const query = orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""
-  return api.get(`/finance/summary${query}`)
+export async function financeSummary(orderId?: string, reportCurrency?: string): Promise<FinanceSummary> {
+  const query = new URLSearchParams()
+  if (orderId) query.set("orderId", orderId)
+  if (reportCurrency) query.set("reportCurrency", reportCurrency)
+  return api.get(`/finance/summary${query.toString() ? `?${query.toString()}` : ""}`)
 }
 
 /* ---------- QuickBooks sync (real API) ---------- */

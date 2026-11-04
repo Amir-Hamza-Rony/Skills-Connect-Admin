@@ -147,6 +147,8 @@ export type Permission =
   | "settings.manage"
   | "commissions.manage"
   | "commissions.view"
+  | "qb.manage"
+  | "finance.reconcile"
 
 /* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
@@ -644,4 +646,110 @@ export interface Communication {
   externalReference: string | null
   createdAt: string
   updatedAt: string
+}
+
+/* ================= Day-6: Finance & QuickBooks (Spec phase 4) ========== */
+
+export interface InvoiceLineItem {
+  id: string
+  description: string
+  amount: number
+  currency: Currency
+  quantity: number
+  taxAmount: number
+  taxRate: number
+}
+
+export type QBConnectionStatus = "connected" | "disconnected" | "error" | "expired"
+
+export interface QBConnection {
+  id: string
+  realmId: string
+  connectionStatus: QBConnectionStatus
+  accessTokenEncrypted: string // encrypted at rest — never returned to frontend
+  refreshTokenEncrypted: string
+  tokenExpiresAt: string | null
+  scope: string | null
+  connectedBy: string | null
+  connectedAt: string | null
+  updatedAt: string
+}
+
+export type QBEntityType = "customer" | "invoice" | "payment"
+
+export type QBSyncDirection = "local_to_qb" | "qb_to_local"
+
+export type QBSyncStatus2 = "Not Synced" | "Pending" | "Synced" | "Failed" | "Conflict"
+
+export interface QBReconciliationRecord {
+  id: string
+  entityType: QBEntityType
+  entityId: string
+  qbReference: string | null
+  localId: string | null
+  direction: QBSyncDirection
+  status: QBSyncStatus2
+  attempts: number
+  lastSyncAt: string | null
+  syncError: string | null
+  idempotencyKey: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CurrencyRate {
+  id: string
+  fromCurrency: Currency
+  toCurrency: Currency
+  rate: number
+  source: string
+  effectiveAt: string
+  createdAt: string
+}
+
+export type ReconciliationStatus = "open" | "resolved" | "ignored"
+
+export interface ReconciliationItem {
+  id: string
+  entityType: QBEntityType
+  entityId: string
+  qbReference: string | null
+  issue: "amount_mismatch" | "currency_mismatch" | "status_mismatch" | "missing_locally" | "missing_in_qb" | "duplicate_qb_reference"
+  localValue: unknown
+  qbValue: unknown
+  status: ReconciliationStatus
+  resolvedBy: string | null
+  resolvedAt: string | null
+  resolutionNote: string | null
+  createdAt: string
+}
+
+/* Extend Invoice with multi-currency and QB sync fields (additive — existing
+ * docs written without these fields treat them as null/legacy). */
+interface InvoiceExtended extends Invoice {
+  currency: Currency
+  issueDate: string
+  lineItems: InvoiceLineItem[]
+  history: StatusChange[]
+  qbReference: string | null
+  qbSyncStatus: QBSyncStatus2
+}
+
+/* Extend Payment with multi-currency and verification fields (additive). */
+interface PaymentExtended extends Payment {
+  currency: Currency
+  exchangeRate: number | null
+  exchangeRateSource: string | null
+  exchangeRateAt: string | null
+  verificationStatus: "Unverified" | "Verified" | "Failed"
+  qbReference: string | null
+  qbSyncStatus: QBSyncStatus2
+}
+
+/* Extend PaymentPlan / Instalment with currency (additive). */
+interface PaymentPlanExtended extends PaymentPlan {
+  currency: Currency
+}
+interface InstalmentExtended extends Instalment {
+  currency: Currency
 }

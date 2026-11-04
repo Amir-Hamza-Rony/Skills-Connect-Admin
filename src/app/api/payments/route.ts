@@ -15,6 +15,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId, getClient } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { enqueueSync } from "@/lib/quickbooks";
 
 function invalidId() {
   return NextResponse.json(
@@ -32,9 +33,12 @@ export const GET = withAuth("finance.view",
       orderId: String(d.orderId),
       invoiceId: d.invoiceId ? String(d.invoiceId) : null,
       amount: d.amount,
+      currency: d.currency,
       allocatedAmount: d.allocatedAmount,
       method: d.method,
       status: d.status,
+      verificationStatus: d.verificationStatus,
+      exchangeRate: d.exchangeRate,
       date: d.date,
     }));
     return NextResponse.json({ payments: paymentList });
@@ -54,7 +58,7 @@ export const POST = withAuth("finance.manage",
       );
     }
 
-    const { orderId, invoiceId, amount, date, method, reference, idempotencyKey } = body;
+    const { orderId, invoiceId, amount, date, method, reference, idempotencyKey, currency, exchangeRate, exchangeRateSource, verificationStatus } = body;
 
     if (!orderId || !date || !method) {
       return NextResponse.json(
@@ -74,6 +78,15 @@ export const POST = withAuth("finance.manage",
     const orderOid = safeObjectId(orderId);
     if (!orderOid) return invalidId();
 
+    if (!["AUD", "BDT", "USD", "GBP", "EUR", "INR"].includes(currency ?? "AUD")) {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "Invalid currency." } },
+        { status: 400 },
+      );
+    }
+
+    const paymentCurrency = currency ?? "AUD";
+
     let invoiceOid: import("mongodb").ObjectId | null = null;
     if (invoiceId) {
       invoiceOid = safeObjectId(invoiceId);
@@ -86,6 +99,24 @@ export const POST = withAuth("finance.manage",
         { error: { code: "BAD_REQUEST", message: "Invalid payment method." } },
         { status: 400 },
       );
+    }
+
+    const validVerification = new Set(["Unverified", "Verified", "Failed"]);
+    const paymentVerificationStatus = verificationStatus && validVerification.has(verificationStatus)
+      ? verificationStatus
+      : "Unverified";
+
+    let exchangeRateNum: number | null = null;
+    let exchangeRateAt: string | null = null;
+    if (exchangeRate !== undefined && exchangeRate !== null && exchangeRate !== "") {
+      exchangeRateNum = Number(exchangeRate);
+      if (!Number.isFinite(exchangeRateNum) || exchangeRateNum <= 0) {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: "Exchange rate must be a positive number." } },
+          { status: 400 },
+        );
+      }
+      exchangeRateAt = new Date().toISOString();
     }
 
     const client = await getClient();
@@ -162,12 +193,17 @@ export const POST = withAuth("finance.manage",
           orderId: orderOid,
           invoiceId: invoiceOid ?? null,
           amount: amountNum,
+          currency: paymentCurrency,
           date: new Date(date),
           method,
           reference: reference ?? "",
           allocatedAmount,
           idempotencyKey: idempotencyKey ?? null,
           status: allocatedAmount > 0 ? "Allocated" : "Unallocated",
+          verificationStatus: paymentVerificationStatus,
+          exchangeRate: exchangeRateNum,
+          exchangeRateSource: exchangeRateSource ?? null,
+          exchangeRateAt: exchangeRateAt,
           createdAt: now,
           updatedAt: now,
         };
@@ -227,6 +263,13 @@ export const POST = withAuth("finance.manage",
       await session.endSession().catch(() => {});
     }
 
+    // Enqueue a local→QuickBooks sync for the new payment.
+    await enqueueSync({
+      entityType: "payment",
+      entityId: result.id,
+      idempotencyKey: `payment-${result.id}-create`,
+    });
+
     await writeAudit({
       actorId: actor.userId,
       actorEmail: actor.email,
@@ -238,11 +281,28 @@ export const POST = withAuth("finance.manage",
         orderId,
         invoiceId,
         amount: result.payment.amount,
+        currency: result.payment.currency,
         allocatedAmount: result.payment.allocatedAmount,
         status: result.payment.status,
+        verificationStatus: result.payment.verificationStatus,
+        exchangeRate: result.payment.exchangeRate,
       },
     });
 
-    return NextResponse.json({ payment: { id: result.id } }, { status: 201 });
+    return NextResponse.json({
+      payment: {
+        id: result.id,
+        orderId: result.payment.orderId,
+        invoiceId: result.payment.invoiceId,
+        amount: result.payment.amount,
+        currency: result.payment.currency,
+        allocatedAmount: result.payment.allocatedAmount,
+        method: result.payment.method,
+        status: result.payment.status,
+        verificationStatus: result.payment.verificationStatus,
+        exchangeRate: result.payment.exchangeRate,
+        date: result.payment.date,
+      },
+    }, { status: 201 });
   },
 );
