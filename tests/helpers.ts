@@ -29,18 +29,39 @@ export async function clearDb() {
   await db.dropDatabase();
 }
 
-export async function seedClient(id = new ObjectId()) {
+export async function seedClient(id = new ObjectId(), legalName = "Test Client", email = "client@test.com") {
   const db = await getDb();
   await db.collection("clients").insertOne({
     _id: id,
-    email: "client@test.com",
-    name: "Test Client",
+    email: email.toLowerCase(),
+    legalName,
+    preferredName: "",
     contacts: [],
     addresses: [],
     status: "active",
     sourceAgentId: null,
     notes: "",
     createdAt: new Date(),
+  });
+  return id;
+}
+
+export async function seedMapping(
+  qualificationId: ObjectId,
+  rtoId: ObjectId,
+  status = "active",
+  id = new ObjectId(),
+) {
+  const db = await getDb();
+  await db.collection("qualification-rto-mappings").insertOne({
+    _id: id,
+    qualificationId,
+    rtoId,
+    status,
+    effectiveFrom: new Date("2026-01-01"),
+    effectiveTo: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
   return id;
 }

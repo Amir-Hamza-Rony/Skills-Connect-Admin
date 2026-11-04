@@ -292,6 +292,17 @@ export interface Order {
   supplierCostSnapshot: number
   otherCost: number
   currency: Currency
+  /** Optional RTO contact associated with this order. */
+  rtoContactId: string | null
+  rtoContactName: string | null
+  /** Licensing and assessment tracking. */
+  licensingAuthority: string | null
+  licenceReference: string | null
+  licenceExpiry: string | null
+  /** Certificate delivery tracking. */
+  certificateDeliveryMethod: string | null
+  certificateDeliveryDate: string | null
+  certificateTrackingNumber: string | null
   /** Selling price category applied at order creation (snapshot). */
   priceCategoryId: string | null
   /** Price list applied at order creation (snapshot). */
@@ -320,6 +331,45 @@ export interface Order {
   history: StatusChange[]
 }
 
+/** RTO processing record for an order (Phase 3). */
+export type RtoProcessingStatus =
+  | "Not Started"
+  | "Submission Prepared"
+  | "Submitted to RTO"
+  | "Acknowledged"
+  | "Under Assessment"
+  | "Additional Evidence Required"
+  | "Approved"
+  | "Issued"
+  | "Rejected"
+
+export interface RtoProcessing {
+  id: string
+  orderId: string
+  rtoId: string
+  submissionStatus: RtoProcessingStatus
+  submissionDate: string | null
+  processingStatus: RtoProcessingStatus
+  rtoReference: string | null
+  processingFees: number | null
+  processingCurrency: Currency | null
+  notes: string | null
+  history: StatusChange[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** Document access log entry (Phase 3 audit). */
+export interface DocumentAccessLog {
+  id: string
+  documentId: string
+  actorId: string | null
+  action: string
+  ip: string | null
+  requestId: string | null
+  createdAt: string
+}
+
 export interface OrderDocument {
   id: string
   clientId: string
@@ -345,6 +395,7 @@ export interface WorkflowTask {
   dueDate: string | null
   status: TaskStatus
   priority: "Low" | "Medium" | "High"
+  overdue?: boolean
 }
 
 /** Per-qualification document checklist template. */

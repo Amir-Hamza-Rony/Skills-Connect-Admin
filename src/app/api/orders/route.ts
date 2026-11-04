@@ -84,6 +84,8 @@ export const POST = withAuth("orders.manage",
       otherCost = 0,
       priceCategoryId,
       priceListId,
+      rtoContactId,
+      rtoContactName,
     } = body;
 
     if (
@@ -110,6 +112,24 @@ export const POST = withAuth("orders.manage",
     const clients = await collection("clients");
     const client = await clients.findOne({ _id: clientOid });
     if (!client) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Client not found." } }, { status: 404 });
+
+    // Validate the Qualification–RTO mapping exists and is active.
+    const mapping = await (await collection("qualification-rto-mappings")).findOne({
+      qualificationId: qualificationOid,
+      rtoId: rtoOid,
+      status: "active",
+    });
+    if (!mapping) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "NO_QUALIFICATION_RTO_MAPPING",
+            message: "No active Qualification–RTO mapping exists for this qualification and RTO.",
+          },
+        },
+        { status: 400 },
+      );
+    }
 
     const now = new Date();
 
@@ -254,6 +274,8 @@ export const POST = withAuth("orders.manage",
       priceCategoryId: resolvedPriceCategoryId,
       priceListId: resolvedPriceListId,
       supplierRouteId,
+      rtoContactId: rtoContactId ? safeObjectId(String(rtoContactId)) : null,
+      rtoContactName: rtoContactName ? String(rtoContactName).trim() || null : null,
       exchangeRate,
       convertedAmount,
       additionalFees,

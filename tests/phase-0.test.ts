@@ -21,6 +21,7 @@ import {
   seedOrder,
   seedInvoice,
   seedPlan,
+  seedMapping,
   findAuditAction,
 } from "./helpers";
 
@@ -39,6 +40,7 @@ describe("Phase 0 — supplier cost snapshot", () => {
     const sourceAgentId = new ObjectId();
     const rtoId = new ObjectId();
     await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
 
     const res = await createOrder(
       authedRequest("POST", "/api/orders", {
@@ -64,13 +66,17 @@ describe("Phase 0 — supplier cost snapshot", () => {
 
   it("rejects order creation when no active supplier route exists", async () => {
     const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedMapping(qualificationId, rtoId);
     const res = await createOrder(
       authedRequest("POST", "/api/orders", {
         clientId: String(clientId),
-        qualificationId: String(new ObjectId()),
-        salesAgentId: String(new ObjectId()),
-        sourceAgentId: String(new ObjectId()),
-        rtoId: String(new ObjectId()),
+        qualificationId: String(qualificationId),
+        salesAgentId: String(sourceAgentId),
+        sourceAgentId: String(sourceAgentId),
+        rtoId: String(rtoId),
         sellingPrice: 5000,
       }),
     );
@@ -85,6 +91,7 @@ describe("Phase 0 — supplier cost snapshot", () => {
     const sourceAgentId = new ObjectId();
     const rtoId = new ObjectId();
     const routeId = await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
 
     const created = await createOrder(
       authedRequest("POST", "/api/orders", {
@@ -373,6 +380,7 @@ describe("Phase 0 — audit logging", () => {
     const sourceAgentId = new ObjectId();
     const rtoId = new ObjectId();
     await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
 
     await createOrder(
       authedRequest("POST", "/api/orders", {

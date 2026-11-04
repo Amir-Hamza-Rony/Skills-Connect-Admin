@@ -47,6 +47,7 @@ import {
   seedPriceList,
   seedCommissionRule,
   seedSupplierRoute,
+  seedMapping,
   findAuditAction,
 } from "./helpers";
 
@@ -235,6 +236,7 @@ describe("Phase 2 — Order pricing snapshot", () => {
     const cId = await seedPriceCategory();
     const plId = await seedPriceList(new ObjectId(), qId, cId, 5500, "AUD");
     await seedSupplierRoute(qId, aId, rId, 1500);
+    await seedMapping(qId, rId);
 
     const res = await createOrder(
       authedRequest("POST", "/api/orders", {
@@ -260,6 +262,7 @@ describe("Phase 2 — Order pricing snapshot", () => {
     const aId = await seedAgent();
     const rId = await seedRto();
     await seedSupplierRoute(qId, aId, rId, 1500);
+    await seedMapping(qId, rId);
 
     const res = await createOrder(
       authedRequest("POST", "/api/orders", {

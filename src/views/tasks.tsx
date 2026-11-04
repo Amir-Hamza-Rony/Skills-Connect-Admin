@@ -112,16 +112,23 @@ export function TasksPage() {
             key: "status",
             label: "Status",
             render: (t) => (
-              <select
-                aria-label={`Status for ${t.title}`}
-                value={t.status}
-                onChange={(e) => void onStatus(t, e.target.value as TaskStatus)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {(Object.keys(STATUS_VARIANT) as TaskStatus[]).map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-1">
+                <select
+                  aria-label={`Status for ${t.title}`}
+                  value={t.status}
+                  onChange={(e) => void onStatus(t, e.target.value as TaskStatus)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {(Object.keys(STATUS_VARIANT) as TaskStatus[]).map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                {t.overdue && (
+                  <Badge variant="destructive" className="text-[10px]">
+                    Overdue
+                  </Badge>
+                )}
+              </div>
             ),
           },
           {

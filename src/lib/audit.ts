@@ -70,3 +70,27 @@ export async function writeAudit(input: AuditInput): Promise<void> {
     console.error("[audit] failed to write audit record:", err);
   }
 }
+
+export interface DocumentAccessLogInput {
+  documentId: string;
+  actorId: string | null;
+  action: string;
+  ip: string | null;
+  requestId: string | null;
+}
+
+export async function writeDocumentAccessLog(input: DocumentAccessLogInput): Promise<void> {
+  try {
+    const coll = await collection("document_access_logs");
+    await coll.insertOne({
+      documentId: input.documentId,
+      actorId: input.actorId ?? null,
+      action: input.action,
+      ip: input.ip ?? null,
+      requestId: input.requestId ?? null,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.error("[audit] failed to write document access log:", err);
+  }
+}

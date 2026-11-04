@@ -18,6 +18,7 @@ import {
   getOrder,
   grossMargin,
   listDocuments,
+  listRtoProcessing,
   listTasks,
   transitionOrder,
   updateOrderDimensions,
@@ -42,6 +43,7 @@ import {
   type Payment,
   type Qualification,
   type Rto,
+  type RtoProcessing,
   type RtoSubmissionStatus,
   type UserRef,
   type WorkflowTask,
@@ -70,6 +72,7 @@ export function OrderDetailPage() {
   const [users, setUsers] = useState<UserRef[]>([])
   const [docs, setDocs] = useState<OrderDocument[]>([])
   const [tasks, setTasks] = useState<WorkflowTask[]>([])
+  const [rtoProcessing, setRtoProcessing] = useState<RtoProcessing | null>(null)
   const [orderInvoices, setOrderInvoices] = useState<Invoice[]>([])
   const [orderPayments, setOrderPayments] = useState<Payment[]>([])
   const [nextStatus, setNextStatus] = useState<OrderStatus | "">("")
@@ -101,6 +104,8 @@ export function OrderDetailPage() {
       setTasks(t)
       setOrderInvoices(inv)
       setOrderPayments(pay.filter((p) => p.status !== "Void" && p.status !== "Refunded"))
+      const [rp] = await listRtoProcessing({ orderId: o.id })
+      setRtoProcessing(rp ?? null)
     })()
   }, [id])
 
@@ -179,13 +184,18 @@ export function OrderDetailPage() {
         {[
           { label: "Sales / Closing Agent", value: agentById.get(order.salesAgentId)?.name },
           { label: "Certificate Source Agent", value: agentById.get(order.sourceAgentId)?.name },
-          { label: "Issuing RTO / College", value: rtoById.get(order.rtoId)?.tradingName },
+          {
+            label: "Issuing RTO / College",
+            value: rtoById.get(order.rtoId)?.tradingName,
+            contact: order.rtoContactName,
+          },
         ].map((f) => (
           <div key={f.label} className="rounded-xl border bg-card p-4">
             <p className="text-xs text-muted-foreground">{f.label}</p>
             <p className="mt-1 text-sm font-medium">
               {f.value ?? "—"}
               {f.label.startsWith("Issuing") && rtoById.get(order.rtoId) ? ` (${rtoById.get(order.rtoId)!.rtoCode})` : ""}
+              {f.contact ? <span className="ml-2 text-xs text-muted-foreground">· Contact: {f.contact}</span> : null}
             </p>
           </div>
         ))}
@@ -208,6 +218,76 @@ export function OrderDetailPage() {
       <p className="text-xs text-muted-foreground">
         Snapshots are frozen at order creation — later pricing-matrix edits never rewrite them.
       </p>
+
+      {/* RTO processing */}
+      {rtoProcessing && (
+        <div className="rounded-xl border bg-card p-4">
+          <h2 className="pb-3 text-sm font-semibold">RTO Processing</h2>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Processing status</p>
+              <Badge variant="outline">{rtoProcessing.processingStatus}</Badge>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Submission status</p>
+              <span className="text-sm">{rtoProcessing.submissionStatus}</span>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Submission date</p>
+              <span className="text-sm">{rtoProcessing.submissionDate ?? "—"}</span>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">RTO reference</p>
+              <span className="text-sm">{rtoProcessing.rtoReference ?? "—"}</span>
+            </div>
+            {rtoProcessing.processingFees !== null && (
+              <div>
+                <p className="text-xs text-muted-foreground">Processing fees</p>
+                <span className="text-sm font-medium">
+                  {rtoProcessing.processingFees} {rtoProcessing.processingCurrency ?? "AUD"}
+                </span>
+              </div>
+            )}
+            {rtoProcessing.notes && (
+              <div className="col-span-full">
+                <p className="text-xs text-muted-foreground">Notes</p>
+                <span className="text-sm">{rtoProcessing.notes}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Licensing & certificate delivery */}
+      <div className="rounded-xl border bg-card p-4">
+        <h2 className="pb-3 text-sm font-semibold">Licensing & certificate</h2>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Licensing authority</p>
+            <span className="text-sm">{order.licensingAuthority ?? "—"}</span>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Licence reference</p>
+            <span className="text-sm">{order.licenceReference ?? "—"}</span>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Licence expiry</p>
+            <span className="text-sm">{order.licenceExpiry ?? "—"}</span>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Delivery method</p>
+            <span className="text-sm">{order.certificateDeliveryMethod ?? "—"}</span>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Delivery date</p>
+            <span className="text-sm">{order.certificateDeliveryDate ?? "—"}</span>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Tracking number</p>
+            <span className="text-sm">{order.certificateTrackingNumber ?? "—"}</span>
+          </div>
+        </div>
+      </div>
 
       {/* Invoices & payments */}
       <div className="rounded-xl border bg-card p-4">

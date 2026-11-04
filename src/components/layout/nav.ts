@@ -68,6 +68,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Commission Rules", icon: UserRound, href: "/commission-rules" },
       { label: "Commission Records", icon: Calendar, href: "/commission-records" },
       { label: "Commission Payouts", icon: Wallet, href: "/commission-payouts" },
+      { label: "RTO Processing", icon: FileText, href: "/rto-processing" },
     ],
   },
   {

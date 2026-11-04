@@ -1,6 +1,7 @@
 import { apiFetch } from "@/lib/api"
 import type {
   Agent,
+  Order,
   Permission,
   PriceCategory,
   PriceList,
@@ -275,6 +276,10 @@ export function agentLabel(a: Agent): string {
 
 export function rtoLabel(r: Rto): string {
   return `${r.tradingName} (${r.rtoCode})`
+}
+
+export function orderLabel(o: Order): string {
+  return `Order ${o.id}`
 }
 
 export function priceListLabel(p: PriceList): string {

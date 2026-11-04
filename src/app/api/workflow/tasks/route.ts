@@ -36,20 +36,26 @@ export const GET = withAuth("orders.view",
 
     const tasksColl = await collection("workflow-tasks");
     const tasks = await tasksColl.find(filter).sort({ dueDate: 1, createdAt: -1 }).toArray();
+    const now = new Date();
 
     return NextResponse.json({
-      tasks: tasks.map((d: any) => ({
-        id: String(d._id),
-        orderId: String(d.orderId),
-        stage: d.stage,
-        title: d.title,
-        assigneeId: d.assigneeId ? String(d.assigneeId) : null,
-        dueDate: d.dueDate,
-        status: d.status,
-        priority: d.priority,
-        createdAt: d.createdAt,
-        updatedAt: d.updatedAt,
-      })),
+      tasks: tasks.map((d: any) => {
+        const due = d.dueDate ? new Date(d.dueDate) : null;
+        const overdue = Boolean(due && due < now && d.status !== "Done");
+        return {
+          id: String(d._id),
+          orderId: String(d.orderId),
+          stage: d.stage,
+          title: d.title,
+          assigneeId: d.assigneeId ? String(d.assigneeId) : null,
+          dueDate: d.dueDate,
+          status: d.status,
+          priority: d.priority,
+          overdue,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        };
+      }),
     });
   },
 );

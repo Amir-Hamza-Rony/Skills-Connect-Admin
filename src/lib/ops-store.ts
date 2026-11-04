@@ -6,6 +6,7 @@ import {
   type Order,
   type OrderDocument,
   type OrderStatus,
+  type RtoProcessing,
   type RtoSubmissionStatus,
   type TaskStatus,
   type WorkflowTask,
@@ -206,6 +207,43 @@ export async function updateTaskStatus(
 ): Promise<WorkflowTask> {
   const data = await api.patch<{ task: WorkflowTask }>(`/workflow/tasks/${id}`, { status })
   return data.task
+}
+
+/* ---------- RTO processing (real API) ---------- */
+
+export async function listRtoProcessing({
+  orderId,
+  status,
+}: { orderId?: string; status?: string } = {}): Promise<RtoProcessing[]> {
+  const params = new URLSearchParams()
+  if (orderId) params.set("orderId", orderId)
+  if (status) params.set("status", status)
+  const data = await api.get<{ items: RtoProcessing[]; total: number }>(
+    `/rto-processing?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createRtoProcessing(r: Omit<RtoProcessing, "id" | "history" | "createdAt" | "updatedAt">): Promise<RtoProcessing> {
+  const data = await api.post<{ rtoProcessing: RtoProcessing }>("/rto-processing", r)
+  return data.rtoProcessing
+}
+
+export async function updateRtoProcessing(
+  id: string,
+  patch: Partial<
+    Pick<
+      RtoProcessing,
+      "submissionStatus" | "submissionDate" | "processingStatus" | "rtoReference" | "processingFees" | "processingCurrency" | "notes"
+    >
+  >,
+): Promise<RtoProcessing> {
+  const data = await api.patch<{ rtoProcessing: RtoProcessing }>(`/rto-processing/${id}`, patch)
+  return data.rtoProcessing
+}
+
+export async function deleteRtoProcessing(id: string): Promise<void> {
+  await api.delete(`/rto-processing/${id}`)
 }
 
 export type { EvidenceStatus, RtoSubmissionStatus }
