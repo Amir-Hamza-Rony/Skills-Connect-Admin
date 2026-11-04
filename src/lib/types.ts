@@ -753,3 +753,77 @@ interface PaymentPlanExtended extends PaymentPlan {
 interface InstalmentExtended extends Instalment {
   currency: Currency
 }
+
+/* ================= Day-7: Excel Migration & Reports (Spec phase 5) ========== */
+
+export type ImportScope = "clients" | "orders" | "rtos" | "agents" | "qualifications"
+
+export type ImportStatus = "pending" | "processing" | "completed" | "failed" | "rolledback"
+
+export type ImportRowStatus = "success" | "failed" | "skipped"
+
+export interface ImportColumnMapping {
+  sourceColumn: string // Excel column header as it appears in the file
+  targetField: string // Target database field name
+  required: boolean
+  dataType: "string" | "number" | "date" | "boolean" | "email"
+  validation?: string // Optional validation rule description
+}
+
+export interface ExcelImportTemplate {
+  id: string
+  name: string
+  scope: ImportScope
+  columnMappings: ImportColumnMapping[]
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  status: "active" | "inactive"
+}
+
+export interface ExcelImport {
+  id: string
+  templateId: string | null
+  filename: string
+  status: ImportStatus
+  rowCounts: { total: number; success: number; failed: number; skipped: number }
+  startedBy: string | null
+  startedAt: string
+  completedAt: string | null
+  errorSummary: string | null
+}
+
+export interface ExcelImportRow {
+  id: string
+  importId: string
+  rowNumber: number
+  sourceData: Record<string, unknown>
+  status: ImportRowStatus
+  errorMessage: string | null
+  targetRecordId: string | null
+}
+
+export type ReportType =
+  | "clients"
+  | "orders"
+  | "outstanding"
+  | "supplier-costs"
+  | "agent-commission"
+  | "monthly-summary"
+  | "finance"
+  | "revenue"
+  | "margin"
+  | "ageing"
+
+export type ExportFormat = "xlsx" | "pdf"
+
+export interface ReportFilter {
+  from?: string
+  to?: string
+  clientId?: string
+  qualificationId?: string
+  rtoId?: string
+  agentId?: string
+  status?: string
+  currency?: Currency
+}

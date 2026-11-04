@@ -246,4 +246,136 @@ export async function deleteRtoProcessing(id: string): Promise<void> {
   await api.delete(`/rto-processing/${id}`)
 }
 
+/* ---------- Excel import templates ---------- */
+
+export interface ExcelTemplateItem {
+  id: string
+  name: string
+  scope: string
+  columnMappings: Array<{
+    sourceColumn: string
+    targetField: string
+    required: boolean
+    dataType: string
+    validation?: string
+  }>
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  status: "active" | "inactive"
+}
+
+export async function listExcelTemplates({
+  scope,
+  status,
+}: { scope?: string; status?: string } = {}): Promise<ExcelTemplateItem[]> {
+  const params = new URLSearchParams()
+  if (scope) params.set("scope", scope)
+  if (status) params.set("status", status)
+  const data = await api.get<{ items: ExcelTemplateItem[]; total: number }>(
+    `/excel/templates?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createExcelTemplate(
+  t: Omit<ExcelTemplateItem, "id" | "createdBy" | "createdAt" | "updatedAt">,
+): Promise<ExcelTemplateItem> {
+  const data = await api.post<{ template: ExcelTemplateItem }>(
+    "/excel/templates",
+    { method: "POST", body: t },
+  )
+  return data.template
+}
+
+export async function updateExcelTemplate(
+  id: string,
+  patch: Partial<Pick<ExcelTemplateItem, "name" | "scope" | "columnMappings" | "status">>,
+): Promise<ExcelTemplateItem> {
+  const data = await api.patch<{ template: ExcelTemplateItem }>(
+    `/excel/templates/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.template
+}
+
+export async function deleteExcelTemplate(id: string): Promise<void> {
+  await api.delete(`/excel/templates/${id}`)
+}
+
+/* ---------- Excel import upload ---------- */
+
+export interface ExcelPreview {
+  filename: string
+  sheetName: string
+  headers: string[]
+  rowCount: number
+  previewRowCount: number
+  hasMore: boolean
+  rows: Record<string, unknown>[]
+  unmappedColumns: string[]
+}
+
+export async function uploadExcelFile(file: File): Promise<ExcelPreview> {
+  const formData = new FormData()
+  formData.append("file", file)
+  const data = await uploadFile<{ preview: ExcelPreview }>("/excel/upload", formData)
+  return data.preview
+}
+
+/* ---------- Excel import execution & history ---------- */
+
+export interface ExcelImportItem {
+  id: string
+  templateId: string | null
+  filename: string | null
+  status: string
+  rowCounts: { total: number; success: number; failed: number; skipped: number }
+  startedBy: string | null
+  startedAt: string
+  completedAt: string | null
+  errorSummary: string | null
+}
+
+export interface ExcelImportRowItem {
+  id: string
+  rowNumber: number
+  status: string
+  errorMessage: string | null
+  targetRecordId: string | null
+}
+
+export async function executeExcelImport(
+  templateId: string,
+  rows: Array<{ rowNumber: number; sourceData: Record<string, unknown> }>,
+): Promise<ExcelImportItem> {
+  const data = await api.post<{ import: ExcelImportItem }>("/excel/import", {
+    templateId,
+    rows,
+  })
+  return data.import
+}
+
+export async function listExcelImports({
+  status,
+}: { status?: string } = {}): Promise<ExcelImportItem[]> {
+  const params = new URLSearchParams()
+  if (status) params.set("status", status)
+  const data = await api.get<{ imports: ExcelImportItem[]; total: number }>(
+    `/excel/imports?${params.toString()}`,
+  )
+  return data.imports
+}
+
+export async function getExcelImport(id: string): Promise<{
+  import: ExcelImportItem
+  rows: ExcelImportRowItem[]
+}> {
+  const data = await api.get<{
+    import: ExcelImportItem
+    rows: ExcelImportRowItem[]
+  }>(`/excel/imports/${id}`)
+  return data
+}
+
 export type { EvidenceStatus, RtoSubmissionStatus }
