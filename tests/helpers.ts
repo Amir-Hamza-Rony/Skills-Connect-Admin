@@ -26,7 +26,10 @@ export function authedRequest(method: string, url: string, body?: unknown, token
 
 export async function clearDb() {
   const db = await getDb();
-  await db.dropDatabase();
+  const collections = await db.listCollections().toArray();
+  for (const coll of collections) {
+    await db.collection(coll.name).drop();
+  }
 }
 
 export async function seedClient(id = new ObjectId(), legalName = "Test Client", email = "client@test.com") {
@@ -205,7 +208,7 @@ export async function seedRto(id = new ObjectId(), code = "R001") {
   return id;
 }
 
-export async function seedAgent(id = new ObjectId(), type = "sales_closing") {
+export async function seedAgent(type = "sales_closing", id = new ObjectId()) {
   const db = await getDb();
   await db.collection("agents").insertOne({
     _id: id,

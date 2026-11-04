@@ -1,15 +1,19 @@
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
+import { MongoMemoryReplSet } from "mongodb-memory-server";
 
 /**
  * Load .env into process.env (vitest does not load it automatically) and
  * point the MongoDB client at a dedicated test database so tests never mutate
  * production data in `skills_connect_admin`.
  *
- * Each vitest worker gets a unique database suffix so parallel test files
- * cannot clobber each other's data via clearDb().
+ * Always uses mongodb-memory-server (replica set) for local testing to avoid
+ * the MongoDB Atlas 500-collection free-tier limit, to support MongoDB
+ * transactions (commission payouts), and to never touch production data.
+ * Any MONGODB_URI/MONGODB_DB from .env is overridden for the test run.
  */
+
+let replSet: Awaited<ReturnType<typeof MongoMemoryReplSet.create>> | null = null;
 
 const envPath = path.resolve(process.cwd(), ".env");
 if (fs.existsSync(envPath)) {
@@ -25,6 +29,24 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const suffix = crypto.randomBytes(4).toString("hex");
-process.env.MONGODB_DB = `skills_connect_admin_test_${suffix}`;
 process.env.NODE_ENV = "test";
+
+// Always use a dedicated test database, never the production database.
+process.env.MONGODB_DB = "skills_connect_admin_test";
+
+// Always start an in-memory MongoDB replica set for tests so we never
+// connect to Atlas (avoids the 500-collection free-tier limit) and never
+// touch the production skills_connect_admin database.
+if (!globalThis.__MONGODB_MEMORY_REPLSET__) {
+  replSet = await MongoMemoryReplSet.create({
+    replSet: {
+      name: "rs0",
+      dbName: "skills_connect_admin_test",
+    },
+  });
+  globalThis.__MONGODB_MEMORY_REPLSET__ = replSet;
+} else {
+  replSet = globalThis.__MONGODB_MEMORY_REPLSET__;
+}
+const uri = replSet!.getUri("skills_connect_admin_test");
+process.env.MONGODB_URI = uri;
