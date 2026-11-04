@@ -150,3 +150,118 @@ export async function findAuditAction(entityType: string, action: string) {
   const db = await getDb();
   return db.collection("audit_logs").findOne({ entityType, action });
 }
+
+export async function seedQualification(id = new ObjectId(), code = "AUR32120") {
+  const db = await getDb();
+  await db.collection("qualifications").insertOne({
+    _id: id,
+    code,
+    title: "Certificate III",
+    trainingPackage: "AUR",
+    industry: "Automotive",
+    status: "current",
+    licensingRefs: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
+
+export async function seedRto(id = new ObjectId(), code = "R001") {
+  const db = await getDb();
+  await db.collection("rtos").insertOne({
+    _id: id,
+    legalName: "Demo College Pty Ltd",
+    tradingName: "Demo College",
+    rtoCode: code,
+    contacts: [],
+    status: "active",
+    complianceNote: "",
+    website: "",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
+
+export async function seedAgent(id = new ObjectId(), type = "sales_closing") {
+  const db = await getDb();
+  await db.collection("agents").insertOne({
+    _id: id,
+    name: "Test Agent",
+    type,
+    contact: "agent@test.com",
+    commissionRule: null,
+    active: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
+
+export async function seedPriceCategory(id = new ObjectId(), code = "STANDARD") {
+  const db = await getDb();
+  await db.collection("price_categories").insertOne({
+    _id: id,
+    code,
+    name: "Standard Price",
+    description: null,
+    status: "active",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  return id;
+}
+
+export async function seedPriceList(
+  id = new ObjectId(),
+  qualificationId = new ObjectId(),
+  priceCategoryId = new ObjectId(),
+  amount = 5000,
+  currency = "AUD",
+) {
+  const db = await getDb();
+  const now = new Date();
+  await db.collection("price_lists").insertOne({
+    _id: id,
+    qualificationId,
+    priceCategoryId,
+    amount,
+    currency,
+    effectiveFrom: new Date("2026-01-01"),
+    effectiveTo: null,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function seedCommissionRule(
+  id = new ObjectId(),
+  agentId = new ObjectId(),
+  currency = "AUD",
+) {
+  const db = await getDb();
+  const now = new Date();
+  await db.collection("agent_commission_rules").insertOne({
+    _id: id,
+    agentId,
+    responsibility: null,
+    effectiveFrom: new Date("2026-01-01"),
+    effectiveTo: null,
+    tiers: [{ minDeals: 1, maxDeals: null, commissionPerDeal: 4000 }],
+    eligibleOrderStatuses: ["Completed"],
+    commissionCurrency: currency,
+    additionalIncentiveAmount: null,
+    additionalIncentiveCurrency: null,
+    status: "active",
+    approvalStatus: "approved",
+    approvedBy: "test-user-1",
+    approvedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+

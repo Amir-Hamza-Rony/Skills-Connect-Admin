@@ -98,13 +98,15 @@ export interface Rto {
 
 export type RouteStatus = "active" | "expired"
 
+export type Currency = "AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR"
+
 export interface SupplierRoute {
   id: string
   qualificationId: string
   sourceAgentId: string
   rtoId: string
   wholesaleCost: number
-  currency: "AUD"
+  currency: Currency
   effectiveFrom: string
   effectiveTo: string | null
   status: RouteStatus
@@ -143,6 +145,8 @@ export type Permission =
   | "reports.view"
   | "audit.view"
   | "settings.manage"
+  | "commissions.manage"
+  | "commissions.view"
 
 /* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
@@ -287,7 +291,27 @@ export interface Order {
   sellingPrice: number
   supplierCostSnapshot: number
   otherCost: number
-  currency: "AUD"
+  currency: Currency
+  /** Selling price category applied at order creation (snapshot). */
+  priceCategoryId: string | null
+  /** Price list applied at order creation (snapshot). */
+  priceListId: string | null
+  /** Supplier route applied at order creation (snapshot). */
+  supplierRouteId: string | null
+  /** Exchange rate from selling currency to reporting currency at order time. */
+  exchangeRate: number | null
+  /** Converted reporting amount at order time. */
+  convertedAmount: number | null
+  /** Additional fees snapshot applied at order creation. */
+  additionalFees: Array<{
+    feeId: string
+    description: string | null
+    amount: number
+    currency: Currency
+    isOptional: boolean
+  }>
+  /** Total of additional fees at order creation. */
+  feeTotal: number
   /** Calculated server-side from invoices + payments (Spec §6). */
   paymentStatus: PaymentStatus
   createdAt: string
@@ -415,6 +439,125 @@ export interface AuditEvent {
   action: string
   before: string
   after: string
+}
+
+/* ================= Day-5: Pricing & Commission (Spec pricing) ========== */
+
+export type PriceCategoryStatus = "active" | "inactive"
+
+export interface PriceCategory {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  status: PriceCategoryStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export type PriceListStatus = "active" | "inactive" | "draft"
+
+export interface PriceList {
+  id: string
+  qualificationId: string
+  priceCategoryId: string
+  amount: number
+  currency: Currency
+  effectiveFrom: string
+  effectiveTo: string | null
+  status: PriceListStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export type FeeApplicability = "qualification" | "priceCategory"
+
+export interface AdditionalFee {
+  id: string
+  applicability: FeeApplicability
+  referenceId: string // qualificationId or priceCategoryId
+  amount: number
+  currency: Currency
+  description: string | null
+  effectiveFrom: string
+  effectiveTo: string | null
+  isOptional: boolean
+  status: "active" | "inactive"
+  createdAt: string
+  updatedAt: string
+}
+
+export type CommissionRuleStatus = "active" | "inactive"
+export type CommissionRuleApproval = "draft" | "approved" | "rejected"
+
+export interface CommissionTier {
+  minDeals: number
+  maxDeals: number | null
+  commissionPerDeal: number
+}
+
+export interface AgentCommissionRule {
+  id: string
+  agentId: string | null // null means applies to all agents of the responsibility
+  responsibility: AgentType | null // null means applies to a specific agent
+  effectiveFrom: string
+  effectiveTo: string | null
+  tiers: CommissionTier[]
+  eligibleOrderStatuses: string[] // order statuses that count as eligible (empty = not configured)
+  commissionCurrency: Currency
+  additionalIncentiveAmount: number | null
+  additionalIncentiveCurrency: Currency | null
+  status: CommissionRuleStatus
+  approvalStatus: CommissionRuleApproval
+  approvedBy: string | null
+  approvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CommissionRecordStatus =
+  | "draft"
+  | "calculated"
+  | "approved"
+  | "rejected"
+  | "paid"
+
+export interface CommissionRecord {
+  id: string
+  agentId: string
+  periodMonth: number // 1-12
+  periodYear: number
+  eligibleDealCount: number
+  eligibleDealIds: string[] // order ids
+  tierApplied: CommissionTier | null
+  commissionAmount: number
+  commissionCurrency: Currency
+  exchangeRate: number | null // sale currency -> commission currency
+  convertedAmount: number | null
+  additionalIncentiveAmount: number
+  status: CommissionRecordStatus
+  calculatedBy: string | null
+  calculatedAt: string | null
+  approvedBy: string | null
+  approvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type PayoutStatus = "pending" | "paid" | "failed"
+
+export interface CommissionPayout {
+  id: string
+  commissionRecordId: string
+  amount: number
+  currency: Currency
+  paymentDate: string | null
+  paymentReference: string | null
+  status: PayoutStatus
+  paidBy: string | null
+  paidAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 /* ================= Saved views & Communications (Spec §7, §13) ========= */

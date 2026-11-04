@@ -8,11 +8,12 @@
  * snapshot; supplier price changes (new/expired routes) never touch them.
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission } from "@/middleware/auth";
+import { NextResponse } from "next/server";
+import { withAuth } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
-import { collection, safeObjectId, toObjectId } from "@/lib/db";
+import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import type { Currency } from "@/lib/types";
 
 function invalidId() {
   return NextResponse.json(
@@ -48,6 +49,11 @@ export const GET = withAuth("orders.view",
         sellingPrice: o.sellingPrice,
         supplierCostSnapshot: o.supplierCostSnapshot,
         otherCost: o.otherCost,
+        currency: o.currency,
+        priceCategoryId: o.priceCategoryId ? String(o.priceCategoryId) : null,
+        priceListId: o.priceListId ? String(o.priceListId) : null,
+        supplierRouteId: o.supplierRouteId ? String(o.supplierRouteId) : null,
+        feeTotal: o.feeTotal,
         certificateStatus: o.certificateStatus,
         createdAt: o.createdAt,
       })),
@@ -76,6 +82,8 @@ export const POST = withAuth("orders.manage",
       rtoId,
       sellingPrice,
       otherCost = 0,
+      priceCategoryId,
+      priceListId,
     } = body;
 
     if (
@@ -103,10 +111,9 @@ export const POST = withAuth("orders.manage",
     const client = await clients.findOne({ _id: clientOid });
     if (!client) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Client not found." } }, { status: 404 });
 
-    // Capture the supplier cost snapshot server-side from the active route.
-    // `effectiveFrom` may be stored as an ISO string or a Date, so compare via
-    // $expr/$dateFromString to handle both representations.
     const now = new Date();
+
+    // Resolve the supplier cost snapshot server-side from the active route.
     const routes = await collection("supplier-routes");
     const route = await routes.findOne({
       qualificationId: qualificationOid,
@@ -135,8 +142,99 @@ export const POST = withAuth("orders.manage",
         { status: 400 },
       );
     }
-
     const supplierCostSnapshot = Number(route.wholesaleCost ?? 0);
+    const supplierRouteId = String(route._id);
+
+    // Resolve the client selling price from the price list (server-side).
+    // Client-submitted sellingPrice is only a fallback when no price list applies.
+    let sellingCurrency = "AUD";
+    let resolvedPriceListId: string | null = null;
+    let resolvedPriceCategoryId: string | null = null;
+    let resolvedSellingPrice = Number(sellingPrice);
+    let exchangeRate: number | null = null;
+    let convertedAmount: number | null = resolvedSellingPrice;
+
+    const priceListIdOid = priceListId ? safeObjectId(String(priceListId)) : null;
+    const priceCategoryIdOid = priceCategoryId ? safeObjectId(String(priceCategoryId)) : null;
+
+    if (priceListIdOid) {
+      const priceLists = await collection("price_lists");
+      const pl = await priceLists.findOne({ _id: priceListIdOid, status: "active" });
+      if (!pl) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Price list not found or not active." } },
+          { status: 404 },
+        );
+      }
+      resolvedPriceListId = String(pl._id);
+      resolvedPriceCategoryId = String(pl.priceCategoryId);
+      resolvedSellingPrice = Number(pl.amount);
+      sellingCurrency = pl.currency;
+    } else if (priceCategoryIdOid) {
+      const priceLists = await collection("price_lists");
+      const pl = await priceLists.findOne({
+        qualificationId: qualificationOid,
+        priceCategoryId: priceCategoryIdOid,
+        status: "active",
+        $or: [
+          { effectiveTo: null },
+          { effectiveTo: { $gte: now } },
+        ],
+        $expr: {
+          $lte: [
+            { $dateFromString: { dateString: "$effectiveFrom", onError: "$effectiveFrom" } },
+            now,
+          ],
+        },
+      } as any);
+      if (pl) {
+        resolvedPriceListId = String(pl._id);
+        resolvedPriceCategoryId = String(pl.priceCategoryId);
+        resolvedSellingPrice = Number(pl.amount);
+        sellingCurrency = pl.currency;
+      }
+    }
+
+    // Exchange-rate snapshot: placeholder 1 unless a real FX source is configured.
+    if (sellingCurrency !== "AUD") {
+      exchangeRate = 1;
+      convertedAmount = resolvedSellingPrice;
+    } else {
+      convertedAmount = resolvedSellingPrice;
+    }
+
+    // Capture additional fees applicable to the qualification (snapshot).
+    const additionalFees: Array<{
+      feeId: string;
+      description: string | null;
+      amount: number;
+      currency: Currency;
+      isOptional: boolean;
+    }> = [];
+    let feeTotal = 0;
+    if (qualificationOid) {
+      const fees = await (await collection("additional_fees"))
+        .find({
+          applicability: "qualification",
+          referenceId: qualificationOid,
+          status: "active",
+          $or: [
+            { effectiveTo: null },
+            { effectiveTo: { $gte: now } },
+          ],
+        } as any)
+        .toArray();
+      for (const f of fees) {
+        additionalFees.push({
+          feeId: String(f._id),
+          description: f.description,
+          amount: Number(f.amount),
+          currency: f.currency,
+          isOptional: f.isOptional !== false,
+        });
+        feeTotal += Number(f.amount);
+      }
+    }
 
     const orders = await collection("orders");
     const result = await orders.insertOne({
@@ -149,10 +247,17 @@ export const POST = withAuth("orders.manage",
       evidenceStatus: "Not Started",
       rtoSubmissionStatus: "Not Ready",
       certificateStatus: "Not Issued",
-      sellingPrice: Number(sellingPrice),
+      sellingPrice: resolvedSellingPrice,
       supplierCostSnapshot,
       otherCost: Number(otherCost),
-      currency: "AUD",
+      currency: sellingCurrency,
+      priceCategoryId: resolvedPriceCategoryId,
+      priceListId: resolvedPriceListId,
+      supplierRouteId,
+      exchangeRate,
+      convertedAmount,
+      additionalFees,
+      feeTotal,
       completedAt: null,
       history: [{ timestamp: now, field: "status", before: "—", after: "New" }],
       createdAt: now,
@@ -170,9 +275,14 @@ export const POST = withAuth("orders.manage",
       before: null,
       after: {
         status: "New",
-        sellingPrice: Number(sellingPrice),
+        sellingPrice: resolvedSellingPrice,
+        sellingCurrency,
         supplierCostSnapshot,
         otherCost: Number(otherCost),
+        priceListId: resolvedPriceListId,
+        priceCategoryId: resolvedPriceCategoryId,
+        supplierRouteId,
+        feeTotal,
       },
     });
 

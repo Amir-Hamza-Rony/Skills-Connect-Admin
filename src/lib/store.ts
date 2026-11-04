@@ -2,6 +2,9 @@ import { apiFetch } from "@/lib/api"
 import type {
   Agent,
   Permission,
+  PriceCategory,
+  PriceList,
+  AdditionalFee,
   Qualification,
   Role,
   RoleName,
@@ -9,6 +12,9 @@ import type {
   SupplierRoute,
   User,
   UserRef,
+  AgentCommissionRule,
+  CommissionRecord,
+  CommissionPayout,
 } from "@/lib/types"
 
 /**
@@ -269,4 +275,322 @@ export function agentLabel(a: Agent): string {
 
 export function rtoLabel(r: Rto): string {
   return `${r.tradingName} (${r.rtoCode})`
+}
+
+export function priceListLabel(p: PriceList): string {
+  return `${p.amount} ${p.currency}`
+}
+
+/* ---------- Price categories ---------- */
+
+export interface PriceCategoryItem extends PriceCategory {}
+
+export async function listPriceCategories({
+  status,
+}: { status?: string } = {}): Promise<PriceCategory[]> {
+  const params = new URLSearchParams()
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: PriceCategory[]; total: number }>(
+    `/masters/price-categories?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createPriceCategory(
+  c: Omit<PriceCategory, "id" | "createdAt" | "updatedAt">,
+): Promise<PriceCategory> {
+  const data = await apiFetch<{ priceCategory: PriceCategory }>(
+    "/masters/price-categories",
+    { method: "POST", body: c },
+  )
+  return data.priceCategory
+}
+
+export async function updatePriceCategory(
+  id: string,
+  patch: Partial<Pick<PriceCategory, "code" | "name" | "description" | "status">>,
+): Promise<PriceCategory> {
+  const data = await apiFetch<{ priceCategory: PriceCategory }>(
+    `/masters/price-categories/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.priceCategory
+}
+
+export async function deletePriceCategory(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/masters/price-categories/${id}`, {
+    method: "DELETE",
+  })
+}
+
+/* ---------- Price lists ---------- */
+
+export interface PriceListItem extends PriceList {}
+
+export async function listPriceLists({
+  qualificationId,
+  priceCategoryId,
+  status,
+}: {
+  qualificationId?: string
+  priceCategoryId?: string
+  status?: string
+} = {}): Promise<PriceList[]> {
+  const params = new URLSearchParams()
+  if (qualificationId) params.set("qualificationId", qualificationId)
+  if (priceCategoryId) params.set("priceCategoryId", priceCategoryId)
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: PriceList[]; total: number }>(
+    `/masters/price-lists?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createPriceList(
+  pl: Omit<PriceList, "id" | "createdAt" | "updatedAt">,
+): Promise<PriceList> {
+  const data = await apiFetch<{ priceList: PriceList }>(
+    "/masters/price-lists",
+    { method: "POST", body: pl },
+  )
+  return data.priceList
+}
+
+export async function updatePriceList(
+  id: string,
+  patch: Partial<
+    Pick<
+      PriceList,
+      "amount" | "currency" | "effectiveFrom" | "effectiveTo" | "status"
+    >
+  >,
+): Promise<PriceList> {
+  const data = await apiFetch<{ priceList: PriceList }>(
+    `/masters/price-lists/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.priceList
+}
+
+export async function deletePriceList(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/masters/price-lists/${id}`, {
+    method: "DELETE",
+  })
+}
+
+/* ---------- Additional fees ---------- */
+
+export interface AdditionalFeeItem extends AdditionalFee {}
+
+export async function listAdditionalFees({
+  applicability,
+  referenceId,
+  status,
+}: {
+  applicability?: string
+  referenceId?: string
+  status?: string
+} = {}): Promise<AdditionalFee[]> {
+  const params = new URLSearchParams()
+  if (applicability) params.set("applicability", applicability)
+  if (referenceId) params.set("referenceId", referenceId)
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: AdditionalFee[]; total: number }>(
+    `/masters/additional-fees?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createAdditionalFee(
+  f: Omit<AdditionalFee, "id" | "createdAt" | "updatedAt">,
+): Promise<AdditionalFee> {
+  const data = await apiFetch<{ additionalFee: AdditionalFee }>(
+    "/masters/additional-fees",
+    { method: "POST", body: f },
+  )
+  return data.additionalFee
+}
+
+/* ---------- Commission rules ---------- */
+
+export interface CommissionRuleItem extends AgentCommissionRule {}
+
+export async function listCommissionRules({
+  agentId,
+  responsibility,
+  status,
+  approvalStatus,
+}: {
+  agentId?: string
+  responsibility?: string
+  status?: string
+  approvalStatus?: string
+} = {}): Promise<AgentCommissionRule[]> {
+  const params = new URLSearchParams()
+  if (agentId) params.set("agentId", agentId)
+  if (responsibility) params.set("responsibility", responsibility)
+  if (status) params.set("status", status)
+  if (approvalStatus) params.set("approvalStatus", approvalStatus)
+  const data = await apiFetch<{ items: AgentCommissionRule[]; total: number }>(
+    `/masters/commission-rules?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createCommissionRule(
+  r: Omit<AgentCommissionRule, "id" | "createdAt" | "updatedAt">,
+): Promise<AgentCommissionRule> {
+  const data = await apiFetch<{ commissionRule: AgentCommissionRule }>(
+    "/masters/commission-rules",
+    { method: "POST", body: r },
+  )
+  return data.commissionRule
+}
+
+export async function updateCommissionRule(
+  id: string,
+  patch: Partial<
+    Pick<
+      AgentCommissionRule,
+      | "tiers"
+      | "commissionCurrency"
+      | "effectiveFrom"
+      | "effectiveTo"
+      | "status"
+      | "approvalStatus"
+      | "eligibleOrderStatuses"
+      | "additionalIncentiveAmount"
+      | "additionalIncentiveCurrency"
+    >
+  >,
+): Promise<AgentCommissionRule> {
+  const data = await apiFetch<{ commissionRule: AgentCommissionRule }>(
+    `/masters/commission-rules/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.commissionRule
+}
+
+export async function deleteCommissionRule(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/masters/commission-rules/${id}`, {
+    method: "DELETE",
+  })
+}
+
+/* ---------- Commission records ---------- */
+
+export interface CommissionRecordItem extends CommissionRecord {}
+
+export async function listCommissionRecords({
+  agentId,
+  periodMonth,
+  periodYear,
+  status,
+}: {
+  agentId?: string
+  periodMonth?: number
+  periodYear?: number
+  status?: string
+} = {}): Promise<CommissionRecord[]> {
+  const params = new URLSearchParams()
+  if (agentId) params.set("agentId", agentId)
+  if (periodMonth !== undefined) params.set("periodMonth", String(periodMonth))
+  if (periodYear !== undefined) params.set("periodYear", String(periodYear))
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: CommissionRecord[]; total: number }>(
+    `/commission-records?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function calculateCommission({
+  agentId,
+  periodMonth,
+  periodYear,
+}: {
+  agentId: string
+  periodMonth: number
+  periodYear: number
+}): Promise<CommissionRecord> {
+  const data = await apiFetch<{ commissionRecord: CommissionRecord }>(
+    "/commission-records",
+    {
+      method: "POST",
+      body: { action: "calculate", agentId, periodMonth, periodYear },
+    },
+  )
+  return data.commissionRecord
+}
+
+export async function approveCommissionRecord(
+  id: string,
+): Promise<CommissionRecord> {
+  const data = await apiFetch<{ commissionRecord: CommissionRecord }>(
+    `/commission-records/${id}/approve`,
+    { method: "POST" },
+  )
+  return data.commissionRecord
+}
+
+export async function rejectCommissionRecord(
+  id: string,
+  rejectionReason: string,
+): Promise<CommissionRecord> {
+  const data = await apiFetch<{ commissionRecord: CommissionRecord }>(
+    `/commission-records/${id}/reject`,
+    { method: "POST", body: { rejectionReason } },
+  )
+  return data.commissionRecord
+}
+
+/* ---------- Commission payouts ---------- */
+
+export interface CommissionPayoutItem extends CommissionPayout {}
+
+export async function listCommissionPayouts({
+  commissionRecordId,
+  status,
+}: {
+  commissionRecordId?: string
+  status?: string
+} = {}): Promise<CommissionPayout[]> {
+  const params = new URLSearchParams()
+  if (commissionRecordId) params.set("commissionRecordId", commissionRecordId)
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: CommissionPayout[]; total: number }>(
+    `/commission-payouts?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createCommissionPayout({
+  commissionRecordId,
+  amount,
+  currency,
+  paymentDate,
+  paymentReference,
+}: {
+  commissionRecordId: string
+  amount: number
+  currency: string
+  paymentDate?: string
+  paymentReference?: string
+}): Promise<CommissionPayout> {
+  const data = await apiFetch<{ ok: boolean }>("/commission-payouts", {
+    method: "POST",
+    body: { commissionRecordId, amount, currency, paymentDate, paymentReference },
+  })
+  return {
+    id: "",
+    commissionRecordId,
+    amount,
+    currency,
+    paymentDate: paymentDate ?? null,
+    paymentReference: paymentReference ?? null,
+    status: "paid",
+    paidBy: null,
+    paidAt: null,
+    createdAt: "",
+    updatedAt: "",
+  } as CommissionPayout
 }
