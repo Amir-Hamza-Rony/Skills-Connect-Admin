@@ -3,8 +3,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission } from "@/middleware/auth";
+import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { writeDocumentAccessLog } from "@/lib/audit";
 
 const ALLOWED: Record<string, { maxBytes: number }> = {
   "application/pdf": { maxBytes: 20 * 1024 * 1024 },
@@ -15,8 +16,9 @@ const ALLOWED: Record<string, { maxBytes: number }> = {
   "text/plain": { maxBytes: 5 * 1024 * 1024 },
 };
 
-export const POST = withAuth("documents.view",
-  async (req) => {
+export const POST = withAuth(
+  async (req: AuthedRequest) => {
+    const actor = (req as AuthedRequest).auth!;
     const formData = await req.formData();
     const orderId = formData.get("orderId") as string;
     const clientId = formData.get("clientId") as string;
@@ -58,6 +60,15 @@ export const POST = withAuth("documents.view",
       createdAt: new Date(),
     });
 
-    return NextResponse.json({ id: String(result.insertedId), version: nextVersion }, { status: 201 });
+    const documentId = String(result.insertedId);
+    await writeDocumentAccessLog({
+      documentId,
+      actorId: actor.userId,
+      action: "upload",
+      ip: req.headers.get("x-forwarded-for") ?? null,
+      requestId: req.headers.get("x-request-id") ?? null,
+    });
+
+    return NextResponse.json({ id: documentId, version: nextVersion }, { status: 201 });
   },
 );
