@@ -98,16 +98,31 @@ export interface Rto {
 
 export type RouteStatus = "active" | "expired"
 
+export type Currency = "AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR"
+
 export interface SupplierRoute {
   id: string
   qualificationId: string
   sourceAgentId: string
   rtoId: string
   wholesaleCost: number
-  currency: "AUD"
+  currency: Currency
   effectiveFrom: string
   effectiveTo: string | null
   status: RouteStatus
+}
+
+export type MappingStatus = "active" | "inactive"
+
+export interface QualificationRtoMapping {
+  id: string
+  qualificationId: string
+  rtoId: string
+  status: MappingStatus
+  effectiveFrom: string
+  effectiveTo: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 /** Fine-grained permissions enforced server-side (Day-2: mirrored in UI guards). */
@@ -130,6 +145,10 @@ export type Permission =
   | "reports.view"
   | "audit.view"
   | "settings.manage"
+  | "commissions.manage"
+  | "commissions.view"
+  | "qb.manage"
+  | "finance.reconcile"
 
 /* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
@@ -274,13 +293,83 @@ export interface Order {
   sellingPrice: number
   supplierCostSnapshot: number
   otherCost: number
-  currency: "AUD"
+  currency: Currency
+  /** Optional RTO contact associated with this order. */
+  rtoContactId: string | null
+  rtoContactName: string | null
+  /** Licensing and assessment tracking. */
+  licensingAuthority: string | null
+  licenceReference: string | null
+  licenceExpiry: string | null
+  /** Certificate delivery tracking. */
+  certificateDeliveryMethod: string | null
+  certificateDeliveryDate: string | null
+  certificateTrackingNumber: string | null
+  /** Selling price category applied at order creation (snapshot). */
+  priceCategoryId: string | null
+  /** Price list applied at order creation (snapshot). */
+  priceListId: string | null
+  /** Supplier route applied at order creation (snapshot). */
+  supplierRouteId: string | null
+  /** Exchange rate from selling currency to reporting currency at order time. */
+  exchangeRate: number | null
+  /** Converted reporting amount at order time. */
+  convertedAmount: number | null
+  /** Additional fees snapshot applied at order creation. */
+  additionalFees: Array<{
+    feeId: string
+    description: string | null
+    amount: number
+    currency: Currency
+    isOptional: boolean
+  }>
+  /** Total of additional fees at order creation. */
+  feeTotal: number
   /** Calculated server-side from invoices + payments (Spec §6). */
   paymentStatus: PaymentStatus
   createdAt: string
   updatedAt: string
   completedAt: string | null
   history: StatusChange[]
+}
+
+/** RTO processing record for an order (Phase 3). */
+export type RtoProcessingStatus =
+  | "Not Started"
+  | "Submission Prepared"
+  | "Submitted to RTO"
+  | "Acknowledged"
+  | "Under Assessment"
+  | "Additional Evidence Required"
+  | "Approved"
+  | "Issued"
+  | "Rejected"
+
+export interface RtoProcessing {
+  id: string
+  orderId: string
+  rtoId: string
+  submissionStatus: RtoProcessingStatus
+  submissionDate: string | null
+  processingStatus: RtoProcessingStatus
+  rtoReference: string | null
+  processingFees: number | null
+  processingCurrency: Currency | null
+  notes: string | null
+  history: StatusChange[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** Document access log entry (Phase 3 audit). */
+export interface DocumentAccessLog {
+  id: string
+  documentId: string
+  actorId: string | null
+  action: string
+  ip: string | null
+  requestId: string | null
+  createdAt: string
 }
 
 export interface OrderDocument {
@@ -308,6 +397,7 @@ export interface WorkflowTask {
   dueDate: string | null
   status: TaskStatus
   priority: "Low" | "Medium" | "High"
+  overdue?: boolean
 }
 
 /** Per-qualification document checklist template. */
@@ -404,6 +494,125 @@ export interface AuditEvent {
   after: string
 }
 
+/* ================= Day-5: Pricing & Commission (Spec pricing) ========== */
+
+export type PriceCategoryStatus = "active" | "inactive"
+
+export interface PriceCategory {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  status: PriceCategoryStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export type PriceListStatus = "active" | "inactive" | "draft"
+
+export interface PriceList {
+  id: string
+  qualificationId: string
+  priceCategoryId: string
+  amount: number
+  currency: Currency
+  effectiveFrom: string
+  effectiveTo: string | null
+  status: PriceListStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export type FeeApplicability = "qualification" | "priceCategory"
+
+export interface AdditionalFee {
+  id: string
+  applicability: FeeApplicability
+  referenceId: string // qualificationId or priceCategoryId
+  amount: number
+  currency: Currency
+  description: string | null
+  effectiveFrom: string
+  effectiveTo: string | null
+  isOptional: boolean
+  status: "active" | "inactive"
+  createdAt: string
+  updatedAt: string
+}
+
+export type CommissionRuleStatus = "active" | "inactive"
+export type CommissionRuleApproval = "draft" | "approved" | "rejected"
+
+export interface CommissionTier {
+  minDeals: number
+  maxDeals: number | null
+  commissionPerDeal: number
+}
+
+export interface AgentCommissionRule {
+  id: string
+  agentId: string | null // null means applies to all agents of the responsibility
+  responsibility: AgentType | null // null means applies to a specific agent
+  effectiveFrom: string
+  effectiveTo: string | null
+  tiers: CommissionTier[]
+  eligibleOrderStatuses: string[] // order statuses that count as eligible (empty = not configured)
+  commissionCurrency: Currency
+  additionalIncentiveAmount: number | null
+  additionalIncentiveCurrency: Currency | null
+  status: CommissionRuleStatus
+  approvalStatus: CommissionRuleApproval
+  approvedBy: string | null
+  approvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type CommissionRecordStatus =
+  | "draft"
+  | "calculated"
+  | "approved"
+  | "rejected"
+  | "paid"
+
+export interface CommissionRecord {
+  id: string
+  agentId: string
+  periodMonth: number // 1-12
+  periodYear: number
+  eligibleDealCount: number
+  eligibleDealIds: string[] // order ids
+  tierApplied: CommissionTier | null
+  commissionAmount: number
+  commissionCurrency: Currency
+  exchangeRate: number | null // sale currency -> commission currency
+  convertedAmount: number | null
+  additionalIncentiveAmount: number
+  status: CommissionRecordStatus
+  calculatedBy: string | null
+  calculatedAt: string | null
+  approvedBy: string | null
+  approvedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type PayoutStatus = "pending" | "paid" | "failed"
+
+export interface CommissionPayout {
+  id: string
+  commissionRecordId: string
+  amount: number
+  currency: Currency
+  paymentDate: string | null
+  paymentReference: string | null
+  status: PayoutStatus
+  paidBy: string | null
+  paidAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 /* ================= Saved views & Communications (Spec §7, §13) ========= */
 
 /** A saved operational queue filter (Spec §13). Per-user, per-scope. */
@@ -437,4 +646,184 @@ export interface Communication {
   externalReference: string | null
   createdAt: string
   updatedAt: string
+}
+
+/* ================= Day-6: Finance & QuickBooks (Spec phase 4) ========== */
+
+export interface InvoiceLineItem {
+  id: string
+  description: string
+  amount: number
+  currency: Currency
+  quantity: number
+  taxAmount: number
+  taxRate: number
+}
+
+export type QBConnectionStatus = "connected" | "disconnected" | "error" | "expired"
+
+export interface QBConnection {
+  id: string
+  realmId: string
+  connectionStatus: QBConnectionStatus
+  accessTokenEncrypted: string // encrypted at rest — never returned to frontend
+  refreshTokenEncrypted: string
+  tokenExpiresAt: string | null
+  scope: string | null
+  connectedBy: string | null
+  connectedAt: string | null
+  updatedAt: string
+}
+
+export type QBEntityType = "customer" | "invoice" | "payment"
+
+export type QBSyncDirection = "local_to_qb" | "qb_to_local"
+
+export type QBSyncStatus2 = "Not Synced" | "Pending" | "Synced" | "Failed" | "Conflict"
+
+export interface QBReconciliationRecord {
+  id: string
+  entityType: QBEntityType
+  entityId: string
+  qbReference: string | null
+  localId: string | null
+  direction: QBSyncDirection
+  status: QBSyncStatus2
+  attempts: number
+  lastSyncAt: string | null
+  syncError: string | null
+  idempotencyKey: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CurrencyRate {
+  id: string
+  fromCurrency: Currency
+  toCurrency: Currency
+  rate: number
+  source: string
+  effectiveAt: string
+  createdAt: string
+}
+
+export type ReconciliationStatus = "open" | "resolved" | "ignored"
+
+export interface ReconciliationItem {
+  id: string
+  entityType: QBEntityType
+  entityId: string
+  qbReference: string | null
+  issue: "amount_mismatch" | "currency_mismatch" | "status_mismatch" | "missing_locally" | "missing_in_qb" | "duplicate_qb_reference"
+  localValue: unknown
+  qbValue: unknown
+  status: ReconciliationStatus
+  resolvedBy: string | null
+  resolvedAt: string | null
+  resolutionNote: string | null
+  createdAt: string
+}
+
+/* Extend Invoice with multi-currency and QB sync fields (additive — existing
+ * docs written without these fields treat them as null/legacy). */
+interface InvoiceExtended extends Invoice {
+  currency: Currency
+  issueDate: string
+  lineItems: InvoiceLineItem[]
+  history: StatusChange[]
+  qbReference: string | null
+  qbSyncStatus: QBSyncStatus2
+}
+
+/* Extend Payment with multi-currency and verification fields (additive). */
+interface PaymentExtended extends Payment {
+  currency: Currency
+  exchangeRate: number | null
+  exchangeRateSource: string | null
+  exchangeRateAt: string | null
+  verificationStatus: "Unverified" | "Verified" | "Failed"
+  qbReference: string | null
+  qbSyncStatus: QBSyncStatus2
+}
+
+/* Extend PaymentPlan / Instalment with currency (additive). */
+interface PaymentPlanExtended extends PaymentPlan {
+  currency: Currency
+}
+interface InstalmentExtended extends Instalment {
+  currency: Currency
+}
+
+/* ================= Day-7: Excel Migration & Reports (Spec phase 5) ========== */
+
+export type ImportScope = "clients" | "orders" | "rtos" | "agents" | "qualifications"
+
+export type ImportStatus = "pending" | "processing" | "completed" | "failed" | "rolledback"
+
+export type ImportRowStatus = "success" | "failed" | "skipped"
+
+export interface ImportColumnMapping {
+  sourceColumn: string // Excel column header as it appears in the file
+  targetField: string // Target database field name
+  required: boolean
+  dataType: "string" | "number" | "date" | "boolean" | "email"
+  validation?: string // Optional validation rule description
+}
+
+export interface ExcelImportTemplate {
+  id: string
+  name: string
+  scope: ImportScope
+  columnMappings: ImportColumnMapping[]
+  createdBy: string | null
+  createdAt: string
+  updatedAt: string
+  status: "active" | "inactive"
+}
+
+export interface ExcelImport {
+  id: string
+  templateId: string | null
+  filename: string
+  status: ImportStatus
+  rowCounts: { total: number; success: number; failed: number; skipped: number }
+  startedBy: string | null
+  startedAt: string
+  completedAt: string | null
+  errorSummary: string | null
+}
+
+export interface ExcelImportRow {
+  id: string
+  importId: string
+  rowNumber: number
+  sourceData: Record<string, unknown>
+  status: ImportRowStatus
+  errorMessage: string | null
+  targetRecordId: string | null
+}
+
+export type ReportType =
+  | "clients"
+  | "orders"
+  | "outstanding"
+  | "supplier-costs"
+  | "agent-commission"
+  | "monthly-summary"
+  | "finance"
+  | "revenue"
+  | "margin"
+  | "ageing"
+
+export type ExportFormat = "xlsx" | "pdf"
+
+export interface ReportFilter {
+  from?: string
+  to?: string
+  clientId?: string
+  qualificationId?: string
+  rtoId?: string
+  agentId?: string
+  status?: string
+  currency?: Currency
 }
