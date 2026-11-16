@@ -31,7 +31,7 @@ async function requireAuth(req: AuthedRequest) {
     permissions?: string[];
   };
   if (
-    !auth?.roleNames?.includes("Super Admin") &&
+    !auth?.roleNames?.includes("SUPER_ADMIN") &&
     !auth?.permissions?.includes(PERMISSION)
   ) {
     return NextResponse.json(

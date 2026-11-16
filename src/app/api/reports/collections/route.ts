@@ -4,19 +4,24 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
-  async (req) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const invoices = await collection("invoices");
     const payments = await collection("payments");
     const orders = await collection("orders");
 
-    const [invDocs, payDocs, orderDocs] = await Promise.all([
+    const [invDocs, payDocs, allOrderDocs] = await Promise.all([
       invoices.find().toArray(),
       payments.find().toArray(),
       orders.find().toArray(),
     ]);
+
+    const orderDocs = filterOrdersByRole(auth, allOrderDocs);
 
     const byMonth: Record<string, { invoiced: number; collected: number; orders: number }> = {};
 

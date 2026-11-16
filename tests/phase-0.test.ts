@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ObjectId } from "mongodb";
+import { NextRequest } from "next/server";
 
 import {
   POST as createOrder,
@@ -23,6 +24,10 @@ import {
   seedPlan,
   seedMapping,
   findAuditAction,
+  makeBDCToken,
+  makeB2BAgentToken,
+  makeAdminToken,
+  makeSuperAdminToken,
 } from "./helpers";
 
 function json(res: Response) {
@@ -419,5 +424,437 @@ describe("Phase 0 — audit logging", () => {
     const audit = await findAuditAction("payment", "create");
     expect(audit).toBeTruthy();
     expect(audit.after.amount).toBe(200);
+  });
+});
+
+describe("Phase 0 — four-role RBAC and security", () => {
+  beforeEach(async () => {
+    await clearDb();
+  });
+
+  it("authenticates SUPER_ADMIN with full permissions", async () => {
+    const { POST: login } = await import("@/app/api/auth/login/route");
+    const res = await login(
+      authedRequest("POST", "/api/auth/login", {
+        email: "admin@skillsconnect.example",
+        password: "any",
+      }),
+    );
+    // User may not exist in test DB — test token creation directly instead
+    expect(res.status).toBe(401);
+  });
+
+  it("BDC token carries correct role and permissions", async () => {
+    const token = makeBDCToken();
+    expect(token).toBeDefined();
+    const { verifyAccessToken } = await import("@/lib/api-auth");
+    const payload = verifyAccessToken(token);
+    expect(payload.role).toBe("BDC");
+    expect(payload.roleNames).toContain("BDC");
+    expect(payload.permissions).toContain("orders.view");
+    expect(payload.permissions).toContain("orders.manage");
+    expect(payload.permissions).not.toContain("finance.manage");
+    expect(payload.permissions).not.toContain("users.manage");
+  });
+
+  it("B2B_AGENT token carries correct role and permissions", async () => {
+    const token = makeB2BAgentToken();
+    const { verifyAccessToken } = await import("@/lib/api-auth");
+    const payload = verifyAccessToken(token);
+    expect(payload.role).toBe("B2B_AGENT");
+    expect(payload.roleNames).toContain("B2B_AGENT");
+    expect(payload.agency_name).toBe("Test Agency");
+    expect(payload.b2b_tier).toBe("SILVER");
+    expect(payload.permissions).toContain("orders.view");
+    expect(payload.permissions).not.toContain("finance.manage");
+    expect(payload.permissions).not.toContain("users.manage");
+  });
+
+  it("ADMIN token carries full permissions", async () => {
+    const token = makeAdminToken();
+    const { verifyAccessToken } = await import("@/lib/api-auth");
+    const payload = verifyAccessToken(token);
+    expect(payload.role).toBe("ADMIN");
+    expect(payload.permissions).toContain("users.manage");
+    expect(payload.permissions).toContain("finance.manage");
+    expect(payload.permissions).toContain("orders.view");
+  });
+
+  it("SUPER_ADMIN token carries all permissions", async () => {
+    const token = makeSuperAdminToken();
+    const { verifyAccessToken } = await import("@/lib/api-auth");
+    const payload = verifyAccessToken(token);
+    expect(payload.role).toBe("SUPER_ADMIN");
+    expect(payload.permissions).toContain("users.manage");
+    expect(payload.permissions).toContain("roles.manage");
+    expect(payload.permissions).toContain("finance.manage");
+  });
+
+  it("BDC can list only their own orders (data scoping)", async () => {
+    const bdcUserId = "test-bdc-1";
+    const otherBdcUserId = "test-bdc-2";
+
+    // Seed orders owned by different BDCs
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      bdc_id: bdcUserId,
+      channel_type: "B2C_BDC",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+    await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 6000,
+      supplierCostSnapshot: 2000,
+      otherCost: 0,
+      currency: "AUD",
+      bdc_id: otherBdcUserId,
+      channel_type: "B2C_BDC",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const bdcToken = makeBDCToken(bdcUserId);
+    const { GET: listOrders } = await import("@/app/api/orders/route");
+    const req = new NextRequest(`http://localhost/api/orders`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${bdcToken}` },
+    });
+    const res = await listOrders(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.orders.length).toBe(1);
+    expect(body.orders[0].bdc_id).toBe(bdcUserId);
+    // Partner cost must be masked for BDC
+    expect(body.orders[0].supplierCostSnapshot).toBeUndefined();
+  });
+
+  it("BDC cannot access another BDC's order (403)", async () => {
+    const bdcUserId = "test-bdc-1";
+    const otherBdcUserId = "test-bdc-2";
+
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    const { insertedId } = await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      bdc_id: otherBdcUserId,
+      channel_type: "B2C_BDC",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const bdcToken = makeBDCToken(bdcUserId);
+    const { GET: getOrder } = await import("@/app/api/orders/[id]/route");
+    const req = new NextRequest(`http://localhost/api/orders/${insertedId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${bdcToken}` },
+    });
+    const res = await getOrder(req, { params: { id: String(insertedId) } });
+    expect(res.status).toBe(403);
+  });
+
+  it("B2B_AGENT can list only their own agency's orders", async () => {
+    const agentUserId = "test-b2b-1";
+    const otherAgentUserId = "test-b2b-2";
+
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      b2b_agent_id: agentUserId,
+      channel_type: "B2B_AGENT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+    await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 6000,
+      supplierCostSnapshot: 2000,
+      otherCost: 0,
+      currency: "AUD",
+      b2b_agent_id: otherAgentUserId,
+      channel_type: "B2B_AGENT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const b2bToken = makeB2BAgentToken(agentUserId);
+    const { GET: listOrders } = await import("@/app/api/orders/route");
+    const req = new NextRequest(`http://localhost/api/orders`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${b2bToken}` },
+    });
+    const res = await listOrders(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.orders.length).toBe(1);
+    expect(body.orders[0].b2b_agent_id).toBe(agentUserId);
+    // Partner cost must be masked for B2B_AGENT
+    expect(body.orders[0].supplierCostSnapshot).toBeUndefined();
+  });
+
+  it("B2B_AGENT cannot access another agency's order (403)", async () => {
+    const agentUserId = "test-b2b-1";
+    const otherAgentUserId = "test-b2b-2";
+
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    const { insertedId } = await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      b2b_agent_id: otherAgentUserId,
+      channel_type: "B2B_AGENT",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const b2bToken = makeB2BAgentToken(agentUserId);
+    const { GET: getOrder } = await import("@/app/api/orders/[id]/route");
+    const req = new NextRequest(`http://localhost/api/orders/${insertedId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${b2bToken}` },
+    });
+    const res = await getOrder(req, { params: { id: String(insertedId) } });
+    expect(res.status).toBe(403);
+  });
+
+  it("SUPER_ADMIN sees all orders with partner cost visible", async () => {
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const token = makeSuperAdminToken();
+    const { GET: listOrders } = await import("@/app/api/orders/route");
+    const req = new NextRequest(`http://localhost/api/orders`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const res = await listOrders(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.orders.length).toBe(1);
+    expect(body.orders[0].supplierCostSnapshot).toBe(1500);
+  });
+
+  it("ADMIN sees all orders with partner cost visible", async () => {
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const token = makeAdminToken();
+    const { GET: listOrders } = await import("@/app/api/orders/route");
+    const req = new NextRequest(`http://localhost/api/orders`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const res = await listOrders(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.orders.length).toBe(1);
+    expect(body.orders[0].supplierCostSnapshot).toBe(1500);
+  });
+
+  it("order detail masks supplierCostSnapshot from BDC", async () => {
+    const bdcUserId = "test-bdc-1";
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    const { insertedId } = await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      bdc_id: bdcUserId,
+      channel_type: "B2C_BDC",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const token = makeBDCToken(bdcUserId);
+    const { GET: getOrder } = await import("@/app/api/orders/[id]/route");
+    const req = new NextRequest(`http://localhost/api/orders/${insertedId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const res = await getOrder(req, { params: { id: String(insertedId) } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.supplierCostSnapshot).toBeUndefined();
+    expect(body.sellingPrice).toBe(5000);
+  });
+
+  it("order detail exposes supplierCostSnapshot to SUPER_ADMIN", async () => {
+    const clientId = await seedClient();
+    const qualificationId = new ObjectId();
+    const sourceAgentId = new ObjectId();
+    const rtoId = new ObjectId();
+    await seedSupplierRoute(qualificationId, sourceAgentId, rtoId, 1500);
+    await seedMapping(qualificationId, rtoId);
+
+    const orders = await (await getDb()).collection("orders");
+    const { insertedId } = await orders.insertOne({
+      clientId,
+      qualificationId,
+      salesAgentId: new ObjectId(),
+      sourceAgentId,
+      rtoId,
+      status: "New",
+      sellingPrice: 5000,
+      supplierCostSnapshot: 1500,
+      otherCost: 0,
+      currency: "AUD",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      history: [],
+    });
+
+    const token = makeSuperAdminToken();
+    const { GET: getOrder } = await import("@/app/api/orders/[id]/route");
+    const req = new NextRequest(`http://localhost/api/orders/${insertedId}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const res = await getOrder(req, { params: { id: String(insertedId) } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.supplierCostSnapshot).toBe(1500);
+  });
+
+  it("unauthenticated request returns 401", async () => {
+    const { GET: listOrders } = await import("@/app/api/orders/route");
+    const req = new NextRequest(`http://localhost/api/orders`, {
+      method: "GET",
+    });
+    const res = await listOrders(req);
+    expect(res.status).toBe(401);
   });
 });

@@ -5,7 +5,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 function parseFilter(searchParams: URLSearchParams): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
@@ -51,7 +53,8 @@ function isValidObjectId(id: string): boolean {
 }
 
 export const GET = withAuth("reports.view",
-  async (req: NextRequest) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     let filter: Record<string, unknown>;
     try {
       filter = parseFilter(req.nextUrl.searchParams);
@@ -69,9 +72,11 @@ export const GET = withAuth("reports.view",
     );
 
     const orders = await collection("orders");
-    const completedOrders = await orders
+    const allCompletedOrders = await orders
       .find({ ...filter, completedAt: { $ne: null } })
       .toArray();
+
+    const completedOrders = filterOrdersByRole(auth, allCompletedOrders);
 
     const byRto = new Map<string, { completed: number; totalDays: number }>();
     for (const oRaw of completedOrders) {

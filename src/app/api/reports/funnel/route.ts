@@ -4,13 +4,17 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
-  async (req) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const orders = await (await collection("orders")).find().toArray();
+    const accessibleOrders = filterOrdersByRole(auth, orders);
     const byStage = new Map<string, number>();
-    for (const o of orders) byStage.set(o.status, (byStage.get(o.status) ?? 0) + 1);
+    for (const o of accessibleOrders) byStage.set(o.status, (byStage.get(o.status) ?? 0) + 1);
 
     const total = orders.length;
     const completed = byStage.get("Completed") ?? 0;

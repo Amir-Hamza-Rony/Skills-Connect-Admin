@@ -77,7 +77,7 @@ export async function listUserDirectory(): Promise<UserRef[]> {
 
 export async function updateUser(
   id: string,
-  patch: Partial<Pick<User, "name" | "phone" | "roleNames" | "active">>,
+  patch: Partial<Pick<User, "name" | "phone" | "roleNames" | "active" | "role" | "agency_name" | "b2b_tier" | "default_commission_pct">>,
 ): Promise<User> {
   const data = await apiFetch<{ user: User }>(`/users/${id}`, { method: "PATCH", body: patch })
   return data.user
@@ -89,7 +89,11 @@ export async function createUser(input: {
   name: string
   phone?: string
   password: string
+  role: RoleName
   roleNames: RoleName[]
+  agency_name?: string
+  b2b_tier?: "SILVER" | "GOLD" | "PLATINUM"
+  default_commission_pct?: number
   active?: boolean
 }): Promise<User> {
   const data = await apiFetch<{ user: User }>("/users", {

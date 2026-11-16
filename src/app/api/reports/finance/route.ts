@@ -4,10 +4,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
-  async (req) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const filter: Record<string, unknown> = {};
     const from = searchParams.get("from");
@@ -18,11 +21,13 @@ export const GET = withAuth("reports.view",
       if (to) (filter.createdAt as Record<string, Date>).$lte = new Date(to);
     }
 
-    const [orders, invoices, payments] = await Promise.all([
+    const [allOrders, invoices, payments] = await Promise.all([
       (await collection("orders")).find(filter).toArray(),
       (await collection("invoices")).find(filter).toArray(),
       (await collection("payments")).find(filter).toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     const invoiced = invoices.filter((i: any) => i.status !== "Void").reduce((s: number, i: any) => s + (i.total ?? 0), 0);
     const collected = payments.filter((p: any) => p.status !== "Void" && p.status !== "Refunded").reduce((s: number, p: any) => s + (p.allocatedAmount ?? 0), 0);

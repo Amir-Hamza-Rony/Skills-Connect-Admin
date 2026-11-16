@@ -8,9 +8,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
@@ -25,12 +27,14 @@ export const GET = withAuth("reports.view",
       if (to) (orderFilter.createdAt as Record<string, unknown>).$lte = new Date(to);
     }
 
-    const [agents, orders, commissionRecords, commissionPayouts] = await Promise.all([
+    const [agents, allOrders, commissionRecords, commissionPayouts] = await Promise.all([
       (await collection("agents")).find({}).toArray(),
       (await collection("orders")).find(orderFilter).toArray(),
       (await collection("commission_records")).find({}).toArray(),
       (await collection("commission_payouts")).find({}).toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     const agentMap = new Map(agents.map((a: any) => [String(a._id), a.name]));
 

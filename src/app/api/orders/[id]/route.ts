@@ -15,6 +15,8 @@ const UPDATABLE_FIELDS = new Set([
 
 export const GET = withAuth("orders.view",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
+    const authedReq = req as AuthedRequest;
+    const auth = authedReq.auth!;
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
 
@@ -27,8 +29,19 @@ export const GET = withAuth("orders.view",
     const order = await orders.findOne({ _id: orderOid });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
 
+    // --- Data scoping: verify access ---
+    if (auth.role === "BDC" || auth.roleNames.includes("BDC")) {
+      if (order.bdc_id && String(order.bdc_id) !== auth.userId) {
+        return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not your BDC enrollment." } }, { status: 403 });
+      }
+    } else if (auth.role === "B2B_AGENT" || auth.roleNames.includes("B2B_AGENT")) {
+      if (order.b2b_agent_id && String(order.b2b_agent_id) !== auth.userId) {
+        return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not your agency enrollment." } }, { status: 403 });
+      }
+    }
+
     const margin = order.sellingPrice - order.supplierCostSnapshot - (order.otherCost ?? 0);
-    return NextResponse.json({
+    const item: Record<string, unknown> = {
       id: String(order._id),
       clientId: String(order.clientId),
       qualificationId: String(order.qualificationId),
@@ -40,13 +53,20 @@ export const GET = withAuth("orders.view",
       rtoSubmissionStatus: order.rtoSubmissionStatus,
       certificateStatus: order.certificateStatus,
       sellingPrice: order.sellingPrice,
-      supplierCostSnapshot: order.supplierCostSnapshot,
       otherCost: order.otherCost,
       grossMargin: margin,
       currency: order.currency,
       history: order.history ?? [],
       createdAt: order.createdAt,
-    });
+      bdc_id: order.bdc_id ?? null,
+      b2b_agent_id: order.b2b_agent_id ?? null,
+    };
+    // --- Financial field masking ---
+    if (auth.role === "SUPER_ADMIN" || auth.role === "ADMIN" ||
+        auth.roleNames.includes("SUPER_ADMIN") || auth.roleNames.includes("ADMIN")) {
+      item.supplierCostSnapshot = order.supplierCostSnapshot;
+    }
+    return NextResponse.json(item);
   },
 );
 

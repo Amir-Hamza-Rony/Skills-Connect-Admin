@@ -7,6 +7,7 @@ import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { createUser, listRoles, listUsers, updateUser } from "@/lib/store"
+import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/permissions"
 import { ApiError, messageFor } from "@/lib/api"
 import type { Role, RoleName, User } from "@/lib/types"
 
@@ -37,7 +38,11 @@ export function UsersPage() {
     name: "",
     phone: "",
     password: "",
+    role: "" as RoleName,
     roleNames: [] as RoleName[],
+    agency_name: "",
+    b2b_tier: "SILVER" as "SILVER" | "GOLD" | "PLATINUM",
+    default_commission_pct: 0,
     active: true,
   })
   const [saving, setSaving] = useState(false)
@@ -58,7 +63,7 @@ export function UsersPage() {
 
   function openEdit(u: User) {
     setEditing(u)
-    setDraftRoles([...u.roleNames])
+    setDraftRoles([...(u.roleNames ?? [u.role].filter(Boolean))])
     setDraftActive(u.active)
     setError(null)
   }
@@ -70,7 +75,11 @@ export function UsersPage() {
       name: "",
       phone: "",
       password: "",
-      roleNames: [],
+      role: "BDC",
+      roleNames: ["BDC"],
+      agency_name: "",
+      b2b_tier: "SILVER",
+      default_commission_pct: 0,
       active: true,
     })
     setError(null)
@@ -82,8 +91,14 @@ export function UsersPage() {
     setError(null)
     try {
       const updated = await updateUser(editing.id, {
+        name: editing.name,
+        phone: editing.phone,
         roleNames: draftRoles,
+        role: draftRoles[0],
         active: draftActive,
+        agency_name: editing.agency_name,
+        b2b_tier: editing.b2b_tier,
+        default_commission_pct: editing.default_commission_pct,
       })
       setUsers((prev) => prev?.map((u) => (u.id === updated.id ? updated : u)) ?? null)
       setEditing(null)
@@ -103,7 +118,11 @@ export function UsersPage() {
         name: createDraft.name,
         phone: createDraft.phone || undefined,
         password: createDraft.password,
+        role: createDraft.role,
         roleNames: createDraft.roleNames,
+        agency_name: createDraft.agency_name || undefined,
+        b2b_tier: createDraft.b2b_tier,
+        default_commission_pct: createDraft.default_commission_pct,
         active: createDraft.active,
       })
       setUsers((prev) => (prev ? [...prev, created] : null))
@@ -157,7 +176,7 @@ export function UsersPage() {
             label: "Roles",
             render: (u) => (
               <span className="flex flex-wrap gap-1">
-                {u.roleNames.map((r) => (
+                {(u.roleNames ?? [u.role].filter(Boolean)).map((r) => (
                   <Badge key={r} variant="secondary">
                     {r}
                   </Badge>
@@ -196,21 +215,21 @@ export function UsersPage() {
         <div className="space-y-4">
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Roles</legend>
-            {roles.map((r) => (
-              <label key={r.id} className="flex items-center gap-2 text-sm">
+            {ALL_ROLES.map((r) => (
+              <label key={r} className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={draftRoles.includes(r.name)}
+                  checked={draftRoles.includes(r)}
                   onChange={(e) =>
                     setDraftRoles((prev) =>
                       e.target.checked
-                        ? [...prev, r.name]
-                        : prev.filter((name) => name !== r.name),
+                        ? [...prev, r]
+                        : prev.filter((name) => name !== r),
                     )
                   }
                   className="size-4 accent-[var(--primary)]"
                 />
-                {r.name}
+                {r}
               </label>
             ))}
           </fieldset>
@@ -302,27 +321,74 @@ export function UsersPage() {
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
+            </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-muted-foreground">Agency Name</label>
+            <input
+              id="create-agency-name"
+              type="text"
+              value={createDraft.agency_name}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setCreateDraft((d) => ({ ...d, agency_name: e.target.value }))
+              }
+              placeholder="Required for B2B Agent"
+              disabled={saving}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-muted-foreground">B2B Tier</label>
+            <select
+              id="create-b2b-tier"
+              value={createDraft.b2b_tier}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                setCreateDraft((d) => ({ ...d, b2b_tier: e.target.value as "SILVER" | "GOLD" | "PLATINUM" }))
+              }
+              disabled={saving}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="SILVER">Silver</option>
+              <option value="GOLD">Gold</option>
+              <option value="PLATINUM">Platinum</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-muted-foreground">Default Commission %</label>
+            <input
+              id="create-commission-pct"
+              type="number"
+              value={createDraft.default_commission_pct}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setCreateDraft((d) => ({ ...d, default_commission_pct: Number(e.target.value) || 0 }))
+              }
+              placeholder="0.00"
+              disabled={saving}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
           </div>
 
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-muted-foreground">Roles</legend>
-            {roles.map((r) => (
-              <label key={r.id} className="flex items-center gap-2 text-sm">
+            {ALL_ROLES.map((r) => (
+              <label key={r} className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={createDraft.roleNames.includes(r.name)}
+                  checked={createDraft.roleNames.includes(r)}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setCreateDraft((d) => ({
                       ...d,
                       roleNames: e.target.checked
-                        ? [...d.roleNames, r.name]
-                        : d.roleNames.filter((n) => n !== r.name),
+                        ? [...d.roleNames, r]
+                        : d.roleNames.filter((n) => n !== r),
                     }))
                   }
                   className="size-4 accent-[var(--primary)]"
                   disabled={saving}
                 />
-                {r.name}
+                {r}
               </label>
             ))}
           </fieldset>
