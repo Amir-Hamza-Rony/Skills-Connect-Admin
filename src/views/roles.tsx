@@ -4,22 +4,23 @@ import { ChevronDown } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { listRoles } from "@/lib/store"
-import type { Role } from "@/lib/types"
+import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/permissions"
+import type { Permission } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 /**
- * Roles matrix viewer — which permissions each Spec §11 role holds.
- * Editing the matrix itself is a Super Admin backend concern;
- * Day-2 shows the enforced contract so the business can confirm it.
+ * Roles matrix viewer — which permissions each boss-defined role holds.
+ * Displays the four-role contract from the boss reference documents.
  */
 export function RolesPage() {
-  const [roles, setRoles] = useState<Role[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
 
-  useEffect(() => {
-    void (async () => setRoles(await listRoles()))()
-  }, [])
+  const roles: Array<{ id: string; name: string; permissions: Permission[] }> =
+    ALL_ROLES.map((name) => ({
+      id: name,
+      name,
+      permissions: ROLE_PERMISSIONS[name],
+    }))
 
   if (!roles) {
     return (
@@ -39,7 +40,7 @@ export function RolesPage() {
             Permission contract per role · {roles.length} roles
           </p>
         </div>
-        <Badge variant="success">Live data</Badge>
+        <Badge variant="success">Boss 4-Role Model</Badge>
       </div>
 
       <div className="space-y-2.5">

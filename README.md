@@ -27,18 +27,21 @@ npm run typecheck  # Next route types + tsc + server typecheck
 npm run lint       # oxlint
 ```
 
-## Demo accounts (preview auth — any password works)
+## Sign in (real auth — server-verified)
 
-| Email | Role |
-|---|---|
-| `admin@skillsconnect.example` | Super Admin (everything) |
-| `finance@skillsconnect.example` | Finance |
-| `operations@skillsconnect.example` | Operations |
-| `sales@skillsconnect.example` | Sales / Closing Agent |
-| `sourcing@skillsconnect.example` | RTO / Sourcing Manager |
-| `review@skillsconnect.example` | Document Reviewer |
+Credentials are verified by the API (`POST /api/auth/login`, argon2id hashing).
+Sign in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from your `.env`.
+On a fresh database, create the first Super Admin account first:
 
-Preview data is synthetic (`DEMO` codes, `.example`/`.invalid` domains) and
+```powershell
+npm run seed:admin    # idempotent: uses SEED_ADMIN_* from .env, never duplicates
+```
+
+Staff accounts for the other roles (`finance@…`, `operations@…`, …) are created
+through **Users** once you are signed in as Super Admin — the Day-2 preview
+login that accepted any password is gone.
+
+Seed data is synthetic (`DEMO` codes, `.example`/`.invalid` domains) and
 resets on reload. Real data arrives via migration — see `HANDOVER.md`.
 
 ## Project layout

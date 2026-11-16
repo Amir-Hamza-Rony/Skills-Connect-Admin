@@ -5,7 +5,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 function parseFilter(searchParams: URLSearchParams): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
@@ -51,7 +53,8 @@ function isValidObjectId(id: string): boolean {
 }
 
 export const GET = withAuth("reports.view",
-  async (req: NextRequest) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     let filter: Record<string, unknown>;
     try {
       filter = parseFilter(req.nextUrl.searchParams);
@@ -63,13 +66,17 @@ export const GET = withAuth("reports.view",
     }
 
     const orders = await collection("orders");
-    const orderIds = (
+    const allOrderIds = (
       await orders.find(filter, { projection: { _id: 1 } }).toArray()
     ).map((o: any) => o._id);
 
+    const accessibleOrderIds = new Set(
+      filterOrdersByRole(auth, allOrderIds.map((id: any) => ({ _id: id }))).map((o: any) => String(o._id)),
+    );
+
     const docs = await collection("documents");
-    const documents = orderIds.length
-      ? await docs.find({ orderId: { $in: orderIds } }).toArray()
+    const documents = accessibleOrderIds.size
+      ? await docs.find({ orderId: { $in: [...accessibleOrderIds] } }).toArray()
       : [];
 
     const byType = new Map<string, { total: number; approved: number; rejected: number }>();

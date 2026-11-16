@@ -8,9 +8,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
@@ -25,14 +27,25 @@ export const GET = withAuth("reports.view",
     }
     if (currency) invoiceFilter.currency = currency;
 
-    const [invoices, clients, orders] = await Promise.all([
+    // Scope invoices to orders the user can access (only for non-admin roles).
+    const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+    if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
+      const orders = await collection("orders");
+      const allOrderDocs = await orders.find({}).toArray();
+      const accessibleOrderIds = new Set(
+        filterOrdersByRole(auth, allOrderDocs).map((o: any) => String(o._id)),
+      );
+      invoiceFilter.orderId = { $in: [...accessibleOrderIds] };
+    }
+
+    const [invoices, clients, allOrderDocs] = await Promise.all([
       (await collection("invoices")).find(invoiceFilter).toArray(),
       (await collection("clients")).find({}).toArray(),
       (await collection("orders")).find({}).toArray(),
     ]);
 
     const clientMap = new Map(clients.map((c: any) => [String(c._id), c.legalName]));
-    const orderMap = new Map(orders.map((o: any) => [String(o._id), String(o.clientId)]));
+    const orderMap = new Map(allOrderDocs.map((o: any) => [String(o._id), String(o.clientId)]));
 
     // Outstanding per invoice.
     const payments = await (await collection("payments")).find({}).toArray();

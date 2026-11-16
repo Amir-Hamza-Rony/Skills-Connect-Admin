@@ -113,7 +113,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       userId: String(user._id),
       name: user.name,
       email: user.email,
+      full_name: user.full_name ?? user.name,
+      role: user.role ?? roleNames[0],
       roleNames,
+      agency_name: user.agency_name ?? null,
+      b2b_tier: user.b2b_tier ?? "SILVER",
+      default_commission_pct: user.default_commission_pct ?? 0,
       permissions,
     });
     const refreshToken = signRefreshToken({ userId: String(user._id) });
@@ -133,8 +138,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       user: {
         id: String(user._id),
         name: user.name,
+        full_name: user.full_name ?? user.name,
         email: user.email,
+        role: user.role ?? (roleNames[0] as RoleName),
         roleNames,
+        agency_name: user.agency_name ?? null,
+        b2b_tier: user.b2b_tier ?? "SILVER",
+        default_commission_pct: user.default_commission_pct ?? 0,
         permissions,
       },
       accessToken,

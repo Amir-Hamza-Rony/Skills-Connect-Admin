@@ -7,6 +7,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { checkOrderAccess } from "@/middleware/auth";
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   Lead: ["Qualified", "Lost"],
@@ -79,6 +80,10 @@ export const PATCH = withAuth("orders.manage",
     const orders = await collection("orders");
     const order = await orders.findOne({ _id: orderOid });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+
+    if (!checkOrderAccess(actor, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
 
     const before = order.status;
     const allowed = ALLOWED_TRANSITIONS[before] ?? [];

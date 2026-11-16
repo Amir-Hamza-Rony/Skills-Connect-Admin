@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { checkOrderAccess } from "@/middleware/auth";
 
 const PERMISSION = "rto.manage";
 
@@ -37,7 +38,7 @@ async function requireAuth(req: AuthedRequest) {
     permissions?: string[];
   };
   if (
-    !auth?.roleNames?.includes("Super Admin") &&
+    !auth?.roleNames?.includes("SUPER_ADMIN") &&
     !auth?.permissions?.includes(PERMISSION)
   ) {
     return NextResponse.json(
@@ -128,6 +129,14 @@ export const POST = withAuth(
     }
     if (!rto) {
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "RTO not found." } }, { status: 404 });
+    }
+
+    const auth = (req as AuthedRequest).auth!;
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Not authorized to access this order." } },
+        { status: 403 },
+      );
     }
 
     const rtoProcColl = await collection("rto-processing");

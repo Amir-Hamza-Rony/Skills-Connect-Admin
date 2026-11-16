@@ -4,16 +4,25 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { checkOrderAccess } from "@/middleware/auth";
 
 export const GET = withAuth("orders.view",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
+    const auth = (req as AuthedRequest).auth!;
     const orderId = toObjectId(id);
 
     const orders = await collection("orders");
     const order = await orders.findOne({ _id: orderId }, { projection: { history: 1 } });
+    if (!order) {
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+    }
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
     const invoices = await (await collection("invoices")).find({ orderId }).toArray();
     const payments = await (await collection("payments")).find({ orderId }).toArray();
     const docs = await (await collection("documents")).find({ orderId }).toArray();

@@ -3,17 +3,70 @@ import { signAccessToken } from "@/lib/api-auth";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
 
-export function makeToken(roleNames: string[] = ["Super Admin"], permissions: string[] = []) {
+export function makeToken(roleNames: string[] = ["SUPER_ADMIN"], permissions: string[] = []) {
   return signAccessToken({
     userId: "test-user-1",
     name: "Test User",
     email: "test@example.com",
+    full_name: "Test User",
+    role: roleNames[0] as any,
     roleNames,
+    agency_name: null,
+    b2b_tier: "SILVER",
+    default_commission_pct: 0,
     permissions,
   });
 }
 
-export function authedRequest(method: string, url: string, body?: unknown, token = makeToken()) {
+export function makeSuperAdminToken() {
+  return makeToken(["SUPER_ADMIN"], [
+    "users.manage", "roles.manage", "clients.view", "clients.manage",
+    "orders.view", "orders.manage", "qualifications.manage", "pricing.manage",
+    "documents.view", "documents.review", "finance.view", "finance.manage",
+    "reports.view", "audit.view", "settings.manage",
+  ]);
+}
+
+export function makeAdminToken() {
+  return makeToken(["ADMIN"], [
+    "users.manage", "roles.manage", "clients.view", "clients.manage",
+    "orders.view", "orders.manage", "qualifications.manage", "pricing.manage",
+    "documents.view", "documents.review", "finance.view", "finance.manage",
+    "reports.view", "audit.view", "settings.manage",
+  ]);
+}
+
+export function makeBDCToken(userId = "test-bdc-1") {
+  return signAccessToken({
+    userId,
+    name: "BDC User",
+    email: "bdc@test.com",
+    full_name: "BDC User",
+    role: "BDC",
+    roleNames: ["BDC"],
+    agency_name: null,
+    b2b_tier: "SILVER",
+    default_commission_pct: 0,
+    permissions: ["clients.view", "clients.manage", "orders.view", "orders.manage", "documents.view", "reports.view"],
+  });
+}
+
+export function makeB2BAgentToken(userId = "test-b2b-1") {
+  return signAccessToken({
+    userId,
+    name: "B2B Agent",
+    email: "b2b@test.com",
+    full_name: "B2B Agent",
+    role: "B2B_AGENT",
+    roleNames: ["B2B_AGENT"],
+    agency_name: "Test Agency",
+    b2b_tier: "SILVER",
+    default_commission_pct: 0,
+    permissions: ["clients.view", "clients.manage", "orders.view", "orders.manage", "documents.view", "reports.view"],
+  });
+}
+
+export function authedRequest(method: string, url: string, body?: unknown, token = makeSuperAdminToken()) {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -285,6 +338,32 @@ export async function seedCommissionRule(
     approvedAt: now,
     createdAt: now,
     updatedAt: now,
+  });
+  return id;
+}
+
+export async function seedUser(
+  id = new ObjectId(),
+  overrides: Record<string, unknown> = {},
+) {
+  const db = await getDb();
+  await db.collection("users").insertOne({
+    _id: id,
+    email: (overrides.email ?? `user${id.toString().slice(-6)}@test.com`).toLowerCase(),
+    name: overrides.name ?? "Test User",
+    full_name: overrides.full_name ?? "Test User",
+    phone: overrides.phone ?? "",
+    passwordHash: overrides.passwordHash ?? "dummy-hash",
+    role: overrides.role ?? "BDC",
+    roleNames: overrides.roleNames ?? [overrides.role ?? "BDC"],
+    agency_name: overrides.agency_name ?? null,
+    b2b_tier: overrides.b2b_tier ?? "SILVER",
+    default_commission_pct: overrides.default_commission_pct ?? 0,
+    active: overrides.active ?? true,
+    is_active: overrides.active ?? true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    failedLoginCount: 0,
   });
   return id;
 }

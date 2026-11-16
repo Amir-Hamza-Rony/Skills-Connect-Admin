@@ -36,7 +36,7 @@ function mapDoc(d: any) {
 export const GET = withAuth(
   async (req: AuthedRequest) => {
     const auth = req.auth as { roleNames?: string[]; permissions?: string[] };
-    if (!auth?.roleNames?.includes("Super Admin") && !auth?.permissions?.includes(PERMISSION)) {
+    if (!auth?.roleNames?.includes("SUPER_ADMIN") && !auth?.permissions?.includes(PERMISSION)) {
       return NextResponse.json({ error: { code: "FORBIDDEN", message: `Missing permission: ${PERMISSION}` } }, { status: 403 });
     }
 
@@ -84,7 +84,7 @@ export const GET = withAuth(
 export const POST = withAuth(
   async (req: AuthedRequest) => {
     const auth = req.auth as { roleNames?: string[]; permissions?: string[] };
-    if (!auth?.roleNames?.includes("Super Admin") && !auth?.permissions?.includes(PERMISSION)) {
+    if (!auth?.roleNames?.includes("SUPER_ADMIN") && !auth?.permissions?.includes(PERMISSION)) {
       return NextResponse.json({ error: { code: "FORBIDDEN", message: `Missing permission: ${PERMISSION}` } }, { status: 403 });
     }
 

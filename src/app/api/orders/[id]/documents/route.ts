@@ -5,7 +5,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { checkOrderAccess } from "@/middleware/auth";
 
 export const GET = withAuth("documents.view",
   async (req: NextRequest, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
@@ -28,6 +30,14 @@ export const GET = withAuth("documents.view",
       return NextResponse.json(
         { error: { code: "NOT_FOUND", message: "Order not found." } },
         { status: 404 },
+      );
+    }
+
+    const auth = (req as AuthedRequest).auth!;
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Not authorized to access this order." } },
+        { status: 403 },
       );
     }
 

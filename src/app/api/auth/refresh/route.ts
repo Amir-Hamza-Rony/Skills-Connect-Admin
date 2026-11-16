@@ -71,7 +71,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     userId: String(user._id),
     name: user.name,
     email: user.email,
+    full_name: user.full_name ?? user.name,
+    role: user.role ?? (roleNames[0] as RoleName),
     roleNames,
+    agency_name: user.agency_name ?? null,
+    b2b_tier: user.b2b_tier ?? "SILVER",
+    default_commission_pct: user.default_commission_pct ?? 0,
     permissions,
   });
   return NextResponse.json({ accessToken });

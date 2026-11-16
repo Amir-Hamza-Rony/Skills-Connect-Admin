@@ -8,9 +8,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
+import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
@@ -44,7 +46,7 @@ export const GET = withAuth("reports.view",
       filter.rtoId = oid;
     }
 
-    const [orders, clients, qualifications, rtos, invoices, payments, documents, tasks] = await Promise.all([
+    const [allOrders, clients, qualifications, rtos, invoices, payments, documents, tasks] = await Promise.all([
       (await collection("orders")).find(filter).toArray(),
       (await collection("clients")).find({}).toArray(),
       (await collection("qualifications")).find({}).toArray(),
@@ -54,6 +56,8 @@ export const GET = withAuth("reports.view",
       (await collection("documents")).find({}).toArray(),
       (await collection("workflow-tasks")).find({}).toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     const clientMap = new Map(clients.map((c: any) => [String(c._id), c.legalName]));
     const qualMap = new Map(qualifications.map((q: any) => [String(q._id), q.code]));
@@ -117,16 +121,14 @@ export const GET = withAuth("reports.view",
       };
     });
 
-    const total = rows.length;
-    const start = (page - 1) * pageSize;
-    const paged = rows.slice(start, start + pageSize);
-
-    return NextResponse.json({
-      orders: paged,
-      total,
+    const result = {
+      orders: rows,
+      total: rows.length,
       page,
       pageSize,
-      pages: Math.max(1, Math.ceil(total / pageSize)),
-    });
+      pages: Math.max(1, Math.ceil(rows.length / pageSize)),
+    };
+    maskFinancialFields(auth, result);
+    return NextResponse.json(result);
   },
 );
