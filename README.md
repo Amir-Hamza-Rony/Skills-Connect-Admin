@@ -8,7 +8,7 @@ QuickBooks sync, dashboards, reports, and audit.
 > **Status:** Day 1–5 front-end shell complete on `rony-dev` with a preview
 > in-memory store. The production backend (Node + Express + MongoDB) and the
 > Excel/QuickBooks migration plug into the documented contracts in
-> `architecture.md` / `workflow.md`.
+> `docs/architecture/architecture.md` / `docs/development/workflow.md`.
 
 ## Stack
 
@@ -27,19 +27,22 @@ npm run typecheck  # Next route types + tsc + server typecheck
 npm run lint       # oxlint
 ```
 
-## Demo accounts (preview auth — any password works)
+## Sign in (real auth — server-verified)
 
-| Email | Role |
-|---|---|
-| `admin@skillsconnect.example` | Super Admin (everything) |
-| `finance@skillsconnect.example` | Finance |
-| `operations@skillsconnect.example` | Operations |
-| `sales@skillsconnect.example` | Sales / Closing Agent |
-| `sourcing@skillsconnect.example` | RTO / Sourcing Manager |
-| `review@skillsconnect.example` | Document Reviewer |
+Credentials are verified by the API (`POST /api/auth/login`, argon2id hashing).
+Sign in with the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from your `.env`.
+On a fresh database, create the first Super Admin account first:
 
-Preview data is synthetic (`DEMO` codes, `.example`/`.invalid` domains) and
-resets on reload. Real data arrives via migration — see `HANDOVER.md`.
+```powershell
+npm run seed:admin    # idempotent: uses SEED_ADMIN_* from .env, never duplicates
+```
+
+Staff accounts for the other roles (`finance@…`, `operations@…`, …) are created
+through **Users** once you are signed in as Super Admin — the Day-2 preview
+login that accepted any password is gone.
+
+Seed data is synthetic (`DEMO` codes, `.example`/`.invalid` domains) and
+resets on reload. Real data arrives via migration — see `docs/setup/HANDOVER.md`.
 
 ## Project layout
 
@@ -47,7 +50,7 @@ resets on reload. Real data arrives via migration — see `HANDOVER.md`.
 - `src/views/` — route screens (clients, orders, documents, finance, …)
 - `src/components/` — shell, dashboard, ui primitives, dialogs, tables
 - `src/lib/` — types, RBAC matrix, auth, theme, stores (API-shaped)
-- `design.md` / `architecture.md` / `workflow.md` — source-of-truth docs
+- `docs/development/design.md` / `docs/architecture/architecture.md` / `docs/development/workflow.md` — source-of-truth docs
 
 ## Environment
 
@@ -60,4 +63,4 @@ preference (`sc-theme`) and the sidebar collapse flag — never tokens or secret
 
 Next.js runs as a normal Node server (`npm run build && npm run start`) or is
 deployed natively to Vercel. Production deployment with backend, database
-(MongoDB), and QuickBooks wiring follows `DEPLOYMENT.md` and `HANDOVER.md`.
+(MongoDB), and QuickBooks wiring follows `docs/setup/DEPLOYMENT.md` and `docs/setup/HANDOVER.md`.

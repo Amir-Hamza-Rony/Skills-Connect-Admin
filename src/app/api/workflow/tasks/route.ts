@@ -9,6 +9,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId, toObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { checkOrderAccess } from "@/middleware/auth";
 
 const VALID_STATUSES = ["Todo", "In Progress", "Done", "Blocked"];
 const VALID_PRIORITIES = ["Low", "Medium", "High"];
@@ -23,6 +24,7 @@ function invalidId() {
 /** `GET /api/workflow/tasks` — optionally filtered by order, assignee or status. */
 export const GET = withAuth("orders.view",
   async (req) => {
+    const auth = (req as AuthedRequest).auth!;
     const { searchParams } = req.nextUrl;
     const filter: Record<string, unknown> = {};
 
@@ -30,7 +32,24 @@ export const GET = withAuth("orders.view",
     const assigneeId = searchParams.get("assigneeId");
     const status = searchParams.get("status");
 
-    if (orderId) filter.orderId = toObjectId(orderId);
+    if (orderId) {
+      const oid = toObjectId(orderId);
+      if (!oid) {
+        return NextResponse.json(
+          { error: { code: "INVALID_ID", message: "Invalid order id." } },
+          { status: 400 },
+        );
+      }
+      const orders = await collection("orders");
+      const order = await orders.findOne({ _id: oid });
+      if (!order) {
+        return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+      }
+      if (!checkOrderAccess(auth, order)) {
+        return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+      }
+      filter.orderId = oid;
+    }
     if (assigneeId) filter.assigneeId = toObjectId(assigneeId);
     if (status && VALID_STATUSES.includes(status)) filter.status = status;
 
@@ -85,6 +104,13 @@ export const PATCH = withAuth("orders.manage",
     const tasks = await collection("workflow-tasks");
     const task = await tasks.findOne({ _id: taskOid });
     if (!task) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Task not found." } }, { status: 404 });
+
+    const auth = (req as AuthedRequest).auth!;
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: task.orderId });
+    if (order && !checkOrderAccess(auth, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
 
     const before = {
       status: task.status,
@@ -185,6 +211,11 @@ export const POST = withAuth("orders.manage",
     const orders = await collection("orders");
     const order = await orders.findOne({ _id: toObjectId(orderId) });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+
+    const auth = (req as AuthedRequest).auth!;
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
 
     const now = new Date();
     const resultColl = await collection("workflow-tasks");

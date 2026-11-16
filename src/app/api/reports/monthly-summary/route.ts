@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
+import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
 
 function monthKey(dateStr: string | null | undefined): string {
   if (!dateStr) return "unknown";
@@ -18,6 +19,7 @@ function monthKey(dateStr: string | null | undefined): string {
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
@@ -29,11 +31,13 @@ export const GET = withAuth("reports.view",
       if (to) (orderFilter.createdAt as Record<string, unknown>).$lte = new Date(to);
     }
 
-    const [orders, invoices, payments] = await Promise.all([
+    const [allOrders, invoices, payments] = await Promise.all([
       (await collection("orders")).find(orderFilter).toArray(),
       (await collection("invoices")).find({}).toArray(),
       (await collection("payments")).find({}).toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     // Per-month, per-currency aggregation.
     const map = new Map<string, Record<string, { invoiced: number; collected: number; outstanding: number; supplierCost: number; commissionEarned: number }>>();
@@ -105,6 +109,8 @@ export const GET = withAuth("reports.view",
       },
     })).sort((a, b) => a.month.localeCompare(b.month));
 
-    return NextResponse.json({ monthlySummary: rows });
+    const result = { monthlySummary: rows };
+    maskFinancialFields(auth, result);
+    return NextResponse.json(result);
   },
 );

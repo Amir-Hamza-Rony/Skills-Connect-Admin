@@ -1,68 +1,64 @@
 import type { Permission, RoleName } from "@/lib/types"
 
 /**
- * RBAC matrix — Spec §11 roles mapped to granular permissions.
+ * RBAC matrix — Boss reference documents (§3 Role-Based Visibility Matrix).
  *
- * ⚠️  DISPLAY ONLY. The single source of truth is
- *     `server/src/services/permissions.ts`; the API serves it at
- *     `GET /roles` and `GET /auth/permissions`, and `requirePermission` enforces
- *     it on every route. This copy exists so the SPA can hide nav links and
- *     buttons it knows will fail — it never grants or denies access.
+ * Four roles: SUPER_ADMIN, ADMIN, BDC, B2B_AGENT.
+ * This copy exists so the SPA can hide nav links and buttons it knows will
+ * fail — it never grants or denies access. Server-side enforcement is the
+ * source of truth via `withAuth` / `requirePermission` and the API layer.
  */
 export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
-  "Super Admin": [
+  SUPER_ADMIN: [
     "users.manage",
     "roles.manage",
     "clients.view",
     "clients.manage",
     "orders.view",
     "orders.manage",
-    "rto.manage",
-    "agents.manage",
     "qualifications.manage",
     "pricing.manage",
     "documents.view",
     "documents.review",
     "finance.view",
     "finance.manage",
-    "finance.reconcile",
-    "qb.retry",
-    "qb.manage",
     "reports.view",
     "audit.view",
     "settings.manage",
   ],
-  Finance: [
+  ADMIN: [
+    "users.manage",
+    "roles.manage",
     "clients.view",
+    "clients.manage",
     "orders.view",
+    "orders.manage",
+    "qualifications.manage",
+    "pricing.manage",
+    "documents.view",
+    "documents.review",
     "finance.view",
     "finance.manage",
-    "finance.reconcile",
-    "qb.retry",
-    "qb.manage",
     "reports.view",
-    "documents.view",
+    "audit.view",
+    "settings.manage",
   ],
-  Operations: [
+  BDC: [
     "clients.view",
     "clients.manage",
     "orders.view",
     "orders.manage",
     "documents.view",
-    "documents.review",
     "reports.view",
   ],
-  "Sales / Closing Agent": ["clients.view", "orders.view", "finance.view", "reports.view"],
-  "RTO / Sourcing Manager": [
-    "rto.manage",
-    "agents.manage",
-    "qualifications.manage",
-    "pricing.manage",
+  B2B_AGENT: [
+    "clients.view",
+    "clients.manage",
     "orders.view",
+    "orders.manage",
+    "documents.view",
     "reports.view",
   ],
-  "Document Reviewer": ["clients.view", "orders.view", "documents.view", "documents.review"],
-  "Read Only / Manager": ["clients.view", "orders.view", "finance.view", "reports.view", "documents.view"],
 }
 
 export function hasPermission(
@@ -78,8 +74,8 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/clients": "clients.view",
   "/orders": "orders.view",
   "/qualifications": "qualifications.manage",
-  "/rtos": "rto.manage",
-  "/agents": "agents.manage",
+  "/rtos": "qualifications.manage",
+  "/agents": "qualifications.manage",
   "/pricing": "pricing.manage",
   "/documents": "documents.view",
   "/workflow": "orders.view",
@@ -89,6 +85,17 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/settings": "settings.manage",
   "/users": "users.manage",
   "/roles": "roles.manage",
-  "/reconciliation": "finance.reconcile",
-  "/integrations/quickbooks": "qb.manage",
+  "/reconciliation": "finance.manage",
+  "/integrations/quickbooks": "finance.manage",
 }
+
+/** Default dashboard view per role. */
+export const DEFAULT_VIEW_FOR: Record<RoleName, string> = {
+  SUPER_ADMIN: "management",
+  ADMIN: "management",
+  BDC: "agent",
+  B2B_AGENT: "agent",
+}
+
+/** All four role names, for UI checkbox population. */
+export const ALL_ROLES: RoleName[] = ["SUPER_ADMIN", "ADMIN", "BDC", "B2B_AGENT"]

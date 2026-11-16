@@ -4,19 +4,24 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
-  async (req) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const orders = await collection("orders");
     const agents = await collection("agents");
     const users = await collection("users");
 
-    const [orderDocs, agentDocs, userDocs] = await Promise.all([
+    const [allOrderDocs, agentDocs, userDocs] = await Promise.all([
       orders.find().toArray(),
       agents.find().toArray(),
       users.find().toArray(),
     ]);
+
+    const orderDocs = filterOrdersByRole(auth, allOrderDocs);
 
     const allAgentsMap = new Map<string, string>();
     for (const a of agentDocs) allAgentsMap.set(String(a._id), a.name);

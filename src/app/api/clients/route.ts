@@ -5,11 +5,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
+import { checkClientAccess } from "@/middleware/auth";
 
 export const GET = withAuth("clients.view",
   async (req) => {
-    const clients = await collection("clients");
+    const auth = (req as AuthedRequest).auth!;
+    const clients = await collection("users"); // placeholder removed below
+    const clientsColl = await collection("clients");
     const search = req.nextUrl.searchParams.get("search") ?? "";
     const filter: Record<string, unknown> = {};
     if (search) {
@@ -19,7 +23,28 @@ export const GET = withAuth("clients.view",
         { preferredName: { $regex: search, $options: "i" } },
       ];
     }
-    const docs = await clients.find(filter).sort({ createdAt: -1 }).toArray();
+    const docs = await clientsColl.find(filter).sort({ createdAt: -1 }).toArray();
+
+    const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+    const userId = auth.userId;
+    if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
+      // BDC / B2B_AGENT: only see clients linked to their own agent id
+      const filtered = docs.filter((c: any) => checkClientAccess(auth, c));
+      return NextResponse.json({
+        clients: filtered.map((c: any) => ({
+          id: String(c._id),
+          legalName: c.legalName,
+          preferredName: c.preferredName,
+          email: c.email,
+          phone: c.phone,
+          status: c.status,
+          sourceAgentId: c.sourceAgentId ?? null,
+          notes: c.notes,
+          createdAt: c.createdAt,
+        })),
+      });
+    }
+
     return NextResponse.json({
       clients: docs.map((c: any) => ({
         id: String(c._id),

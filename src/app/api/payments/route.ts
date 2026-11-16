@@ -16,6 +16,7 @@ import type { AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId, getClient } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { enqueueSync } from "@/lib/quickbooks";
+import { checkOrderAccess } from "@/middleware/auth";
 
 function invalidId() {
   return NextResponse.json(
@@ -77,6 +78,22 @@ export const POST = withAuth("finance.manage",
 
     const orderOid = safeObjectId(orderId);
     if (!orderOid) return invalidId();
+
+    // Verify order access before recording payment.
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: orderOid });
+    if (!order) {
+      const err: any = new Error("Order not found.");
+      err.code = "NOT_FOUND";
+      err.status = 404;
+      throw err;
+    }
+    if (!checkOrderAccess(actor, order)) {
+      const err: any = new Error("Not authorized to access this order.");
+      err.code = "FORBIDDEN";
+      err.status = 403;
+      throw err;
+    }
 
     if (!["AUD", "BDT", "USD", "GBP", "EUR", "INR"].includes(currency ?? "AUD")) {
       return NextResponse.json(

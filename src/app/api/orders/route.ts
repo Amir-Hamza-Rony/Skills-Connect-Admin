@@ -24,6 +24,8 @@ function invalidId() {
 
 export const GET = withAuth("orders.view",
   async (req) => {
+    const authedReq = req as AuthedRequest;
+    const auth = authedReq.auth!;
     const orders = await collection("orders");
     const { searchParams } = req.nextUrl;
     const filter: Record<string, unknown> = {};
@@ -36,27 +38,47 @@ export const GET = withAuth("orders.view",
       filter.clientId = oid;
     }
 
+    // --- Data scoping: BDC sees own B2C leads, B2B_AGENT sees own agency ---
+    // Fields bdc_id / b2b_agent_id are added in Phase 1; the filter is ready
+    // when they exist. Until then, no orders match (empty result is correct).
+    if (auth.role === "BDC" || auth.roleNames.includes("BDC")) {
+      filter.bdc_id = auth.userId;
+    } else if (auth.role === "B2B_AGENT" || auth.roleNames.includes("B2B_AGENT")) {
+      filter.b2b_agent_id = auth.userId;
+    }
+    // SUPER_ADMIN and ADMIN see all (no filter added).
+
     const docs = await orders.find(filter).sort({ createdAt: -1 }).toArray();
     return NextResponse.json({
-      orders: docs.map((o: any) => ({
-        id: String(o._id),
-        clientId: String(o.clientId),
-        qualificationId: String(o.qualificationId),
-        salesAgentId: String(o.salesAgentId),
-        sourceAgentId: String(o.sourceAgentId),
-        rtoId: String(o.rtoId),
-        status: o.status,
-        sellingPrice: o.sellingPrice,
-        supplierCostSnapshot: o.supplierCostSnapshot,
-        otherCost: o.otherCost,
-        currency: o.currency,
-        priceCategoryId: o.priceCategoryId ? String(o.priceCategoryId) : null,
-        priceListId: o.priceListId ? String(o.priceListId) : null,
-        supplierRouteId: o.supplierRouteId ? String(o.supplierRouteId) : null,
-        feeTotal: o.feeTotal,
-        certificateStatus: o.certificateStatus,
-        createdAt: o.createdAt,
-      })),
+      orders: docs.map((o: any) => {
+        const item: Record<string, unknown> = {
+          id: String(o._id),
+          clientId: String(o.clientId),
+          qualificationId: String(o.qualificationId),
+          salesAgentId: String(o.salesAgentId),
+          sourceAgentId: String(o.sourceAgentId),
+          rtoId: String(o.rtoId),
+          status: o.status,
+          sellingPrice: o.sellingPrice,
+          otherCost: o.otherCost,
+          currency: o.currency,
+          priceCategoryId: o.priceCategoryId ? String(o.priceCategoryId) : null,
+          priceListId: o.priceListId ? String(o.priceListId) : null,
+          supplierRouteId: o.supplierRouteId ? String(o.supplierRouteId) : null,
+          feeTotal: o.feeTotal,
+          certificateStatus: o.certificateStatus,
+          createdAt: o.createdAt,
+          bdc_id: o.bdc_id ?? null,
+          b2b_agent_id: o.b2b_agent_id ?? null,
+        };
+        // --- Financial field masking ---
+        // partner_cost_price (supplierCostSnapshot) hidden from BDC / B2B_AGENT
+        if (auth.role === "SUPER_ADMIN" || auth.role === "ADMIN" ||
+            auth.roleNames.includes("SUPER_ADMIN") || auth.roleNames.includes("ADMIN")) {
+          item.supplierCostSnapshot = o.supplierCostSnapshot;
+        }
+        return item;
+      }),
     });
   },
 );
@@ -257,7 +279,7 @@ export const POST = withAuth("orders.manage",
     }
 
     const orders = await collection("orders");
-    const result = await orders.insertOne({
+    const insertDoc: Record<string, unknown> = {
       clientId: clientOid,
       qualificationId: qualificationOid,
       salesAgentId: salesAgentOid,
@@ -284,7 +306,16 @@ export const POST = withAuth("orders.manage",
       history: [{ timestamp: now, field: "status", before: "—", after: "New" }],
       createdAt: now,
       updatedAt: now,
-    });
+    };
+    // Tag enrollment with the creating agent for Phase 1 data scoping.
+    if (actor.role === "BDC" || actor.roleNames.includes("BDC")) {
+      insertDoc.bdc_id = actor.userId;
+      insertDoc.channel_type = "B2C_BDC";
+    } else if (actor.role === "B2B_AGENT" || actor.roleNames.includes("B2B_AGENT")) {
+      insertDoc.b2b_agent_id = actor.userId;
+      insertDoc.channel_type = "B2B_AGENT";
+    }
+    const result = await orders.insertOne(insertDoc);
 
     const orderId = String(result.insertedId);
 

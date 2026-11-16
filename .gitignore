@@ -1,7 +1,19 @@
-# Minimal protection for Day 1 — Task 1. Extends as scaffolding lands.
 # Confidential source spec must never be committed:
 *.docx
 *.xlsx
+
+# Boss reference documents — keep locally, never commit to public repo:
+docs/reference/
+
+# Internal audit/reassessment reports — keep locally, never commit to public repo:
+docs/project-reassessment/
+
+# Local archive — one-time scripts and historical reports kept locally only:
+local-archive/
+
+# Historical reports — keep locally, never commit to public repo:
+docs/historical/
+
 # Secrets / local env:
 .env
 .env.*

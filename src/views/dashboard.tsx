@@ -79,13 +79,9 @@ const VIEWS: DashboardView[] = [
 
 /** Pick the default view for a user's roles (management for broad/admin roles). */
 function defaultViewFor(roles: RoleName[]): ViewId {
-  if (roles.includes("Super Admin") || roles.includes("Read Only / Manager"))
+  if (roles.includes("SUPER_ADMIN") || roles.includes("ADMIN"))
     return "management"
-  if (roles.includes("Finance")) return "finance"
-  if (roles.includes("RTO / Sourcing Manager")) return "rto"
-  if (roles.includes("Sales / Closing Agent")) return "agent"
-  if (roles.includes("Operations") || roles.includes("Document Reviewer"))
-    return "operations"
+  if (roles.includes("BDC") || roles.includes("B2B_AGENT")) return "agent"
   return "management"
 }
 

@@ -4,20 +4,25 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
-  async (req) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const filter: Record<string, unknown> = {};
     const qual = searchParams.get("qualificationId");
     if (qual) filter.qualificationId = toObjectId(qual);
 
-    const [orders, qualifications, users] = await Promise.all([
+    const [allOrders, qualifications, users] = await Promise.all([
       (await collection("orders")).find(filter).toArray(),
       (await collection("qualifications")).find().toArray(),
       (await collection("users")).find().toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     const qualMap = new Map<string, string>(qualifications.map((q: any) => [String(q._id), q.code]));
     const agentMap = new Map<string, string>(users.map((a: any) => [String(a._id), a.name]));

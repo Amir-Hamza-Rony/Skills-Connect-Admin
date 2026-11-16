@@ -97,7 +97,12 @@ export function verifyAccessToken(token: string): {
   userId: string;
   email: string;
   name: string;
+  full_name?: string;
+  role?: string;
   roleNames: string[];
+  agency_name?: string | null;
+  b2b_tier?: "SILVER" | "GOLD" | "PLATINUM";
+  default_commission_pct?: number;
   permissions: string[];
 } {
   const payload = verifyPayload(token, ACCESS_SECRET);
@@ -106,9 +111,18 @@ export function verifyAccessToken(token: string): {
     userId: String((payload as { userId: unknown }).userId),
     email: String((payload as { email: unknown }).email),
     name: String((payload as { name: unknown }).name ?? ""),
+    full_name: (payload as { full_name?: unknown }).full_name
+      ? String((payload as { full_name: unknown }).full_name)
+      : undefined,
+    role: (payload as { role?: unknown }).role
+      ? String((payload as { role: unknown }).role)
+      : undefined,
     roleNames: Array.isArray((payload as { roleNames: unknown }).roleNames)
       ? (payload as { roleNames: unknown[] }).roleNames.filter((r): r is string => typeof r === "string")
       : [],
+    agency_name: ((payload as { agency_name?: unknown }).agency_name as string | null) ?? null,
+    b2b_tier: ((payload as { b2b_tier?: unknown }).b2b_tier as "SILVER" | "GOLD" | "PLATINUM" | undefined),
+    default_commission_pct: ((payload as { default_commission_pct?: unknown }).default_commission_pct as number | undefined),
     permissions: Array.isArray((payload as { permissions: unknown }).permissions)
       ? (payload as { permissions: unknown[] }).permissions.filter((p): p is string => typeof p === "string")
       : [],

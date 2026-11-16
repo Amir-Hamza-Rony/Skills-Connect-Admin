@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { checkOrderAccess } from "@/middleware/auth";
 
 const PERMISSION = "rto.manage";
 
@@ -35,7 +36,7 @@ async function requireAuth(req: AuthedRequest) {
     permissions?: string[];
   };
   if (
-    !auth?.roleNames?.includes("Super Admin") &&
+    !auth?.roleNames?.includes("SUPER_ADMIN") &&
     !auth?.permissions?.includes(PERMISSION)
   ) {
     return NextResponse.json(
@@ -82,6 +83,16 @@ export const GET = withAuth(
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "RTO processing record not found." } }, { status: 404 });
     }
 
+    const auth = (req as AuthedRequest).auth!;
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: doc.orderId });
+    if (!order || !checkOrderAccess(auth, order)) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Not authorized to access this order." } },
+        { status: 403 },
+      );
+    }
+
     return NextResponse.json({ rtoProcessing: mapDoc(doc) });
   },
 );
@@ -113,6 +124,16 @@ export const PATCH = withAuth(
     const existing = await coll.findOne({ _id: oid });
     if (!existing) {
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "RTO processing record not found." } }, { status: 404 });
+    }
+
+    const auth = (req as AuthedRequest).auth!;
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: existing.orderId });
+    if (!order || !checkOrderAccess(auth, order)) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Not authorized to access this order." } },
+        { status: 403 },
+      );
     }
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
@@ -211,6 +232,16 @@ export const DELETE = withAuth(
     const existing = await coll.findOne({ _id: oid });
     if (!existing) {
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "RTO processing record not found." } }, { status: 404 });
+    }
+
+    const auth = (req as AuthedRequest).auth!;
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: existing.orderId });
+    if (!order || !checkOrderAccess(auth, order)) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "Not authorized to access this order." } },
+        { status: 403 },
+      );
     }
 
     await coll.deleteOne({ _id: oid });

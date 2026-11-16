@@ -16,10 +16,16 @@ export const GET = withAuth("users.manage",
       users: docs.map((u: any) => ({
         id: String(u._id),
         name: u.name,
+        full_name: u.full_name ?? u.name,
         email: u.email,
         phone: u.phone,
-        active: u.active,
+        role: u.role ?? (u.roleNames?.[0] ?? null),
         roleNames: u.roleNames ?? [],
+        agency_name: u.agency_name ?? null,
+        b2b_tier: u.b2b_tier ?? "SILVER",
+        default_commission_pct: u.default_commission_pct ?? 0,
+        active: u.active,
+        is_active: u.active,
         lastLoginAt: u.lastLoginAt ?? null,
       })),
     });
@@ -28,9 +34,9 @@ export const GET = withAuth("users.manage",
 
 export const POST = withAuth("users.manage",
   async (req) => {
-    const { email, name, phone, password, roleNames } = await req.json();
-    if (!email || !name || !password || !roleNames?.length) {
-      return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Missing required fields." } }, { status: 400 });
+    const { email, name, phone, password, role, roleNames, agency_name, b2b_tier, default_commission_pct, active } = await req.json();
+    if (!email || !name || !password || !role) {
+      return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Missing required fields: email, name, password, role." } }, { status: 400 });
     }
 
     const users = await collection("users");
@@ -40,13 +46,20 @@ export const POST = withAuth("users.manage",
 
     const { hash } = await hashPassword(password);
     const now = new Date();
+    const roleNamesArray = roleNames && Array.isArray(roleNames) ? roleNames : [role];
     const result = await users.insertOne({
       email: email.toLowerCase(),
       name,
+      full_name: name,
       phone: phone ?? "",
       passwordHash: hash,
-      roleNames,
-      active: true,
+      role,
+      roleNames: roleNamesArray,
+      agency_name: agency_name ?? null,
+      b2b_tier: b2b_tier ?? "SILVER",
+      default_commission_pct: default_commission_pct ?? 0,
+      active: active !== false,
+      is_active: active !== false,
       createdAt: now,
       updatedAt: now,
       failedLoginCount: 0,
@@ -56,10 +69,15 @@ export const POST = withAuth("users.manage",
       user: {
         id: String(result.insertedId),
         name,
+        full_name: name,
         email: email.toLowerCase(),
         phone: phone ?? "",
-        active: true,
-        roleNames,
+        role,
+        roleNames: roleNamesArray,
+        agency_name: agency_name ?? null,
+        b2b_tier: b2b_tier ?? "SILVER",
+        default_commission_pct: default_commission_pct ?? 0,
+        active: active !== false,
       },
     }, { status: 201 });
   },

@@ -4,19 +4,24 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
-  async (req) => {
+  async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const filter: Record<string, unknown> = {};
     const qual = searchParams.get("qualificationId");
     if (qual) filter.qualificationId = toObjectId(qual);
 
-    const [orders, qualifications] = await Promise.all([
+    const [allOrders, qualifications] = await Promise.all([
       (await collection("orders")).find(filter).toArray(),
       (await collection("qualifications")).find().toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     const qualMap = new Map<string, string>(qualifications.map((q: any) => [String(q._id), q.code]));
     const byQual = new Map<string, { orders: number; revenue: number; cost: number; margin: number }>();
@@ -29,8 +34,10 @@ export const GET = withAuth("reports.view",
       byQual.set(name, r);
     }
 
-    return NextResponse.json({
+    const result = {
       byQualification: [...byQual.entries()].map(([n, v]) => ({ name: n, ...v, percent: v.revenue > 0 ? Math.round((v.margin / v.revenue) * 100) : 0 })),
-    });
+    };
+    maskFinancialFields(auth, result);
+    return NextResponse.json(result);
   },
 );

@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
+import { filterOrdersByRole } from "@/middleware/auth";
 
 type Money = { invoiced: number; collected: number; outstanding: number };
 
@@ -19,19 +20,43 @@ function zero(): Money {
 
 export const GET = withAuth("finance.view",
   async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const orderId = searchParams.get("orderId");
     const reportCurrency = searchParams.get("reportCurrency") || "AUD";
 
     const invoiceFilter: Record<string, unknown> = {};
     const paymentFilter: Record<string, unknown> = {};
+
     if (orderId) {
       const oid = safeObjectId(orderId);
       if (!oid) {
         return NextResponse.json({ error: { code: "INVALID_ID", message: "Invalid order id." } }, { status: 400 });
       }
+
+      const orders = await collection("orders");
+      const order = await orders.findOne({ _id: oid });
+      if (!order) {
+        return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+      }
+      if (!filterOrdersByRole(auth, [order]).length) {
+        return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+      }
+
       invoiceFilter.orderId = oid;
       paymentFilter.orderId = oid;
+    } else {
+      const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+      if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
+        // BDC / B2B_AGENT: scope invoices/payments to orders the user can access.
+        const orders = await collection("orders");
+        const allOrders = await orders.find({}).toArray();
+        const accessibleOrders = filterOrdersByRole(auth, allOrders);
+        const accessibleOrderIds = new Set(accessibleOrders.map((o: any) => String(o._id)));
+        invoiceFilter.orderId = { $in: [...accessibleOrderIds] };
+        paymentFilter.orderId = { $in: [...accessibleOrderIds] };
+      }
+      // SUPER_ADMIN / ADMIN: no order filter (see all financial data).
     }
 
     const invoices = await (await collection("invoices")).find(invoiceFilter).toArray();

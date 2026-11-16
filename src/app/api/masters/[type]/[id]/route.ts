@@ -58,7 +58,7 @@ export const PATCH = withAuth(
     }
 
     const auth = req.auth as { roleNames?: string[]; permissions?: string[] };
-    if (!auth?.roleNames?.includes("Super Admin") && !auth?.permissions?.includes(perm)) {
+    if (!auth?.roleNames?.includes("SUPER_ADMIN") && !auth?.permissions?.includes(perm)) {
       return NextResponse.json({ error: { code: "FORBIDDEN", message: `Missing permission: ${perm}` } }, { status: 403 });
     }
 

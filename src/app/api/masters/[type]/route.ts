@@ -67,7 +67,7 @@ export const GET = withAuth(
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "Unknown master type." } }, { status: 404 });
     }
     const auth = req.auth as { roleNames?: string[]; permissions?: string[] };
-    if (!auth?.roleNames?.includes("Super Admin") && !auth?.permissions?.includes(perm)) {
+    if (!auth?.roleNames?.includes("SUPER_ADMIN") && !auth?.permissions?.includes(perm)) {
       return NextResponse.json({ error: { code: "FORBIDDEN", message: `Missing permission: ${perm}` } }, { status: 403 });
     }
 
@@ -126,7 +126,7 @@ export const POST = withAuth(
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "Unknown master type." } }, { status: 404 });
     }
     const auth = req.auth as { roleNames?: string[]; permissions?: string[] };
-    if (!auth?.roleNames?.includes("Super Admin") && !auth?.permissions?.includes(perm)) {
+    if (!auth?.roleNames?.includes("SUPER_ADMIN") && !auth?.permissions?.includes(perm)) {
       return NextResponse.json({ error: { code: "FORBIDDEN", message: `Missing permission: ${perm}` } }, { status: 403 });
     }
 

@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { checkOrderAccess } from "@/middleware/auth";
 
 export const PATCH = withAuth("orders.manage",
   async (req: AuthedRequest, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
@@ -26,6 +27,10 @@ export const PATCH = withAuth("orders.manage",
     const order = await orders.findOne({ _id: toObjectId(id) });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
     const actor = (req as AuthedRequest).auth!;
+
+    if (!checkOrderAccess(actor, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
 
     const set: Record<string, unknown> = { updatedAt: new Date() };
     const history: Array<Record<string, unknown>> = [];

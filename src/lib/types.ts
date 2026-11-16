@@ -4,14 +4,7 @@
  * future REST/MongoDB backend can plug in without UI changes.
  */
 
-export type RoleName =
-  | "Super Admin"
-  | "Finance"
-  | "Operations"
-  | "Sales / Closing Agent"
-  | "RTO / Sourcing Manager"
-  | "Document Reviewer"
-  | "Read Only / Manager"
+export type RoleName = "SUPER_ADMIN" | "ADMIN" | "BDC" | "B2B_AGENT"
 
 export interface Role {
   id: string
@@ -22,14 +15,16 @@ export interface Role {
 export interface User {
   id: string
   name: string
+  full_name: string
   email: string
   phone: string
-  /**
-   * Role NAMES, not ids — matches the API. The matrix is server-owned
-   * (`server/src/services/permissions.ts`), so the SPA never needs role ids.
-   */
+  role: RoleName
   roleNames: RoleName[]
+  agency_name: string | null
+  b2b_tier: "SILVER" | "GOLD" | "PLATINUM"
+  default_commission_pct: number
   active: boolean
+  is_active: boolean
   lastLoginAt: string | null
 }
 

@@ -5,15 +5,27 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
+import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { checkOrderAccess } from "@/middleware/auth";
 
 export const GET = withAuth("finance.view",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
+    const auth = (req as AuthedRequest).auth!;
     const plansColl = await collection("payment-plans");
     const plans = await plansColl.find({ orderId: toObjectId(id) }).toArray();
     if (plans.length === 0) return NextResponse.json({ plan: null });
+
+    // Verify order access via orderId lookup
+    const orders = await collection("orders");
+    const order = await orders.findOne({ _id: toObjectId(id) });
+    if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
+
     return NextResponse.json({ plan: plans[0] });
   },
 );
@@ -22,6 +34,7 @@ export const POST = withAuth("finance.manage",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
+    const auth = (req as AuthedRequest).auth!;
     const { total } = await req.json();
     if (!total || !Number.isFinite(total) || total <= 0) {
       return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Total must be a positive number." } }, { status: 400 });
@@ -30,6 +43,9 @@ export const POST = withAuth("finance.manage",
     const orders = await collection("orders");
     const order = await orders.findOne({ _id: toObjectId(id) });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
 
     const existingColl = await collection("payment-plans");
     const existing = await existingColl.findOne({ orderId: toObjectId(id) });

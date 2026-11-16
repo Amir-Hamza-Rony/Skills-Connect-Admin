@@ -8,9 +8,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
+import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
+    const auth = req.auth!;
     const { searchParams } = req.nextUrl;
     const from = searchParams.get("from");
     const to = searchParams.get("to");
@@ -34,12 +36,14 @@ export const GET = withAuth("reports.view",
       orderFilter.rtoId = oid;
     }
 
-    const [orders, qualifications, rtos, invoices] = await Promise.all([
+    const [allOrders, qualifications, rtos, invoices] = await Promise.all([
       (await collection("orders")).find(orderFilter).toArray(),
       (await collection("qualifications")).find({}).toArray(),
       (await collection("rtos")).find({}).toArray(),
       (await collection("invoices")).find({}).toArray(),
     ]);
+
+    const orders = filterOrdersByRole(auth, allOrders);
 
     const qualMap = new Map(qualifications.map((q: any) => [String(q._id), q.code]));
     const rtoMap = new Map(rtos.map((r: any) => [String(r._id), r.tradingName]));
@@ -88,24 +92,20 @@ export const GET = withAuth("reports.view",
     }
 
     const rows = Array.from(map.values());
-    const total = rows.length;
-    const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-    const pageSize = Math.min(Math.max(1, Number(searchParams.get("pageSize") ?? 50)), 200);
-    const start = (page - 1) * pageSize;
-    const paged = rows.slice(start, start + pageSize);
-
-    return NextResponse.json({
-      supplierCosts: paged,
-      total,
-      page,
-      pageSize,
-      pages: Math.max(1, Math.ceil(total / pageSize)),
+    const result = {
+      supplierCosts: rows,
+      total: rows.length,
+      page: Math.max(1, Number(searchParams.get("page") ?? 1)),
+      pageSize: Math.min(Math.max(1, Number(searchParams.get("pageSize") ?? 50)), 200),
+      pages: Math.max(1, Math.ceil(rows.length / Math.min(Math.max(1, Number(searchParams.get("pageSize") ?? 50)), 200))),
       totals: {
         orders: rows.reduce((s, r) => s + r.orders, 0),
         supplierCost: rows.reduce((s, r) => s + r.supplierCost, 0),
         clientInvoiced: rows.reduce((s, r) => s + r.clientInvoiced, 0),
         margin: rows.reduce((s, r) => s + r.margin, 0),
       },
-    });
+    };
+    maskFinancialFields(auth, result);
+    return NextResponse.json(result);
   },
 );
