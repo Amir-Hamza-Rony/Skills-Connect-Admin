@@ -19,7 +19,7 @@
     "exceljs": "^4.4.0",
     "lucide-react": "^1.53.0",
     "mongodb": "^6.8.0",
-    "next": "^16.4.3",
+    "next": "^16.4.5",
     "pdfkit": "^0.20.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
