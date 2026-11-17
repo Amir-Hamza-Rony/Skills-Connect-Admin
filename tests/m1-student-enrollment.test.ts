@@ -27,7 +27,16 @@ import {
   findDuplicateNonEmptyStrings,
   M1_INDEXES,
 } from "../scripts/migrate-phase-1-m1.mjs";
-import { clearDb, seedClient, seedOrder } from "./helpers";
+import {
+  authedRequest,
+  clearDb,
+  makeAdminToken,
+  makeB2BAgentToken,
+  makeBDCToken,
+  makeSuperAdminToken,
+  seedClient,
+  seedOrder,
+} from "./helpers";
 
 // Use `undefined` to keep the existing fixture defaults while supplying overrides.
 const withOrder = (overrides: Record<string, unknown>) =>
@@ -247,5 +256,236 @@ describe("M1.2 — frozen order status workflow regression", () => {
     const actual = ORDER_STATUS_GROUPS.flatMap((group) => group.statuses);
     expect(new Set(actual).size).toBe(21);
     expect([...actual].sort()).toEqual([...expected].sort());
+  });
+});
+
+/* ───────────────────────── M1.3 — Client API & integrity ───────────────────────── */
+
+const BDC_1 = "m13-bdc-1";
+const BDC_2 = "m13-bdc-2";
+
+const PII_FIELDS = ["dob", "usiNumber", "visaStatus"] as const;
+
+function expectNoPii(client: Record<string, unknown>) {
+  for (const field of PII_FIELDS) {
+    expect(field in client).toBe(false);
+  }
+}
+
+describe("M1.3 — client create contract and validation", () => {
+  it("persists contacts/addresses and new student fields, returns a full {client} envelope, lowercases email and audits", async () => {
+    const { POST } = await import("@/app/api/clients/route");
+    const payload = {
+      legalName: "  Jane Doe  ",
+      preferredName: "  Jane  ",
+      email: "  Jane@Example.COM ",
+      phone: " 0400 123 456 ",
+      status: "Active",
+      notes: "VIP",
+      contacts: [
+        { label: "Mobile", type: "phone", value: "0400 123 456", primary: true },
+        { label: "Email", type: "email", value: "jane@example.com", primary: true },
+      ],
+      addresses: [
+        { label: "Home", street: "1 Main St", city: "Sydney", state: "NSW", postalCode: "2000", country: "Australia", primary: true },
+      ],
+      dob: "2000-01-31",
+      usiNumber: "USI-JANE-001",
+      visaStatus: "Student Visa",
+      externalReferrerName: "Referrer A",
+    };
+    const res = await POST(authedRequest("POST", "/api/clients", payload, makeSuperAdminToken()));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.client).toBeDefined();
+    expect(body.client.legalName).toBe("Jane Doe");
+    expect(body.client.preferredName).toBe("Jane");
+    expect(body.client.email).toBe("jane@example.com");
+    expect(body.client.phone).toBe("0400 123 456");
+    expect(body.client.status).toBe("Active");
+    expect(body.client.contacts).toHaveLength(2);
+    expect(body.client.addresses).toHaveLength(1);
+    expect(body.client.id).toBeDefined();
+    expect(body.client.createdAt).toBeDefined();
+    expectNoPii(body.client); // B8: no PII projection shipped in M1.3
+
+    const db = await getDb();
+    const stored = await db.collection("clients").findOne({ email: "jane@example.com" });
+    expect(stored).not.toBeNull();
+    expect(stored!.contacts).toHaveLength(2);
+    expect(stored!.addresses).toHaveLength(1);
+    expect(stored!.dob).toBe("2000-01-31");
+    expect(stored!.usiNumber).toBe("USI-JANE-001");
+    expect(stored!.visaStatus).toBe("Student Visa");
+    expect(stored!.externalReferrerName).toBe("Referrer A");
+
+    const audit = await db.collection("audit_logs").findOne({ entityType: "client", action: "create" });
+    expect(audit).not.toBeNull();
+    expect(audit!.entityId).toBe(String(stored!._id));
+  });
+
+  it("rejects malformed email, invalid dob, missing fields and duplicate email", async () => {
+    const { POST } = await import("@/app/api/clients/route");
+    const token = makeSuperAdminToken();
+    expect((await POST(authedRequest("POST", "/api/clients", { email: "not-an-email", legalName: "A" }, token))).status).toBe(400);
+    expect((await POST(authedRequest("POST", "/api/clients", { email: "a@b.com", legalName: "A", dob: "not-a-date" }, token))).status).toBe(400);
+    expect((await POST(authedRequest("POST", "/api/clients", { email: "a@b.com" }, token))).status).toBe(400);
+    expect((await POST(authedRequest("POST", "/api/clients", { legalName: "A" }, token))).status).toBe(400);
+
+    const first = await POST(authedRequest("POST", "/api/clients", { legalName: "A", email: "dupe@example.com" }, token));
+    expect(first.status).toBe(201);
+    const second = await POST(authedRequest("POST", "/api/clients", { legalName: "B", email: " DUPE@EXAMPLE.COM " }, token));
+    expect(second.status).toBe(409);
+  });
+
+  it("rejects invalid or non-existent referral targets", async () => {
+    const { POST } = await import("@/app/api/clients/route");
+    const token = makeSuperAdminToken();
+    const bad = await POST(authedRequest("POST", "/api/clients", {
+      legalName: "Ref", email: "ref@example.com", referredByStudentId: "not-an-object-id",
+    }, token));
+    expect(bad.status).toBe(400);
+    const missing = await POST(authedRequest("POST", "/api/clients", {
+      legalName: "Ref", email: "ref@example.com", referredByStudentId: String(new ObjectId()),
+    }, token));
+    expect(missing.status).toBe(400);
+  });
+
+  it("accepts a valid referral to an existing client", async () => {
+    const target = await seedClient();
+    const { POST } = await import("@/app/api/clients/route");
+    const res = await POST(authedRequest("POST", "/api/clients", {
+      legalName: "Referred", email: "referred@example.com", referredByStudentId: String(target),
+    }, makeSuperAdminToken()));
+    expect(res.status).toBe(201);
+    const db = await getDb();
+    const stored = await db.collection("clients").findOne({ email: "referred@example.com" });
+    expect(stored!.referredByStudentId).toBe(String(target));
+  });
+});
+
+describe("M1.3 — client detail contract and PATCH integrity", () => {
+  it("GET returns a full {client} envelope without PII; PII remains persisted", async () => {
+    const id = await seedClient(undefined, "Detail Client", "detail@example.com", {
+      dob: "1995-05-05", usiNumber: "USI-DETAIL", visaStatus: "Visitor",
+    });
+    const { GET } = await import("@/app/api/clients/[id]/route");
+    const res = await GET(
+      authedRequest("GET", `/api/clients/${id}`, undefined, makeSuperAdminToken()),
+      { params: { id: String(id) } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.client.id).toBe(String(id));
+    expect(body.client.legalName).toBe("Detail Client");
+    expect(body.client.notes).toBe("");
+    expectNoPii(body.client);
+  });
+
+  it("PATCH lowercases/dedupes email, validates, persists new fields, audits and ignores owner fields", async () => {
+    const id = await seedClient(undefined, "Patch Client", "patch@example.com");
+    const other = await seedClient(undefined, "Other", "other@example.com");
+
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
+    const res = await PATCH(
+      authedRequest("PATCH", `/api/clients/${id}`, {
+        email: "  PATCH@EXAMPLE.COM ",
+        phone: "0411 222 333",
+        dob: "1990-02-02",
+        usiNumber: "USI-PATCH",
+        sourceAgentId: "agent-space-id",
+        bdc_id: "should-be-ignored",
+        b2b_agent_id: "should-be-ignored",
+        contacts: [{ type: "phone", value: "0411 222 333", primary: true }],
+      }, makeSuperAdminToken()),
+      { params: { id: String(id) } },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.client.email).toBe("patch@example.com");
+    expect(body.client.phone).toBe("0411 222 333");
+    expect(body.client.contacts).toHaveLength(1);
+    expectNoPii(body.client);
+
+    const db = await getDb();
+    const stored = await db.collection("clients").findOne({ _id: id });
+    expect(stored!.email).toBe("patch@example.com");
+    expect(stored!.dob).toBe("1990-02-02");
+    expect(stored!.usiNumber).toBe("USI-PATCH");
+    expect(stored!.bdc_id).toBeUndefined();
+    expect(stored!.b2b_agent_id).toBeUndefined();
+
+    const dup = await PATCH(
+      authedRequest("PATCH", `/api/clients/${id}`, { email: "OTHER@EXAMPLE.COM" }, makeSuperAdminToken()),
+      { params: { id: String(id) } },
+    );
+    expect(dup.status).toBe(409);
+
+    const audit = await db.collection("audit_logs").findOne({ entityType: "client", action: "update", entityId: String(id) });
+    expect(audit).not.toBeNull();
+    expect(other).toBeDefined();
+  });
+
+  it("malformed ids return 400 for GET and PATCH (no 500)", async () => {
+    const { GET, PATCH } = await import("@/app/api/clients/[id]/route");
+    const params = { params: { id: "not-an-object-id" } };
+    const token = makeSuperAdminToken();
+    expect((await GET(authedRequest("GET", "/api/clients/nope", undefined, token), params)).status).toBe(400);
+    expect((await PATCH(authedRequest("PATCH", "/api/clients/nope", { legalName: "X" }, token), params)).status).toBe(400);
+  });
+
+  it("non-admin PATCH still rejects cross-account access on new-field updates", async () => {
+    const other = await seedClient(undefined, "Other", "cross@example.com");
+    await withOrder({ clientId: other, bdc_id: BDC_2, channel_type: "B2C_BDC" });
+    const { PATCH } = await import("@/app/api/clients/[id]/route");
+    const res = await PATCH(
+      authedRequest("PATCH", `/api/clients/${other}`, { usiNumber: "HACK" }, makeBDCToken(BDC_1)),
+      { params: { id: String(other) } },
+    );
+    expect(res.status).toBe(403);
+    const db = await getDb();
+    const stored = await db.collection("clients").findOne({ _id: other });
+    expect(stored!.usiNumber).toBeUndefined();
+  });
+});
+
+describe("M1.3 — duplicates endpoint scoping and real phone values", () => {
+  it("scopes duplicate groups to clients of owned orders (S10) and returns real phones", async () => {
+    const a = await seedClient(undefined, "A", "shared@example.com", { phone: "0400 111 111" });
+    const b = await seedClient(undefined, "B", "shared@example.com", { phone: "0400 111 111" });
+    // A is owned by BDC_1; B is ownerless -> excluded from BDC's view.
+    await withOrder({ clientId: a, bdc_id: BDC_1, channel_type: "B2C_BDC" });
+
+    const { GET } = await import("@/app/api/clients/duplicates/route");
+
+    const adminRes = await GET(authedRequest("GET", "/api/clients/duplicates", undefined, makeAdminToken()));
+    expect(adminRes.status).toBe(200);
+    const adminBody = await adminRes.json();
+    const adminEmailGroup = adminBody.certain.find((g: any) => g.key === "shared@example.com");
+    expect(adminEmailGroup).toBeDefined();
+    expect(adminEmailGroup.clients).toHaveLength(2);
+    expect(adminEmailGroup.clients.every((c: any) => c.phone === "0400 111 111")).toBe(true);
+    const adminPhoneGroup = adminBody.possible.find((g: any) => g.key === "0400111111");
+    expect(adminPhoneGroup).toBeDefined();
+    expect(adminPhoneGroup.clients).toHaveLength(2);
+
+    const bdcRes = await GET(authedRequest("GET", "/api/clients/duplicates", undefined, makeBDCToken(BDC_1)));
+    expect(bdcRes.status).toBe(200);
+    const bdcBody = await bdcRes.json();
+    expect(bdcBody.certain.some((g: any) => g.key === "shared@example.com")).toBe(false);
+    expect(bdcBody.possible.some((g: any) => g.key === "0400111111")).toBe(false);
+    expect(String(a)).not.toBe(String(b));
+  });
+
+  it("B2B_AGENT duplicate view is derived from its own agency's orders", async () => {
+    const own = await seedClient(undefined, "Own", "b2b@example.com");
+    const other = await seedClient(undefined, "Other", "b2b@example.com");
+    await withOrder({ clientId: own, b2b_agent_id: "m13-b2b-1", channel_type: "B2B_AGENT" });
+    const { GET } = await import("@/app/api/clients/duplicates/route");
+    const res = await GET(authedRequest("GET", "/api/clients/duplicates", undefined, makeB2BAgentToken("m13-b2b-1")));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.certain.some((g: any) => g.key === "b2b@example.com")).toBe(false);
+    expect(String(own)).not.toBe(String(other));
   });
 });
