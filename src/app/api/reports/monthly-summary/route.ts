@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
-import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
+import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 function monthKey(dateStr: string | null | undefined): string {
   if (!dateStr) return "unknown";
@@ -110,7 +111,7 @@ export const GET = withAuth("reports.view",
     })).sort((a, b) => a.month.localeCompare(b.month));
 
     const result = { monthlySummary: rows };
-    maskFinancialFields(auth, result);
+    applyFinancialVisibility(auth, result);
     return NextResponse.json(result);
   },
 );

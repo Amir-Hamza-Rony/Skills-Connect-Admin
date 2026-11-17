@@ -6,7 +6,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
-import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
+import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -37,7 +38,7 @@ export const GET = withAuth("reports.view",
     const result = {
       byQualification: [...byQual.entries()].map(([n, v]) => ({ name: n, ...v, percent: v.revenue > 0 ? Math.round((v.margin / v.revenue) * 100) : 0 })),
     };
-    maskFinancialFields(auth, result);
+    applyFinancialVisibility(auth, result);
     return NextResponse.json(result);
   },
 );

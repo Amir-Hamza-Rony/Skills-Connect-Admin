@@ -16,7 +16,12 @@ export const GET = withAuth("orders.view",
     const orderId = toObjectId(id);
 
     const orders = await collection("orders");
-    const order = await orders.findOne({ _id: orderId }, { projection: { history: 1 } });
+    // Security hotfix: ownership fields must be present for checkOrderAccess.
+    // The previous { history: 1 } projection denied rightful non-admin owners.
+    const order = await orders.findOne(
+      { _id: orderId },
+      { projection: { history: 1, bdc_id: 1, b2b_agent_id: 1 } },
+    );
     if (!order) {
       return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
     }

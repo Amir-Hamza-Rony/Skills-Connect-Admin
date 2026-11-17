@@ -14,6 +14,8 @@ import type { AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import type { Currency } from "@/lib/types";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
+import { nextEnrollmentCode } from "@/lib/enrollment-code";
 
 function invalidId() {
   return NextResponse.json(
@@ -70,6 +72,9 @@ export const GET = withAuth("orders.view",
           createdAt: o.createdAt,
           bdc_id: o.bdc_id ?? null,
           b2b_agent_id: o.b2b_agent_id ?? null,
+          // M1.4 (D2): canonical API-facing names for the stored fields.
+          enrollmentCode: o.enrollmentCode ?? null,
+          channelType: o.channel_type ?? null,
         };
         // --- Financial field masking ---
         // partner_cost_price (supplierCostSnapshot) hidden from BDC / B2B_AGENT
@@ -77,7 +82,9 @@ export const GET = withAuth("orders.view",
             auth.roleNames.includes("SUPER_ADMIN") || auth.roleNames.includes("ADMIN")) {
           item.supplierCostSnapshot = o.supplierCostSnapshot;
         }
-        return item;
+        // Security hotfix: sellingPrice is hidden from B2B_AGENT; BDC and
+        // admins retain it. supplierCostSnapshot stays admin-only above.
+        return applyFinancialVisibility(auth, item);
       }),
     });
   },
@@ -315,7 +322,39 @@ export const POST = withAuth("orders.manage",
       insertDoc.b2b_agent_id = actor.userId;
       insertDoc.channel_type = "B2B_AGENT";
     }
-    const result = await orders.insertOne(insertDoc);
+    // M1.4 (D2): the enrollment code is allocated server-side immediately
+    // before insert. A bounded retry handles a legacy/manual collision with
+    // the unique partial index; codes are never reused silently.
+    const MAX_CODE_ATTEMPTS = 5;
+    let result: Awaited<ReturnType<typeof orders.insertOne>> | null = null;
+    let enrollmentCode: string | null = null;
+    for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
+      const candidateCode = await nextEnrollmentCode();
+      try {
+        result = await orders.insertOne({ ...insertDoc, enrollmentCode: candidateCode });
+        enrollmentCode = candidateCode;
+        break;
+      } catch (err: any) {
+        if (err?.code !== 11000) throw err;
+        if (attempt === MAX_CODE_ATTEMPTS - 1) {
+          return NextResponse.json(
+            {
+              error: {
+                code: "ENROLLMENT_CODE_EXHAUSTED",
+                message: "Could not allocate a unique enrollment code.",
+              },
+            },
+            { status: 500 },
+          );
+        }
+      }
+    }
+    if (!result) {
+      return NextResponse.json(
+        { error: { code: "ENROLLMENT_CODE_EXHAUSTED", message: "Could not allocate an enrollment code." } },
+        { status: 500 },
+      );
+    }
 
     const orderId = String(result.insertedId);
 
@@ -336,6 +375,8 @@ export const POST = withAuth("orders.manage",
         priceCategoryId: resolvedPriceCategoryId,
         supplierRouteId,
         feeTotal,
+        enrollmentCode,
+        channelType: insertDoc.channel_type ?? null,
       },
     });
 
@@ -347,6 +388,9 @@ export const POST = withAuth("orders.manage",
     const certs = await collection("certificates");
     await certs.insertOne({ orderId: result.insertedId, status: "Not Issued", createdAt: now });
 
-    return NextResponse.json({ order: { id: orderId } }, { status: 201 });
+    return NextResponse.json(
+      { order: { id: orderId, enrollmentCode, channelType: insertDoc.channel_type ?? null } },
+      { status: 201 },
+    );
   },
 );

@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth, checkOrderAccess, maskFinancialFields, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 const UPDATABLE_FIELDS = new Set([
   "rtoContactId",
@@ -57,12 +58,19 @@ export const GET = withAuth("orders.view",
       createdAt: order.createdAt,
       bdc_id: order.bdc_id ?? null,
       b2b_agent_id: order.b2b_agent_id ?? null,
+      // M1.4 (D2): canonical API-facing enrollment/channel fields.
+      enrollmentCode: order.enrollmentCode ?? null,
+      channelType: order.channel_type ?? null,
     };
     // --- Financial field masking ---
     if (auth.role === "SUPER_ADMIN" || auth.role === "ADMIN" ||
         auth.roleNames.includes("SUPER_ADMIN") || auth.roleNames.includes("ADMIN")) {
       item.supplierCostSnapshot = order.supplierCostSnapshot;
     }
+    // Security hotfix: grossMargin is derived from the masked supplier cost,
+    // so it is removed for BDC / B2B_AGENT; sellingPrice is removed for
+    // B2B_AGENT. The calculation itself is unchanged.
+    applyFinancialVisibility(auth, item);
     return NextResponse.json(item);
   },
 );
