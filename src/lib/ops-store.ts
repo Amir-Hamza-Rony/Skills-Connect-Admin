@@ -56,10 +56,18 @@ export async function listOrders(clientId?: string): Promise<Order[]> {
   return data.orders
 }
 
+/**
+ * `GET /api/orders/[id]` returns the order object directly (no envelope), so
+ * callers must not unwrap an `order` key. This variant propagates errors so
+ * mutation helpers can rely on the reloaded record.
+ */
+async function fetchOrder(id: string): Promise<Order> {
+  return api.get<Order>(`/orders/${id}`)
+}
+
 export async function getOrder(id: string): Promise<Order | undefined> {
   try {
-    const data = await api.get<{ order: Order }>(`/orders/${id}`)
-    return data.order
+    return await fetchOrder(id)
   } catch {
     return undefined
   }
@@ -68,7 +76,8 @@ export async function getOrder(id: string): Promise<Order | undefined> {
 /**
  * Creates an order. The wholesale cost snapshot is taken server-side from the
  * active supplier route — the client never sends a cost, so it cannot be
- * invented or overwritten.
+ * invented or overwritten. The create response carries only the id/code; the
+ * complete (role-masked) record is reloaded so callers always receive an Order.
  */
 export async function createOrder(
   o: {
@@ -82,8 +91,8 @@ export async function createOrder(
   },
   _actorId = "preview-user",
 ): Promise<Order> {
-  const data = await api.post<{ order: Order }>("/orders", o)
-  return data.order
+  const data = await api.post<{ order: { id: string } }>("/orders", o)
+  return fetchOrder(data.order.id)
 }
 
 /** Status transition with a mandatory history entry (Spec §5). */
@@ -92,8 +101,9 @@ export async function transitionOrder(
   to: OrderStatus,
   _actorId: string,
 ): Promise<Order> {
-  const data = await api.patch<{ order: Order }>(`/orders/${id}/status`, { status: to })
-  return data.order
+  // The route returns { ok, before, after } — not an { order } envelope.
+  await api.patch(`/orders/${id}/status`, { status: to })
+  return fetchOrder(id)
 }
 
 export async function updateOrderDimensions(
@@ -101,12 +111,19 @@ export async function updateOrderDimensions(
   patch: Partial<Pick<Order, "evidenceStatus" | "rtoSubmissionStatus">>,
   _actorId: string,
 ): Promise<Order> {
-  const data = await api.patch<{ order: Order }>(`/orders/${id}/dimensions`, patch)
-  return data.order
+  // The route returns { ok: true } — not an { order } envelope.
+  await api.patch(`/orders/${id}/dimensions`, patch)
+  return fetchOrder(id)
 }
 
+/**
+ * Client-side display helper. `supplierCostSnapshot` is omitted for
+ * BDC / B2B_AGENT by the server, so the derived margin must not be invented.
+ */
 export const grossMargin = (o: Order) =>
-  o.sellingPrice - o.supplierCostSnapshot - o.otherCost
+  typeof o.supplierCostSnapshot === "number"
+    ? o.sellingPrice - o.supplierCostSnapshot - o.otherCost
+    : NaN
 
 /* ---------- Client contact/address helpers (Spec §4B) ---------- */
 
@@ -148,11 +165,14 @@ export async function listDocuments(orderId: string): Promise<OrderDocument[]> {
 
 /**
  * Upload a document file. Sends `multipart/form-data` with fields: `file`,
- * `orderId`, `type`. The server stores the bytes directly in MongoDB and
- * returns the document metadata.
+ * `orderId`, `clientId`, `type`. The server requires `clientId` and checks it
+ * against the parent order, so it must be supplied from the order context.
+ * The upload response carries only `{ id, version }`; the full document is
+ * reloaded from the authoritative list endpoint to match the declared type.
  */
 export async function uploadDocument(
   orderId: string,
+  clientId: string,
   file: File,
   type: string,
   _actorId = "preview-user",
@@ -160,8 +180,13 @@ export async function uploadDocument(
   const formData = new FormData()
   formData.append("file", file)
   formData.append("orderId", orderId)
+  formData.append("clientId", clientId)
   formData.append("type", type)
-  return uploadFile(`/documents/upload`, formData)
+  const uploaded = await uploadFile<{ id: string; version: number }>(`/documents/upload`, formData)
+  const docs = await listDocuments(orderId)
+  const document = docs.find((d) => d.id === uploaded.id)
+  if (!document) throw new Error(`Uploaded document ${uploaded.id} could not be reloaded.`)
+  return { document }
 }
 
 /** Download a document's file bytes from the API. Returns a Blob. */
@@ -183,13 +208,23 @@ export async function downloadDocument(
   return res.blob()
 }
 
+/**
+ * The review route expects `status` (not `verdict`) and returns `{ ok: true }`.
+ * The updated document is reloaded from the parent order's list endpoint so
+ * callers keep receiving a complete `OrderDocument`.
+ */
 export async function reviewDocument(
   id: string,
+  orderId: string,
   verdict: "Approved" | "Rejected",
   _reviewerId: string,
   rejectionReason?: string,
 ): Promise<OrderDocument> {
-  return api.patch(`/documents/${id}/review`, { verdict, reason: rejectionReason })
+  await api.patch(`/documents/${id}/review`, { status: verdict, reason: rejectionReason })
+  const docs = await listDocuments(orderId)
+  const updated = docs.find((d) => d.id === id)
+  if (!updated) throw new Error(`Reviewed document ${id} could not be reloaded.`)
+  return updated
 }
 
 /* ---------- Tasks (real API) ---------- */
