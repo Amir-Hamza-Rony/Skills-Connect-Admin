@@ -85,7 +85,12 @@ export async function clearDb() {
   }
 }
 
-export async function seedClient(id = new ObjectId(), legalName = "Test Client", email = "client@test.com") {
+export async function seedClient(
+  id = new ObjectId(),
+  legalName = "Test Client",
+  email = "client@test.com",
+  overrides: Record<string, unknown> = {},
+) {
   const db = await getDb();
   await db.collection("clients").insertOne({
     _id: id,
@@ -98,6 +103,7 @@ export async function seedClient(id = new ObjectId(), legalName = "Test Client",
     sourceAgentId: null,
     notes: "",
     createdAt: new Date(),
+    ...overrides,
   });
   return id;
 }
@@ -169,6 +175,7 @@ export async function seedOrder(
   salesAgentId = new ObjectId(),
   sourceAgentId = new ObjectId(),
   rtoId = new ObjectId(),
+  overrides: Record<string, unknown> = {},
 ) {
   const db = await getDb();
   const now = new Date();
@@ -191,8 +198,15 @@ export async function seedOrder(
     history: [{ timestamp: now, field: "status", before: "—", after: "New" }],
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   });
   return id;
+}
+
+/** Test-only reset for the enrollment-code counter collection. */
+export async function resetEnrollmentSequences() {
+  const db = await getDb();
+  await db.collection("enrollment_sequences").deleteMany({});
 }
 
 export async function seedInvoice(id = new ObjectId(), orderId = new ObjectId(), total = 1000) {

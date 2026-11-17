@@ -252,6 +252,14 @@ export interface ClientAddress {
   primary: boolean
 }
 
+/**
+ * Documented client (Student) status values observed in code and legacy data.
+ * `Client.status` deliberately stays `string`: legacy records contain case
+ * variants (e.g. "active") and no status-vocabulary decision is part of M1.
+ */
+export const CLIENT_STATUSES = ["Prospect", "Active", "active"] as const
+export type ClientStatus = (typeof CLIENT_STATUSES)[number]
+
 export interface Client {
   id: string
   legalName: string
@@ -264,6 +272,14 @@ export interface Client {
   sourceAgentId: string | null
   notes: string
   createdAt: string
+  /** Additive M1 fields — all optional so legacy documents remain valid. */
+  phone?: string
+  dob?: string | null
+  usiNumber?: string | null
+  visaStatus?: string | null
+  referredByStudentId?: string | null
+  externalReferrerName?: string | null
+  updatedAt?: string
 }
 
 export interface StatusChange {
@@ -322,6 +338,14 @@ export interface Order {
   feeTotal: number
   /** Calculated server-side from invoices + payments (Spec §6). */
   paymentStatus: PaymentStatus
+  /** Additive M1 (Enrollment) fields — all optional so legacy documents remain valid. */
+  /** Server-generated `SC-YYYY-NNNN`; never accepted from a request body. */
+  enrollmentCode?: string | null
+  /** DB key remains snake_case `channel_type`; this is the API-facing name. */
+  channelType?: "B2C_BDC" | "B2B_AGENT" | null
+  /** User-id space owner fields (NOT agent ids). Never auto-assigned. */
+  bdc_id?: string | null
+  b2b_agent_id?: string | null
   createdAt: string
   updatedAt: string
   completedAt: string | null
