@@ -33,7 +33,7 @@ function sanitizeCell(value: unknown): unknown {
   return value;
 }
 
-function buildExcel(rows: any[], title: string, generatedAt: string): Buffer {
+async function buildExcel(rows: any[], title: string, generatedAt: string): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(title.slice(0, 31));
 
@@ -81,10 +81,11 @@ function buildExcel(rows: any[], title: string, generatedAt: string): Buffer {
   return bufferFromWorkbook(workbook);
 }
 
-function bufferFromWorkbook(workbook: ExcelJS.Workbook): Buffer {
-  // exceljs v4 supports buffer output via writeBuffer.
-  return (workbook as any).writeBuffer ? Buffer.from((workbook as any).writeBuffer() as any) : Buffer.from("");
+async function bufferFromWorkbook(workbook: ExcelJS.Workbook): Promise<Buffer> {
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
+
+export { buildExcel, bufferFromWorkbook };
 
 export const GET = withAuth(
   async (req: AuthedRequest, { params }: { params?: Promise<{ type?: string }> | { type?: string } | undefined }) => {
@@ -141,7 +142,7 @@ export const GET = withAuth(
     const generatedAt = new Date().toISOString();
 
     if (format === "xlsx") {
-      const buffer = buildExcel(rows, title, generatedAt);
+      const buffer = await buildExcel(rows, title, generatedAt);
       const buf = Buffer.from(buffer as unknown as Uint8Array);
       return new NextResponse(buf, {
         status: 200,

@@ -316,10 +316,7 @@ export async function listExcelTemplates({
 export async function createExcelTemplate(
   t: Omit<ExcelTemplateItem, "id" | "createdBy" | "createdAt" | "updatedAt">,
 ): Promise<ExcelTemplateItem> {
-  const data = await api.post<{ template: ExcelTemplateItem }>(
-    "/excel/templates",
-    { method: "POST", body: t },
-  )
+  const data = await api.post<{ template: ExcelTemplateItem }>("/excel/templates", t)
   return data.template
 }
 
@@ -327,10 +324,7 @@ export async function updateExcelTemplate(
   id: string,
   patch: Partial<Pick<ExcelTemplateItem, "name" | "scope" | "columnMappings" | "status">>,
 ): Promise<ExcelTemplateItem> {
-  const data = await api.patch<{ template: ExcelTemplateItem }>(
-    `/excel/templates/${id}`,
-    { method: "PATCH", body: patch },
-  )
+  const data = await api.patch<{ template: ExcelTemplateItem }>(`/excel/templates/${id}`, patch)
   return data.template
 }
 
