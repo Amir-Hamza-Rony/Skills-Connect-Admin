@@ -3,16 +3,13 @@
  * POST /api/clients — create client (requires clients.manage)
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission } from "@/middleware/auth";
-import type { AuthedRequest } from "@/middleware/auth";
+import { NextResponse } from "next/server";
+import { withAuth, checkClientAccess, getAccessibleClientIds, type AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
-import { checkClientAccess } from "@/middleware/auth";
 
 export const GET = withAuth("clients.view",
   async (req) => {
     const auth = (req as AuthedRequest).auth!;
-    const clients = await collection("users"); // placeholder removed below
     const clientsColl = await collection("clients");
     const search = req.nextUrl.searchParams.get("search") ?? "";
     const filter: Record<string, unknown> = {};
@@ -25,28 +22,15 @@ export const GET = withAuth("clients.view",
     }
     const docs = await clientsColl.find(filter).sort({ createdAt: -1 }).toArray();
 
-    const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
-    const userId = auth.userId;
-    if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
-      // BDC / B2B_AGENT: only see clients linked to their own agent id
-      const filtered = docs.filter((c: any) => checkClientAccess(auth, c));
-      return NextResponse.json({
-        clients: filtered.map((c: any) => ({
-          id: String(c._id),
-          legalName: c.legalName,
-          preferredName: c.preferredName,
-          email: c.email,
-          phone: c.phone,
-          status: c.status,
-          sourceAgentId: c.sourceAgentId ?? null,
-          notes: c.notes,
-          createdAt: c.createdAt,
-        })),
-      });
-    }
+    // Client access is derived from orders the user actually owns, never from
+    // a client field compared against the user id (different id spaces).
+    const accessibleClientIds = await getAccessibleClientIds(auth);
+    const scoped = accessibleClientIds === null
+      ? docs
+      : docs.filter((c: any) => checkClientAccess(auth, c, accessibleClientIds));
 
     return NextResponse.json({
-      clients: docs.map((c: any) => ({
+      clients: scoped.map((c: any) => ({
         id: String(c._id),
         legalName: c.legalName,
         preferredName: c.preferredName,

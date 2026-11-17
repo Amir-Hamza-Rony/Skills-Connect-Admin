@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
-import { filterOrdersByRole, checkClientAccess } from "@/middleware/auth";
+import { filterOrdersByRole, checkClientAccess, getAccessibleClientIds } from "@/middleware/auth";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -44,11 +44,10 @@ export const GET = withAuth("reports.view",
 
     const orders = filterOrdersByRole(auth, allOrders);
 
-    const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
-    const userId = auth.userId;
-    const accessibleClients = role === "SUPER_ADMIN" || role === "ADMIN"
+    const accessibleClientIds = await getAccessibleClientIds(auth);
+    const accessibleClients = accessibleClientIds === null
       ? allClients
-      : allClients.filter((c: any) => checkClientAccess(auth, c));
+      : allClients.filter((c: any) => checkClientAccess(auth, c, accessibleClientIds));
 
     // Per-client aggregation.
     const clientMap = new Map<string, any>();
