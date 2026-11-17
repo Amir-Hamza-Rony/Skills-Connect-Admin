@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GET /api/reports/collections — invoiced vs collected by month
  */
 
@@ -7,6 +7,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
 import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -15,13 +16,28 @@ export const GET = withAuth("reports.view",
     const payments = await collection("payments");
     const orders = await collection("orders");
 
-    const [invDocs, payDocs, allOrderDocs] = await Promise.all([
-      invoices.find().toArray(),
-      payments.find().toArray(),
-      orders.find().toArray(),
-    ]);
-
+    const allOrderDocs = await orders.find().toArray();
     const orderDocs = filterOrdersByRole(auth, allOrderDocs);
+
+    // Restrict invoices and payments to orders accessible to the caller for
+    // non-admin roles; admins see everything. Mirrors the outstanding report pattern.
+    const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+    let accessibleOrderIds: any[] | undefined;
+    if (role !== "SUPER_ADMIN" && role !== "ADMIN") {
+      accessibleOrderIds = orderDocs.map((o: any) => o._id);
+    }
+
+    const invoiceFilter: Record<string, unknown> = {};
+    const paymentFilter: Record<string, unknown> = {};
+    if (accessibleOrderIds) {
+      invoiceFilter.orderId = { $in: accessibleOrderIds };
+      paymentFilter.orderId = { $in: accessibleOrderIds };
+    }
+
+    const [invDocs, payDocs] = await Promise.all([
+      invoices.find(invoiceFilter).toArray(),
+      payments.find(paymentFilter).toArray(),
+    ]);
 
     const byMonth: Record<string, { invoiced: number; collected: number; orders: number }> = {};
 
@@ -49,6 +65,8 @@ export const GET = withAuth("reports.view",
       .map(([month, v]) => ({ month, ...v }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
-    return NextResponse.json({ months });
+    const response = { months };
+    applyFinancialVisibility(auth, response);
+    return NextResponse.json(response);
   },
 );

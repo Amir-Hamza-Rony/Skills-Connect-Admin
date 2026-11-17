@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { filterOrdersByRole, checkClientAccess, getAccessibleClientIds } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -115,12 +116,14 @@ export const GET = withAuth("reports.view",
     const start = (page - 1) * pageSize;
     const paged = rows.slice(start, start + pageSize);
 
-    return NextResponse.json({
+    const response = {
       clients: paged,
       total,
       page,
       pageSize,
       pages: Math.max(1, Math.ceil(total / pageSize)),
-    });
+    };
+    applyFinancialVisibility(auth, response);
+    return NextResponse.json(response);
   },
 );
