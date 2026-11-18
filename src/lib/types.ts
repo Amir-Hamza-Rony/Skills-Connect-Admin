@@ -72,6 +72,8 @@ export interface Qualification {
 
 export type RtoStatus = "active" | "suspended" | "at-risk" | "inactive"
 
+export type RtoAccreditationStatus = "accredited" | "expired" | "expiring" | "pending" | "suspended"
+
 export interface RtoContact {
   name: string
   role: string
@@ -89,6 +91,31 @@ export interface Rto {
   status: RtoStatus
   complianceNote: string
   website: string
+  /** Additive Phase 3 accreditation fields — all optional for backward compatibility. */
+  accreditationNumber?: string | null
+  accreditationBody?: string | null
+  accreditationExpiry?: string | null
+  lastAuditDate?: string | null
+  accreditationStatus?: RtoAccreditationStatus | null
+  supportingDocumentIds?: string[]
+  accreditationNotes?: string | null
+}
+
+export type RplPartnerStatus = "active" | "inactive"
+
+export interface RplPartner {
+  id: string
+  partnerCode: string
+  legalName: string
+  tradingName: string | null
+  contactPerson: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  status: RplPartnerStatus
+  notes: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export type RouteStatus = "active" | "expired"
@@ -144,6 +171,8 @@ export type Permission =
   | "commissions.view"
   | "qb.manage"
   | "finance.reconcile"
+  | "rplPartners.manage"
+  | "rplPartners.view"
 
 /* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
@@ -222,6 +251,24 @@ export type CertificateStatus =
   | "Issued"
   | "Certificate File Received"
   | "Delivered to Client"
+
+export type CertificateDeliveryStatus = "pending" | "dispatched" | "delivered" | "failed"
+
+export interface CertificateDelivery {
+  id: string
+  orderId: string
+  certificateReference: string | null
+  deliveryStatus: CertificateDeliveryStatus
+  deliveryDate: string | null
+  recipient: string | null
+  deliveryMethod: string | null
+  trackingNumber: string | null
+  confirmationDetails: string | null
+  deliveryNotes: string | null
+  updatedBy?: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 export type PaymentStatus =
   | "Unpaid"
@@ -346,6 +393,8 @@ export interface Order {
   /** User-id space owner fields (NOT agent ids). Never auto-assigned. */
   bdc_id?: string | null
   b2b_agent_id?: string | null
+  /** Optional RPL Partner assigned to this order. */
+  rplPartnerId: string | null
   createdAt: string
   updatedAt: string
   completedAt: string | null

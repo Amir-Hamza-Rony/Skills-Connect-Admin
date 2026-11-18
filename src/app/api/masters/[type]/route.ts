@@ -202,6 +202,13 @@ export const POST = withAuth(
         status: String(body.status),
         complianceNote: String(body.complianceNote ?? "").trim() || null,
         website: String(body.website ?? "").trim() || null,
+        accreditationNumber: body.accreditationNumber ? String(body.accreditationNumber).trim() || null : null,
+        accreditationBody: body.accreditationBody ? String(body.accreditationBody).trim() || null : null,
+        accreditationExpiry: body.accreditationExpiry ? String(body.accreditationExpiry) : null,
+        lastAuditDate: body.lastAuditDate ? String(body.lastAuditDate) : null,
+        accreditationStatus: body.accreditationStatus ?? null,
+        supportingDocumentIds: Array.isArray(body.supportingDocumentIds) ? body.supportingDocumentIds : [],
+        accreditationNotes: body.accreditationNotes ? String(body.accreditationNotes).trim() || null : null,
         createdAt: now,
         updatedAt: now,
       } as any);

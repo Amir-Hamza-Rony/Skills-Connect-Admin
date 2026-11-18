@@ -115,6 +115,7 @@ export const POST = withAuth("orders.manage",
       priceListId,
       rtoContactId,
       rtoContactName,
+      rplPartnerId,
     } = body;
 
     if (
@@ -193,6 +194,33 @@ export const POST = withAuth("orders.manage",
     }
     const supplierCostSnapshot = Number(route.wholesaleCost ?? 0);
     const supplierRouteId = String(route._id);
+
+    // Validate optional RPL Partner reference: must exist and be active.
+    let resolvedRplPartnerId: string | null = null;
+    if (rplPartnerId) {
+      const rplPartnerOid = safeObjectId(String(rplPartnerId));
+      if (!rplPartnerOid) {
+        return NextResponse.json(
+          { error: { code: "INVALID_ID", message: "Invalid RPL partner id format." } },
+          { status: 400 },
+        );
+      }
+      const rplPartners = await collection("rpl_partners");
+      const rplPartner = await rplPartners.findOne({ _id: rplPartnerOid });
+      if (!rplPartner) {
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "RPL partner not found." } },
+          { status: 404 },
+        );
+      }
+      if (String(rplPartner.status) !== "active") {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: "RPL partner is not active." } },
+          { status: 400 },
+        );
+      }
+      resolvedRplPartnerId = String(rplPartner._id);
+    }
 
     // Resolve the client selling price from the price list (server-side).
     // Client-submitted sellingPrice is only a fallback when no price list applies.
@@ -305,6 +333,7 @@ export const POST = withAuth("orders.manage",
       supplierRouteId,
       rtoContactId: rtoContactId ? safeObjectId(String(rtoContactId)) : null,
       rtoContactName: rtoContactName ? String(rtoContactName).trim() || null : null,
+      rplPartnerId: resolvedRplPartnerId,
       exchangeRate,
       convertedAmount,
       additionalFees,
@@ -377,6 +406,7 @@ export const POST = withAuth("orders.manage",
         feeTotal,
         enrollmentCode,
         channelType: insertDoc.channel_type ?? null,
+        rplPartnerId: resolvedRplPartnerId,
       },
     });
 
