@@ -16,15 +16,24 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "clients.manage",
     "orders.view",
     "orders.manage",
+    "rto.manage",
+    "agents.manage",
     "qualifications.manage",
     "pricing.manage",
     "documents.view",
     "documents.review",
     "finance.view",
     "finance.manage",
+    "qb.retry",
+    "qb.manage",
     "reports.view",
     "audit.view",
     "settings.manage",
+    "commissions.manage",
+    "commissions.view",
+    "finance.reconcile",
+    "rplPartners.manage",
+    "rplPartners.view",
   ],
   ADMIN: [
     "users.manage",
@@ -42,6 +51,8 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "reports.view",
     "audit.view",
     "settings.manage",
+    "rplPartners.manage",
+    "rplPartners.view",
   ],
   BDC: [
     "clients.view",
@@ -87,6 +98,8 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/roles": "roles.manage",
   "/reconciliation": "finance.manage",
   "/integrations/quickbooks": "finance.manage",
+  "/rpl-partners": "rplPartners.view",
+  "/certificate-deliveries": "rplPartners.view",
 }
 
 /** Default dashboard view per role. */

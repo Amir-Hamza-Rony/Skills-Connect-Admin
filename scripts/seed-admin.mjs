@@ -102,7 +102,7 @@ async function main() {
       name,
       phone: "",
       passwordHash,
-      roleNames: ["Super Admin"],
+      roleNames: ["SUPER_ADMIN"],
       active: true,
       failedLoginCount: 0,
       lockedUntil: null,

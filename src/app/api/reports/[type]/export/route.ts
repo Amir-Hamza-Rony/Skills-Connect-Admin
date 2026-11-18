@@ -33,13 +33,16 @@ function sanitizeCell(value: unknown): unknown {
   return value;
 }
 
-function buildExcel(rows: any[], title: string, generatedAt: string): Buffer {
+async function buildExcel(rows: any[], title: string, generatedAt: string, infoLines: string[] = []): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(title.slice(0, 31));
 
   if (rows.length === 0) {
     sheet.addRow([title]);
     sheet.addRow([`Generated: ${generatedAt}`]);
+    for (const line of infoLines) {
+      sheet.addRow([line]);
+    }
     sheet.addRow(["No data."]);
     return bufferFromWorkbook(workbook);
   }
@@ -72,6 +75,9 @@ function buildExcel(rows: any[], title: string, generatedAt: string): Buffer {
 
   sheet.addRow([title]);
   sheet.addRow([`Generated: ${generatedAt}`]);
+  for (const line of infoLines) {
+    sheet.addRow([line]);
+  }
   sheet.addRow([]);
   sheet.addRow(headerRow);
   for (const rv of rowValues) {
@@ -81,10 +87,11 @@ function buildExcel(rows: any[], title: string, generatedAt: string): Buffer {
   return bufferFromWorkbook(workbook);
 }
 
-function bufferFromWorkbook(workbook: ExcelJS.Workbook): Buffer {
-  // exceljs v4 supports buffer output via writeBuffer.
-  return (workbook as any).writeBuffer ? Buffer.from((workbook as any).writeBuffer() as any) : Buffer.from("");
+async function bufferFromWorkbook(workbook: ExcelJS.Workbook): Promise<Buffer> {
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
+
+export { buildExcel, bufferFromWorkbook };
 
 export const GET = withAuth(
   async (req: AuthedRequest, { params }: { params?: Promise<{ type?: string }> | { type?: string } | undefined }) => {
@@ -130,18 +137,21 @@ export const GET = withAuth(
     // Determine the rows array from the response.
     let rows: any[] = [];
     let title = type;
+    const totalOverdue = reportData.totalOverdue;
     if (reportData.clients) rows = reportData.clients;
     else if (reportData.orders) rows = reportData.orders;
     else if (reportData.supplierCosts) rows = reportData.supplierCosts;
     else if (reportData.agentCommission) rows = reportData.agentCommission;
     else if (reportData.monthlySummary) rows = reportData.monthlySummary;
     else if (reportData.customers) rows = reportData.customers;
+    else if (reportData.buckets) rows = reportData.buckets;
     else rows = reportData.rows || reportData.items || [];
 
     const generatedAt = new Date().toISOString();
 
     if (format === "xlsx") {
-      const buffer = buildExcel(rows, title, generatedAt);
+      const infoLines = totalOverdue !== undefined ? [`Total Overdue: ${totalOverdue}`] : [];
+      const buffer = await buildExcel(rows, title, generatedAt, infoLines);
       const buf = Buffer.from(buffer as unknown as Uint8Array);
       return new NextResponse(buf, {
         status: 200,
@@ -158,57 +168,63 @@ export const GET = withAuth(
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const PDFDocument = require("pdfkit");
-      const doc = new PDFDocument();
-      const chunks: Buffer[] = [];
-      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+        const doc = new PDFDocument();
+        const chunks: Buffer[] = [];
+        doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+        doc.on("end", () => resolve(Buffer.concat(chunks)));
+        doc.on("error", reject);
 
-      doc.fontSize(16).text(title, { align: "center" });
-      doc.fontSize(10).text(`Generated: ${generatedAt}`, { align: "center" });
-      doc.moveDown();
+        doc.fontSize(16).text(title, { align: "center" });
+        doc.fontSize(10).text(`Generated: ${generatedAt}`, { align: "center" });
+        if (totalOverdue !== undefined) {
+          doc.fontSize(10).text(`Total Overdue: ${totalOverdue}`, { align: "center" });
+        }
+        doc.moveDown();
 
-      if (rows.length === 0) {
-        doc.text("No data.");
-      } else {
-        const first = rows[0];
-        const flattenLocal = (obj: any, prefix = ""): Record<string, unknown> => {
-          const out: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(obj)) {
-            const key = prefix ? `${prefix}.${k}` : k;
-            if (v && typeof v === "object" && !Array.isArray(v)) {
-              Object.assign(out, flattenLocal(v, key));
-            } else {
-              out[key] = v;
+        if (rows.length === 0) {
+          doc.text("No data.");
+        } else {
+          const flattenLocal = (obj: any, prefix = ""): Record<string, unknown> => {
+            const out: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(obj)) {
+              const key = prefix ? `${prefix}.${k}` : k;
+              if (v && typeof v === "object" && !Array.isArray(v)) {
+                Object.assign(out, flattenLocal(v, key));
+              } else {
+                out[key] = v;
+              }
+            }
+            return out;
+          };
+          const flatRows = rows.map((r) => flattenLocal(r));
+          const headers = Object.keys(flatRows[0] || {});
+
+          const startX = 50;
+          let y = doc.y;
+          doc.fontSize(8);
+          for (const h of headers) {
+            doc.text(String(h), startX, y, { width: 80 });
+          }
+          y += 15;
+          doc.moveDown();
+          for (const fr of flatRows) {
+            let x = startX;
+            for (const h of headers) {
+              doc.text(String(sanitizeCell(fr[h]) ?? ""), x, y, { width: 80 });
+              x += 85;
+            }
+            y += 12;
+            if (y > 700) {
+              doc.addPage();
+              y = 50;
             }
           }
-          return out;
-        };
-        const flatRows = rows.map((r) => flattenLocal(r));
-        const headers = Object.keys(flatRows[0] || {});
-
-        const startX = 50;
-        let y = doc.y;
-        doc.fontSize(8);
-        for (const h of headers) {
-          doc.text(String(h), startX, y, { width: 80 });
         }
-        y += 15;
-        doc.moveDown();
-        for (const fr of flatRows) {
-          let x = startX;
-          for (const h of headers) {
-            doc.text(String(sanitizeCell(fr[h]) ?? ""), x, y, { width: 80 });
-            x += 85;
-          }
-          y += 12;
-          if (y > 700) {
-            doc.addPage();
-            y = 50;
-          }
-        }
-      }
 
-      doc.end();
-      return new NextResponse(Buffer.concat(chunks), {
+        doc.end();
+      });
+      return new NextResponse(Buffer.from(pdfBuffer as unknown as Uint8Array), {
         status: 200,
         headers: {
           "Content-Type": "application/pdf",

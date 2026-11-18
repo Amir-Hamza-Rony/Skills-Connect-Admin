@@ -2,9 +2,9 @@
  * POST /api/documents/upload — multipart upload, store bytes in MongoDB
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
+import { NextResponse } from "next/server";
+import { withAuth, checkOrderAccess, type AuthedRequest } from "@/middleware/auth";
+import { collection, safeObjectId } from "@/lib/db";
 import { writeDocumentAccessLog } from "@/lib/audit";
 
 const ALLOWED: Record<string, { maxBytes: number }> = {
@@ -29,6 +29,27 @@ export const POST = withAuth(
       return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Missing fields." } }, { status: 400 });
     }
 
+    // --- Ownership protection: resolve and authorize the parent order ---
+    // No client-supplied owner or authorization flag is consulted.
+    const orderOid = safeObjectId(orderId);
+    if (!orderOid) {
+      return NextResponse.json({ error: { code: "INVALID_ID", message: "Invalid order id." } }, { status: 400 });
+    }
+    const clientOid = safeObjectId(clientId);
+    if (!clientOid) {
+      return NextResponse.json({ error: { code: "INVALID_ID", message: "Invalid client id." } }, { status: 400 });
+    }
+    const order = await (await collection("orders")).findOne({ _id: orderOid });
+    if (!order) {
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Parent order not found." } }, { status: 404 });
+    }
+    if (!checkOrderAccess(actor, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
+    if (String(order.clientId) !== String(clientOid)) {
+      return NextResponse.json({ error: { code: "BAD_REQUEST", message: "clientId does not match the order." } }, { status: 400 });
+    }
+
     const contentType = file.type;
     const allowed = ALLOWED[contentType];
     if (!allowed) {
@@ -47,8 +68,8 @@ export const POST = withAuth(
     await docs.updateMany({ orderId, type, status: { $ne: "Superseded" } }, { $set: { status: "Superseded" } });
 
     const result = await docs.insertOne({
-      orderId: toObjectId(orderId),
-      clientId: toObjectId(clientId),
+      orderId: orderOid,
+      clientId: clientOid,
       type,
       version: nextVersion,
       fileName: file.name,

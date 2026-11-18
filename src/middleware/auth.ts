@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAccessToken } from "@/lib/api-auth";
+import { collection } from "@/lib/db";
 import type { RoleName } from "@/lib/types";
 
 export interface AuthUser {
@@ -125,63 +126,76 @@ export { requirePermission };
 /**
  * Check whether the authenticated user may access a given order.
  *
- * - SUPER_ADMIN / ADMIN: all orders.
- * - BDC: orders where bdc_id === userId or salesAgentId === userId.
- * - B2B_AGENT: orders where b2b_agent_id === userId or sourceAgentId === userId.
+ * Ownership lives exclusively in the USER-id space:
+ *   - BDC       -> order.bdc_id === auth.userId
+ *   - B2B_AGENT -> order.b2b_agent_id === auth.userId
  *
- * Returns true if access is allowed, false otherwise.
+ * `salesAgentId` / `sourceAgentId` are ObjectIds in the `agents` collection,
+ * NOT user ids. Comparing them to auth.userId would authorize the wrong
+ * account, so those fallbacks are intentionally absent. Orders with no owner
+ * (legacy records) are therefore admin-only and fail closed.
  */
 export function checkOrderAccess(auth: AuthUser, order: any): boolean {
   const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
   const userId = auth.userId;
 
   if (role === "SUPER_ADMIN" || role === "ADMIN") return true;
+  if (!order) return false;
 
   if (role === "BDC") {
-    return (
-      order.bdc_id && String(order.bdc_id) === userId
-    ) || (
-      order.salesAgentId && String(order.salesAgentId) === userId
-    );
+    return !!order.bdc_id && String(order.bdc_id) === userId;
   }
 
   if (role === "B2B_AGENT") {
-    return (
-      order.b2b_agent_id && String(order.b2b_agent_id) === userId
-    ) || (
-      order.sourceAgentId && String(order.sourceAgentId) === userId
-    );
+    return !!order.b2b_agent_id && String(order.b2b_agent_id) === userId;
   }
 
   return false;
 }
 
 /**
- * Check whether the authenticated user may access a given client.
- * Clients do not yet have an owner field in Phase 0; scoping is applied at
- * the list level via the `sourceAgentId`/`salesAgentId` mapping in Phase 1.
- * For Phase 0, SUPER_ADMIN and ADMIN see all clients; BDC/B2B_AGENT see
- * only clients linked to their own agent id.
+ * Derive the set of client ids a non-admin user may access from the orders
+ * they own. A client document has no reliable owner in the user-id space, so
+ * access is always derived from verified order ownership (`bdc_id` /
+ * `b2b_agent_id`), never from a client-supplied identifier.
+ *
+ * Returns `null` for SUPER_ADMIN / ADMIN to mean "all clients".
  */
-export function checkClientAccess(auth: AuthUser, client: any): boolean {
+export async function getAccessibleClientIds(auth: AuthUser): Promise<Set<string> | null> {
   const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
-  const userId = auth.userId;
+  if (role === "SUPER_ADMIN" || role === "ADMIN") return null;
+
+  const orders = await (await collection("orders")).find({}).toArray();
+  const ids = new Set<string>();
+  for (const order of orders) {
+    if (checkOrderAccess(auth, order) && order.clientId) {
+      ids.add(String(order.clientId));
+    }
+  }
+  return ids;
+}
+
+/**
+ * Check whether the authenticated user may access a given client.
+ *
+ * Client access is derived from the order-ownership set produced by
+ * `getAccessibleClientIds`. When that set is not supplied the check FAILS
+ * CLOSED for non-admins: a client on its own has no trustworthy owner field
+ * in the user-id space.
+ */
+export function checkClientAccess(
+  auth: AuthUser,
+  client: any,
+  accessibleClientIds?: Set<string> | string[] | null,
+): boolean {
+  const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
 
   if (role === "SUPER_ADMIN" || role === "ADMIN") return true;
+  if (!client || !accessibleClientIds) return false;
 
-  if (role === "BDC") {
-    return (
-      client.sourceAgentId && String(client.sourceAgentId) === userId
-    );
-  }
-
-  if (role === "B2B_AGENT") {
-    return (
-      client.sourceAgentId && String(client.sourceAgentId) === userId
-    );
-  }
-
-  return false;
+  const clientId = String(client._id ?? client.id ?? "");
+  if (accessibleClientIds instanceof Set) return accessibleClientIds.has(clientId);
+  return (accessibleClientIds as string[]).includes(clientId);
 }
 
 /**
@@ -226,28 +240,11 @@ export function maskFinancialFields(auth: AuthUser, record: any): any {
 
 /**
  * Filter an array of orders to only those the authenticated user may access.
- * - SUPER_ADMIN / ADMIN: all orders.
- * - BDC: orders where bdc_id === userId or salesAgentId === userId.
- * - B2B_AGENT: orders where b2b_agent_id === userId or sourceAgentId === userId.
+ * Delegates to `checkOrderAccess` so list, detail, report and mutation scoping
+ * can never diverge.
  */
 export function filterOrdersByRole(auth: AuthUser, orders: any[]): any[] {
   const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
-  const userId = auth.userId;
   if (role === "SUPER_ADMIN" || role === "ADMIN") return orders;
-
-  return orders.filter((o: any) => {
-    if (role === "BDC") {
-      return (
-        (o.bdc_id && String(o.bdc_id) === userId) ||
-        (o.salesAgentId && String(o.salesAgentId) === userId)
-      );
-    }
-    if (role === "B2B_AGENT") {
-      return (
-        (o.b2b_agent_id && String(o.b2b_agent_id) === userId) ||
-        (o.sourceAgentId && String(o.sourceAgentId) === userId)
-      );
-    }
-    return false;
-  });
+  return orders.filter((order: any) => checkOrderAccess(auth, order));
 }

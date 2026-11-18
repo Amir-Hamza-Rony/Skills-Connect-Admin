@@ -134,6 +134,20 @@ export const PATCH = withAuth(
         update.complianceNote = String(body.complianceNote ?? "").trim() || null;
       if (body.website !== undefined)
         update.website = String(body.website ?? "").trim() || null;
+      if (body.accreditationNumber !== undefined)
+        update.accreditationNumber = String(body.accreditationNumber ?? "").trim() || null;
+      if (body.accreditationBody !== undefined)
+        update.accreditationBody = String(body.accreditationBody ?? "").trim() || null;
+      if (body.accreditationExpiry !== undefined)
+        update.accreditationExpiry = body.accreditationExpiry ? String(body.accreditationExpiry) : null;
+      if (body.lastAuditDate !== undefined)
+        update.lastAuditDate = body.lastAuditDate ? String(body.lastAuditDate) : null;
+      if (body.accreditationStatus !== undefined)
+        update.accreditationStatus = String(body.accreditationStatus);
+      if (body.supportingDocumentIds !== undefined)
+        update.supportingDocumentIds = Array.isArray(body.supportingDocumentIds) ? body.supportingDocumentIds : [];
+      if (body.accreditationNotes !== undefined)
+        update.accreditationNotes = String(body.accreditationNotes ?? "").trim() || null;
     } else if (type === "agents") {
       const nextName = body.name !== undefined ? String(body.name).trim() : String(existing.name);
       const nextContact = body.contact !== undefined ? String(body.contact).trim() : String(existing.contact);
