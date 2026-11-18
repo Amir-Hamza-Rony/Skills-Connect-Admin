@@ -3,9 +3,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
+import { withAuth, checkOrderAccess, maskFinancialFields, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 const UPDATABLE_FIELDS = new Set([
   "rtoContactId",
@@ -29,15 +30,12 @@ export const GET = withAuth("orders.view",
     const order = await orders.findOne({ _id: orderOid });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
 
-    // --- Data scoping: verify access ---
-    if (auth.role === "BDC" || auth.roleNames.includes("BDC")) {
-      if (order.bdc_id && String(order.bdc_id) !== auth.userId) {
-        return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not your BDC enrollment." } }, { status: 403 });
-      }
-    } else if (auth.role === "B2B_AGENT" || auth.roleNames.includes("B2B_AGENT")) {
-      if (order.b2b_agent_id && String(order.b2b_agent_id) !== auth.userId) {
-        return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not your agency enrollment." } }, { status: 403 });
-      }
+    // --- Data scoping: fail-closed ownership check ---
+    // checkOrderAccess compares only user-space owner ids and denies orders
+    // with no owner, so ownerless legacy records are never exposed to
+    // BDC / B2B_AGENT. Generic error avoids leaking which check failed.
+    if (!checkOrderAccess(auth, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
     }
 
     const margin = order.sellingPrice - order.supplierCostSnapshot - (order.otherCost ?? 0);
@@ -60,12 +58,19 @@ export const GET = withAuth("orders.view",
       createdAt: order.createdAt,
       bdc_id: order.bdc_id ?? null,
       b2b_agent_id: order.b2b_agent_id ?? null,
+      // M1.4 (D2): canonical API-facing enrollment/channel fields.
+      enrollmentCode: order.enrollmentCode ?? null,
+      channelType: order.channel_type ?? null,
     };
     // --- Financial field masking ---
     if (auth.role === "SUPER_ADMIN" || auth.role === "ADMIN" ||
         auth.roleNames.includes("SUPER_ADMIN") || auth.roleNames.includes("ADMIN")) {
       item.supplierCostSnapshot = order.supplierCostSnapshot;
     }
+    // Security hotfix: grossMargin is derived from the masked supplier cost,
+    // so it is removed for BDC / B2B_AGENT; sellingPrice is removed for
+    // B2B_AGENT. The calculation itself is unchanged.
+    applyFinancialVisibility(auth, item);
     return NextResponse.json(item);
   },
 );
@@ -96,6 +101,13 @@ export const PATCH = withAuth("orders.manage",
     const orders = await collection("orders");
     const order = await orders.findOne({ _id: orderOid });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
+
+    // --- Ownership protection: authorize before any mutation ---
+    // Owner ids in the request body are never consulted. Only the verified
+    // user-space owner fields on the stored order grant update access.
+    if (!checkOrderAccess(actor, order)) {
+      return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
+    }
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
     const history: Array<Record<string, unknown>> = [];
@@ -138,26 +150,25 @@ export const PATCH = withAuth("orders.manage",
     });
 
     const updated = await orders.findOne({ _id: orderOid });
-    return NextResponse.json({
-      order: {
-        id: String(updated?._id),
-        clientId: String(updated?.clientId),
-        qualificationId: String(updated?.qualificationId),
-        salesAgentId: String(updated?.salesAgentId),
-        sourceAgentId: String(updated?.sourceAgentId),
-        rtoId: String(updated?.rtoId),
-        rtoContactId: updated?.rtoContactId ? String(updated.rtoContactId) : null,
-        rtoContactName: updated?.rtoContactName,
-        status: updated?.status,
-        notes: updated?.notes,
-        sellingPrice: updated?.sellingPrice,
-        supplierCostSnapshot: updated?.supplierCostSnapshot,
-        currency: updated?.currency,
-        priceListId: updated?.priceListId ? String(updated.priceListId) : null,
-        priceCategoryId: updated?.priceCategoryId ? String(updated.priceCategoryId) : null,
-        supplierRouteId: updated?.supplierRouteId ? String(updated.supplierRouteId) : null,
-        updatedAt: updated?.updatedAt,
-      },
-    });
+    const resultOrder: Record<string, unknown> = {
+      id: String(updated?._id),
+      clientId: String(updated?.clientId),
+      qualificationId: String(updated?.qualificationId),
+      salesAgentId: String(updated?.salesAgentId),
+      sourceAgentId: String(updated?.sourceAgentId),
+      rtoId: String(updated?.rtoId),
+      rtoContactId: updated?.rtoContactId ? String(updated.rtoContactId) : null,
+      rtoContactName: updated?.rtoContactName,
+      status: updated?.status,
+      notes: updated?.notes,
+      sellingPrice: updated?.sellingPrice,
+      supplierCostSnapshot: updated?.supplierCostSnapshot,
+      currency: updated?.currency,
+      priceListId: updated?.priceListId ? String(updated.priceListId) : null,
+      priceCategoryId: updated?.priceCategoryId ? String(updated.priceCategoryId) : null,
+      supplierRouteId: updated?.supplierRouteId ? String(updated.supplierRouteId) : null,
+      updatedAt: updated?.updatedAt,
+    };
+    return NextResponse.json({ order: maskFinancialFields(actor, resultOrder) });
   },
 );

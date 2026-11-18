@@ -7,6 +7,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
 import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -41,9 +42,12 @@ export const GET = withAuth("reports.view",
       a.orders += 1; a.revenue += o.sellingPrice ?? 0; byAgent.set(aName, a);
     }
 
-    return NextResponse.json({
+    const result = {
       byQualification: [...byQual.entries()].map(([n, v]) => ({ name: n, ...v })),
       byAgent: [...byAgent.entries()].map(([n, v]) => ({ name: n, ...v })),
-    });
+    };
+    // Security hotfix: revenue is derived from sellingPrice -> B2B_AGENT only.
+    applyFinancialVisibility(auth, result);
+    return NextResponse.json(result);
   },
 );

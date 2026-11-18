@@ -133,6 +133,7 @@ export function DocumentsPage() {
     try {
       const updated = await reviewDocument(
         reviewing.id,
+        reviewing.orderId,
         verdict,
         user?.id ?? "preview-user",
         reason.trim() || undefined,
@@ -177,7 +178,12 @@ export function DocumentsPage() {
     setFormError(null)
     setSaving(true)
     try {
-      const { document } = await uploadDocument(uploading.orderId, uploadFile, uploading.type)
+      const { document } = await uploadDocument(
+        uploading.orderId,
+        uploading.clientId,
+        uploadFile,
+        uploading.type,
+      )
       setDocs((prev) => (prev ? [document, ...prev] : [document]))
       setUploadFile(null)
       setUploading(null)

@@ -21,18 +21,26 @@ export function makeToken(roleNames: string[] = ["SUPER_ADMIN"], permissions: st
 export function makeSuperAdminToken() {
   return makeToken(["SUPER_ADMIN"], [
     "users.manage", "roles.manage", "clients.view", "clients.manage",
-    "orders.view", "orders.manage", "qualifications.manage", "pricing.manage",
-    "documents.view", "documents.review", "finance.view", "finance.manage",
+    "orders.view", "orders.manage", "rto.manage", "agents.manage",
+    "qualifications.manage", "pricing.manage",
+    "documents.view", "documents.review",
+    "finance.view", "finance.manage", "qb.retry", "qb.manage",
     "reports.view", "audit.view", "settings.manage",
+    "commissions.manage", "commissions.view", "finance.reconcile",
+    "rplPartners.manage", "rplPartners.view",
   ]);
 }
 
 export function makeAdminToken() {
   return makeToken(["ADMIN"], [
     "users.manage", "roles.manage", "clients.view", "clients.manage",
-    "orders.view", "orders.manage", "qualifications.manage", "pricing.manage",
-    "documents.view", "documents.review", "finance.view", "finance.manage",
+    "orders.view", "orders.manage", "rto.manage", "agents.manage",
+    "qualifications.manage", "pricing.manage",
+    "documents.view", "documents.review",
+    "finance.view", "finance.manage", "qb.retry", "qb.manage",
     "reports.view", "audit.view", "settings.manage",
+    "commissions.manage", "commissions.view", "finance.reconcile",
+    "rplPartners.manage", "rplPartners.view",
   ]);
 }
 
@@ -85,7 +93,12 @@ export async function clearDb() {
   }
 }
 
-export async function seedClient(id = new ObjectId(), legalName = "Test Client", email = "client@test.com") {
+export async function seedClient(
+  id = new ObjectId(),
+  legalName = "Test Client",
+  email = "client@test.com",
+  overrides: Record<string, unknown> = {},
+) {
   const db = await getDb();
   await db.collection("clients").insertOne({
     _id: id,
@@ -98,6 +111,7 @@ export async function seedClient(id = new ObjectId(), legalName = "Test Client",
     sourceAgentId: null,
     notes: "",
     createdAt: new Date(),
+    ...overrides,
   });
   return id;
 }
@@ -169,6 +183,7 @@ export async function seedOrder(
   salesAgentId = new ObjectId(),
   sourceAgentId = new ObjectId(),
   rtoId = new ObjectId(),
+  overrides: Record<string, unknown> = {},
 ) {
   const db = await getDb();
   const now = new Date();
@@ -191,8 +206,15 @@ export async function seedOrder(
     history: [{ timestamp: now, field: "status", before: "—", after: "New" }],
     createdAt: now,
     updatedAt: now,
+    ...overrides,
   });
   return id;
+}
+
+/** Test-only reset for the enrollment-code counter collection. */
+export async function resetEnrollmentSequences() {
+  const db = await getDb();
+  await db.collection("enrollment_sequences").deleteMany({});
 }
 
 export async function seedInvoice(id = new ObjectId(), orderId = new ObjectId(), total = 1000) {

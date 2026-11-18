@@ -14,11 +14,9 @@ export const GET = withAuth("finance.view",
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
     const auth = (req as AuthedRequest).auth!;
-    const plansColl = await collection("payment-plans");
-    const plans = await plansColl.find({ orderId: toObjectId(id) }).toArray();
-    if (plans.length === 0) return NextResponse.json({ plan: null });
-
-    // Verify order access via orderId lookup
+    // Security hotfix: verify order existence and ownership BEFORE looking up
+    // the plan, so unauthorized callers get the same response whether or not
+    // a plan exists (no payment-plan ownership oracle).
     const orders = await collection("orders");
     const order = await orders.findOne({ _id: toObjectId(id) });
     if (!order) return NextResponse.json({ error: { code: "NOT_FOUND", message: "Order not found." } }, { status: 404 });
@@ -26,7 +24,9 @@ export const GET = withAuth("finance.view",
       return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not authorized to access this order." } }, { status: 403 });
     }
 
-    return NextResponse.json({ plan: plans[0] });
+    const plansColl = await collection("payment-plans");
+    const plans = await plansColl.find({ orderId: toObjectId(id) }).toArray();
+    return NextResponse.json({ plan: plans[0] ?? null });
   },
 );
 

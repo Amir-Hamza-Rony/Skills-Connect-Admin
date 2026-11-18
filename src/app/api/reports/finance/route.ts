@@ -7,6 +7,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import type { AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
 import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -33,7 +34,7 @@ export const GET = withAuth("reports.view",
     const collected = payments.filter((p: any) => p.status !== "Void" && p.status !== "Refunded").reduce((s: number, p: any) => s + (p.allocatedAmount ?? 0), 0);
     const overdueInvoices = invoices.filter((i: any) => i.status === "Overdue");
 
-    return NextResponse.json({
+    const result = {
       orders: orders.length,
       clients: new Set(orders.map((o: any) => String(o.clientId))).size,
       invoiced,
@@ -42,6 +43,10 @@ export const GET = withAuth("reports.view",
       overdueAmount: overdueInvoices.reduce((s: number, i: any) => s + (i.total ?? 0), 0),
       overdueCount: overdueInvoices.length,
       pipelineValue: orders.reduce((s: number, o: any) => s + (o.sellingPrice ?? 0), 0),
-    });
+    };
+    // Security hotfix: pipelineValue is price-derived and revenue aggregates
+    // are hidden from B2B_AGENT; order/client counts remain visible.
+    applyFinancialVisibility(auth, result);
+    return NextResponse.json(result);
   },
 );

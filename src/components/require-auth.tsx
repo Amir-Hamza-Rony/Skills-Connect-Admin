@@ -51,9 +51,15 @@ export function RequirePermission({
   perm: Permission
   children: ReactNode
 }) {
-  const { permissions, authLoading } = useAuth()
+  const { user, permissions, authLoading } = useAuth()
   if (authLoading) {
     return <Skeleton className="h-40 w-full" aria-label="Loading permissions" />
+  }
+  // SUPER_ADMIN bypass — mirrors the server-side requirePermission middleware.
+  // A SUPER_ADMIN role grants full administrative access regardless of the
+  // specific permission being checked.
+  if (user?.roleNames?.includes("SUPER_ADMIN")) {
+    return <>{children}</>
   }
   if (!hasPermission(permissions, perm)) {
     return (

@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
-import { filterOrdersByRole, maskFinancialFields } from "@/middleware/auth";
+import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -128,7 +129,7 @@ export const GET = withAuth("reports.view",
       pageSize,
       pages: Math.max(1, Math.ceil(rows.length / pageSize)),
     };
-    maskFinancialFields(auth, result);
+    applyFinancialVisibility(auth, result);
     return NextResponse.json(result);
   },
 );

@@ -16,6 +16,8 @@ import type {
   AgentCommissionRule,
   CommissionRecord,
   CommissionPayout,
+  RplPartner,
+  CertificateDelivery,
 } from "@/lib/types"
 
 /**
@@ -145,7 +147,7 @@ export async function createRto(r: Omit<Rto, "id">): Promise<Rto> {
 
 export async function updateRto(
   id: string,
-  patch: Partial<Pick<Rto, "legalName" | "tradingName" | "rtoCode" | "cricosCode" | "contacts" | "status" | "complianceNote" | "website">>,
+  patch: Partial<Pick<Rto, "legalName" | "tradingName" | "rtoCode" | "cricosCode" | "contacts" | "status" | "complianceNote" | "website" | "accreditationNumber" | "accreditationBody" | "accreditationExpiry" | "lastAuditDate" | "accreditationStatus" | "supportingDocumentIds" | "accreditationNotes">>,
 ): Promise<Rto> {
   const data = await apiFetch<{ item: Rto }>(`/masters/rtos/${id}`, {
     method: "PATCH",
@@ -602,4 +604,90 @@ export async function createCommissionPayout({
     createdAt: "",
     updatedAt: "",
   } as CommissionPayout
+}
+
+/* ---------- RPL Partners ---------- */
+
+export interface RplPartnerItem extends RplPartner {}
+
+export async function listRplPartners({
+  status,
+  search,
+}: { status?: string; search?: string } = {}): Promise<RplPartner[]> {
+  const params = new URLSearchParams()
+  if (status) params.set("status", status)
+  if (search) params.set("search", search)
+  const data = await apiFetch<{ items: RplPartner[]; total: number }>(
+    `/rpl-partners?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createRplPartner(
+  p: Omit<RplPartner, "id" | "createdAt" | "updatedAt">,
+): Promise<RplPartner> {
+  const data = await apiFetch<{ rplPartner: RplPartner }>(
+    "/rpl-partners",
+    { method: "POST", body: p },
+  )
+  return data.rplPartner
+}
+
+export async function updateRplPartner(
+  id: string,
+  patch: Partial<Pick<RplPartner, "partnerCode" | "legalName" | "tradingName" | "contactPerson" | "email" | "phone" | "address" | "status" | "notes">>,
+): Promise<RplPartner> {
+  const data = await apiFetch<{ rplPartner: RplPartner }>(
+    `/rpl-partners/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.rplPartner
+}
+
+export async function deleteRplPartner(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/rpl-partners/${id}`, {
+    method: "DELETE",
+  })
+}
+
+export function rplPartnerLabel(p: RplPartner): string {
+  return `${p.tradingName ?? p.legalName} (${p.partnerCode})`
+}
+
+/* ---------- Certificate Deliveries ---------- */
+
+export interface CertificateDeliveryItem extends CertificateDelivery {}
+
+export async function listCertificateDeliveries({
+  orderId,
+  status,
+}: { orderId?: string; status?: string } = {}): Promise<CertificateDelivery[]> {
+  const params = new URLSearchParams()
+  if (orderId) params.set("orderId", orderId)
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: CertificateDelivery[]; total: number }>(
+    `/certificate-deliveries?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createCertificateDelivery(
+  d: Omit<CertificateDelivery, "id" | "createdAt" | "updatedAt">,
+): Promise<CertificateDelivery> {
+  const data = await apiFetch<{ certificateDelivery: CertificateDelivery }>(
+    "/certificate-deliveries",
+    { method: "POST", body: d },
+  )
+  return data.certificateDelivery
+}
+
+export async function updateCertificateDelivery(
+  id: string,
+  patch: Partial<Pick<CertificateDelivery, "deliveryStatus" | "deliveryDate" | "recipient" | "deliveryMethod" | "trackingNumber" | "confirmationDetails" | "deliveryNotes">>,
+): Promise<CertificateDelivery> {
+  const data = await apiFetch<{ certificateDelivery: CertificateDelivery }>(
+    `/certificate-deliveries/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.certificateDelivery
 }
