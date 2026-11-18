@@ -21,18 +21,26 @@ export function makeToken(roleNames: string[] = ["SUPER_ADMIN"], permissions: st
 export function makeSuperAdminToken() {
   return makeToken(["SUPER_ADMIN"], [
     "users.manage", "roles.manage", "clients.view", "clients.manage",
-    "orders.view", "orders.manage", "qualifications.manage", "pricing.manage",
-    "documents.view", "documents.review", "finance.view", "finance.manage",
+    "orders.view", "orders.manage", "rto.manage", "agents.manage",
+    "qualifications.manage", "pricing.manage",
+    "documents.view", "documents.review",
+    "finance.view", "finance.manage", "qb.retry", "qb.manage",
     "reports.view", "audit.view", "settings.manage",
+    "commissions.manage", "commissions.view", "finance.reconcile",
+    "rplPartners.manage", "rplPartners.view",
   ]);
 }
 
 export function makeAdminToken() {
   return makeToken(["ADMIN"], [
     "users.manage", "roles.manage", "clients.view", "clients.manage",
-    "orders.view", "orders.manage", "qualifications.manage", "pricing.manage",
-    "documents.view", "documents.review", "finance.view", "finance.manage",
+    "orders.view", "orders.manage", "rto.manage", "agents.manage",
+    "qualifications.manage", "pricing.manage",
+    "documents.view", "documents.review",
+    "finance.view", "finance.manage", "qb.retry", "qb.manage",
     "reports.view", "audit.view", "settings.manage",
+    "commissions.manage", "commissions.view", "finance.reconcile",
+    "rplPartners.manage", "rplPartners.view",
   ]);
 }
 
