@@ -1,19 +1,20 @@
 import fs from "fs";
 import path from "path";
-import { MongoMemoryReplSet } from "mongodb-memory-server";
+import { randomUUID } from "node:crypto";
+import { inject } from "vitest";
 
 /**
  * Load .env into process.env (vitest does not load it automatically) and
  * point the MongoDB client at a dedicated test database so tests never mutate
  * production data in `skills_connect_admin`.
  *
- * Always uses mongodb-memory-server (replica set) for local testing to avoid
- * the MongoDB Atlas 500-collection free-tier limit, to support MongoDB
- * transactions (commission payouts), and to never touch production data.
- * Any MONGODB_URI/MONGODB_DB from .env is overridden for the test run.
+ * The in-memory replica set is started once by `tests/global-setup.ts` and its
+ * URI is shared with every test worker through Vitest's `provide`/`inject`.
+ * Each test file gets a unique database name on that shared replica set, which
+ * keeps files isolated without starting a separate mongod per worker.
+ * Global teardown awaits `stop()` so temporary MongoDB files are removed after
+ * the whole test run instead of being left behind per worker.
  */
-
-let replSet: Awaited<ReturnType<typeof MongoMemoryReplSet.create>> | null = null;
 
 const envPath = path.resolve(process.cwd(), ".env");
 if (fs.existsSync(envPath)) {
@@ -31,22 +32,15 @@ if (fs.existsSync(envPath)) {
 
 process.env.NODE_ENV = "test";
 
-// Always use a dedicated test database, never the production database.
-process.env.MONGODB_DB = "skills_connect_admin_test";
-
-// Always start an in-memory MongoDB replica set for tests so we never
-// connect to Atlas (avoids the 500-collection free-tier limit) and never
-// touch the production skills_connect_admin database.
-if (!globalThis.__MONGODB_MEMORY_REPLSET__) {
-  replSet = await MongoMemoryReplSet.create({
-    replSet: {
-      name: "rs0",
-      dbName: "skills_connect_admin_test",
-    },
-  });
-  globalThis.__MONGODB_MEMORY_REPLSET__ = replSet;
-} else {
-  replSet = globalThis.__MONGODB_MEMORY_REPLSET__;
+const uri = inject("mongoMemoryServerUri");
+if (!uri) {
+  throw new Error("MongoDB Memory Server URI was not provided by globalSetup");
 }
-const uri = replSet!.getUri("skills_connect_admin_test");
+
+const workerId = process.env.VITEST_WORKER_ID ?? "0";
+const uniqueSuffix = `${process.pid.toString(36)}_${randomUUID().slice(0, 8)}`;
+
+// Always use a dedicated, per-test-file database; never the production DB.
+// MongoDB limits database names to 63 characters, so keep this prefix short.
+process.env.MONGODB_DB = `sca_test_w${workerId}_${uniqueSuffix}`;
 process.env.MONGODB_URI = uri;

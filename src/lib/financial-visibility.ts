@@ -13,6 +13,10 @@
  *  - B2B_AGENT (and any unrecognised non-admin role): all of the above plus
  *    selling price and price-derived revenue aggregates hidden (fail closed).
  *
+ * This check deliberately examines every role claim rather than a single
+ * primary role. A B2B_AGENT claim must mask price/revenue even on a dual-role
+ * account, so central role normalization must not weaken this fail-closed rule.
+ *
  * Keys are deleted rather than set to undefined so callers can rely on fields
  * being absent from the serialized JSON. Arrays and nested objects are walked
  * so report rows cannot bypass the policy.

@@ -3,30 +3,10 @@
  * Mirrors Express `PATCH /roles/:id`.
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
+import { NextResponse } from "next/server";
+import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
-
-const PERMISSIONS = [
-  "users.manage",
-  "roles.manage",
-  "clients.view",
-  "clients.manage",
-  "orders.view",
-  "orders.manage",
-  "rto.manage",
-  "agents.manage",
-  "qualifications.manage",
-  "pricing.manage",
-  "documents.view",
-  "documents.review",
-  "finance.view",
-  "finance.manage",
-  "qb.retry",
-  "reports.view",
-  "audit.view",
-  "settings.manage",
-] as const;
+import { ALL_PERMISSIONS as PERMISSIONS } from "@/lib/permissions";
 
 export const PATCH = withAuth("roles.manage",
   async (req: AuthedRequest, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
@@ -74,8 +54,9 @@ export const PATCH = withAuth("roles.manage",
     const roleName = role.name as string;
     const requested = new Set(body.permissions);
 
-    // Super Admin must keep every permission.
-    if (roleName === "Super Admin") {
+    // Super Admin must keep every permission. Accept the legacy seeded name
+    // as well as the canonical role name so old records cannot be downgraded.
+    if (roleName === "SUPER_ADMIN" || roleName === "Super Admin") {
       const missing = PERMISSIONS.filter((p) => !requested.has(p));
       if (missing.length > 0) {
         return NextResponse.json(

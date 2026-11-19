@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAccessToken } from "@/lib/api-auth";
 import { collection } from "@/lib/db";
+import { resolvePrimaryRole } from "@/lib/permissions";
 import type { RoleName } from "@/lib/types";
 
 export interface AuthUser {
@@ -83,7 +84,7 @@ function verifyToken(handler: RouteHandler): RouteHandler {
         email: payload.email,
         name: payload.name,
         full_name: payload.full_name,
-        role: (payload.role as RoleName | undefined),
+        role: resolvePrimaryRole({ role: payload.role, roleNames: payload.roleNames }) ?? undefined,
         roleNames: payload.roleNames,
         agency_name: payload.agency_name ?? null,
         b2b_tier: payload.b2b_tier,
@@ -136,7 +137,7 @@ export { requirePermission };
  * (legacy records) are therefore admin-only and fail closed.
  */
 export function checkOrderAccess(auth: AuthUser, order: any): boolean {
-  const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+  const role = resolvePrimaryRole(auth);
   const userId = auth.userId;
 
   if (role === "SUPER_ADMIN" || role === "ADMIN") return true;
@@ -162,7 +163,7 @@ export function checkOrderAccess(auth: AuthUser, order: any): boolean {
  * Returns `null` for SUPER_ADMIN / ADMIN to mean "all clients".
  */
 export async function getAccessibleClientIds(auth: AuthUser): Promise<Set<string> | null> {
-  const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+  const role = resolvePrimaryRole(auth);
   if (role === "SUPER_ADMIN" || role === "ADMIN") return null;
 
   const orders = await (await collection("orders")).find({}).toArray();
@@ -188,7 +189,7 @@ export function checkClientAccess(
   client: any,
   accessibleClientIds?: Set<string> | string[] | null,
 ): boolean {
-  const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+  const role = resolvePrimaryRole(auth);
 
   if (role === "SUPER_ADMIN" || role === "ADMIN") return true;
   if (!client || !accessibleClientIds) return false;
@@ -207,7 +208,7 @@ export function checkClientAccess(
  * Mutates and returns the record (caller should apply before serialization).
  */
 export function maskFinancialFields(auth: AuthUser, record: any): any {
-  const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+  const role = resolvePrimaryRole(auth);
   if (role === "SUPER_ADMIN" || role === "ADMIN") return record;
 
   const fieldsToMask = [
@@ -244,7 +245,7 @@ export function maskFinancialFields(auth: AuthUser, record: any): any {
  * can never diverge.
  */
 export function filterOrdersByRole(auth: AuthUser, orders: any[]): any[] {
-  const role = auth.role ?? (auth.roleNames?.[0] as string | undefined);
+  const role = resolvePrimaryRole(auth);
   if (role === "SUPER_ADMIN" || role === "ADMIN") return orders;
   return orders.filter((order: any) => checkOrderAccess(auth, order));
 }

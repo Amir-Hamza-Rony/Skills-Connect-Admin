@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { collection } from "@/lib/db";
-import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { resolvePrimaryRole, ROLE_PERMISSIONS } from "@/lib/permissions";
 import type { RoleName } from "@/lib/types";
 import {
   signAccessToken,
@@ -54,6 +54,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const permissions: string[] = roleNames.flatMap((role) =>
     ROLE_PERMISSIONS[role as RoleName] ?? [],
   );
+  const primaryRole = resolvePrimaryRole({ role: user.role, roleNames }) ?? undefined;
 
   const newRefresh = signRefreshToken({ userId: String(user._id) });
   const newHash = hashRefreshToken(newRefresh);
@@ -72,7 +73,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     name: user.name,
     email: user.email,
     full_name: user.full_name ?? user.name,
-    role: user.role ?? (roleNames[0] as RoleName),
+    role: primaryRole,
     roleNames,
     agency_name: user.agency_name ?? null,
     b2b_tier: user.b2b_tier ?? "SILVER",

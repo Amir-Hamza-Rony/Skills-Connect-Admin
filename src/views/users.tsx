@@ -7,7 +7,7 @@ import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { createUser, listRoles, listUsers, updateUser } from "@/lib/store"
-import { ROLE_PERMISSIONS, ALL_ROLES } from "@/lib/permissions"
+import { ROLE_PERMISSIONS, ALL_ROLES, resolvePrimaryRole } from "@/lib/permissions"
 import { ApiError, messageFor } from "@/lib/api"
 import type { Role, RoleName, User } from "@/lib/types"
 
@@ -94,7 +94,7 @@ export function UsersPage() {
         name: editing.name,
         phone: editing.phone,
         roleNames: draftRoles,
-        role: draftRoles[0],
+        role: resolvePrimaryRole({ roleNames: draftRoles }) ?? undefined,
         active: draftActive,
         agency_name: editing.agency_name,
         b2b_tier: editing.b2b_tier,
@@ -118,7 +118,7 @@ export function UsersPage() {
         name: createDraft.name,
         phone: createDraft.phone || undefined,
         password: createDraft.password,
-        role: createDraft.role,
+        role: resolvePrimaryRole({ roleNames: createDraft.roleNames }) ?? "BDC",
         roleNames: createDraft.roleNames,
         agency_name: createDraft.agency_name || undefined,
         b2b_tier: createDraft.b2b_tier,

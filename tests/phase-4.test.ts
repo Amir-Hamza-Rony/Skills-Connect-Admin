@@ -308,7 +308,10 @@ describe("Phase 4 — Finance summary multi-currency", () => {
     const bdt = body.currencyBreakdown.find((c: any) => c.currency === "BDT");
     expect(aud.invoiced).toBe(5000);
     expect(bdt.invoiced).toBe(6000);
-    expect(body.outstanding).toBe(11000);
+    // Corrected behaviour: AUD and BDT are never added together.
+    expect(body.outstanding).toBeNull();
+    expect(body.mixedCurrency).toBe(true);
+    expect(body.converted).toBe(false);
   });
 });
 
