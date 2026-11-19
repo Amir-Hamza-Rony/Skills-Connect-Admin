@@ -361,7 +361,7 @@ describe("Phase 2 — Commission calculation", () => {
     await ordersColl.insertOne({
       clientId,
       qualificationId: qId,
-      salesAgentId: new ObjectId(),
+      salesAgentId: agentId,
       sourceAgentId: aId,
       rtoId: rId,
       status: "Completed",
@@ -380,7 +380,7 @@ describe("Phase 2 — Commission calculation", () => {
     await ordersColl.insertOne({
       clientId,
       qualificationId: qId,
-      salesAgentId: new ObjectId(),
+      salesAgentId: agentId,
       sourceAgentId: aId,
       rtoId: rId,
       status: "Completed",

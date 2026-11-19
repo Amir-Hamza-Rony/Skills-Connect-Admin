@@ -1,168 +1,20 @@
 "use client"
-import {
-  useEffect,
-  useMemo,
-  useState,
-  type ComponentType,
-} from "react"
-import {
-  Handshake,
-  LayoutDashboard,
-  Send,
-  Wallet,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react"
-import { useRouter } from "next/navigation"
 
-import { ManagementDashboard } from "@/components/dashboard/dashboard"
-import { FinanceDashboardPage } from "@/views/dashboard-finance"
-import { OperationsDashboardPage } from "@/views/dashboard-operations"
-import { AgentDashboardPage } from "@/views/dashboard-agent"
-import { RtoDashboardPage } from "@/views/dashboard-rto"
-import { useAuth } from "@/lib/auth"
-import { useTheme } from "@/lib/theme"
-import type { RoleName } from "@/lib/types"
+import { RoleDashboard } from "@/components/dashboard/role-dashboard"
 
-/* Spec §12 ships five role dashboards. They are surfaced as ONE "Dashboard"
- * nav entry with an in-page view switcher rather than five nav items — a
- * single, professional entry point where each role lands on its own default
- * view but can switch to any other. */
-
-type ViewId = "management" | "finance" | "operations" | "agent" | "rto"
-
-interface DashboardView {
-  id: ViewId
-  label: string
-  icon: LucideIcon
-  subtitle: string
-  Component: ComponentType
-}
-
-const VIEWS: DashboardView[] = [
-  {
-    id: "management",
-    label: "Management",
-    icon: LayoutDashboard,
-    subtitle: "Business overview across sales, documents, RTO and risk",
-    Component: ManagementDashboard,
-  },
-  {
-    id: "finance",
-    label: "Finance",
-    icon: Wallet,
-    subtitle: "Invoicing, collections, margin and reconciliation",
-    Component: FinanceDashboardPage,
-  },
-  {
-    id: "operations",
-    label: "Operations",
-    icon: Workflow,
-    subtitle: "Document queues, workflow stages and task load",
-    Component: OperationsDashboardPage,
-  },
-  {
-    id: "agent",
-    label: "Agent",
-    icon: Handshake,
-    subtitle: "Sales pipeline, conversion and certificate delivery",
-    Component: AgentDashboardPage,
-  },
-  {
-    id: "rto",
-    label: "RTO & Sourcing",
-    icon: Send,
-    subtitle: "Submission pipeline, turnaround and supplier performance",
-    Component: RtoDashboardPage,
-  },
-]
-
-/** Pick the default view for a user's roles (management for broad/admin roles). */
-function defaultViewFor(roles: RoleName[]): ViewId {
-  if (roles.includes("SUPER_ADMIN") || roles.includes("ADMIN"))
-    return "management"
-  if (roles.includes("BDC") || roles.includes("B2B_AGENT")) return "agent"
-  return "management"
-}
-
+/**
+ * Dashboard entry point.
+ *
+ * The previous version exposed five in-page views (management / finance /
+ * operations / agent / rto) that were rendered unconditionally, so any role
+ * could open any view — including finance data it had no permission for —
+ * and several views produced `NaN` because the underlying APIs mask those
+ * fields. It also leaked a debug theme string into the subtitle.
+ *
+ * All four real roles now share one server-authorised experience. The shell
+ * selects tabs and content from the verified role, while the API re-checks
+ * scope and masking on every request. Frontend role checks are cosmetic only.
+ */
 export function Dashboard() {
-  const { user, authLoading } = useAuth()
-  const { theme, resolvedTheme } = useTheme()
-  const roles = useMemo<RoleName[]>(() => user?.roleNames ?? [], [user])
-  const router = useRouter()
-
-  // A shared/bookmarked view (via ?view=) wins; otherwise wait for auth to
-  // resolve so we pick the role default once — no flash of the wrong view.
-  const [view, setView] = useState<ViewId | null>(null)
-
-  useEffect(() => {
-    if (view !== null || authLoading) return
-    const urlView = new URLSearchParams(window.location.search).get(
-      "view",
-    ) as ViewId | null
-    setView(
-      urlView && VIEWS.some((v) => v.id === urlView)
-        ? urlView
-        : defaultViewFor(roles),
-    )
-  }, [view, authLoading, roles])
-
-  const active = VIEWS.find((v) => v.id === view) ?? VIEWS[0]
-  const ActiveComponent = active.Component
-
-  const select = (id: ViewId) => {
-    setView(id)
-    router.replace(`/dashboard?view=${id}`, { scroll: false })
-  }
-
-  return (
-    <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-            Dashboard
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {active.subtitle}
-            {" · "}theme {theme} ({resolvedTheme})
-          </p>
-        </div>
-      </div>
-
-      {/* View switcher — one Dashboard in the nav, five views in-page. */}
-      <div
-        role="tablist"
-        aria-label="Dashboard views"
-        className="flex flex-wrap gap-1 rounded-lg border bg-muted p-1"
-      >
-        {VIEWS.map((v) => {
-          const Icon = v.icon
-          const selected = v.id === active.id
-          return (
-            <button
-              key={v.id}
-              role="tab"
-              aria-selected={selected}
-              onClick={() => select(v.id)}
-              className={
-                "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors " +
-                (selected
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground")
-              }
-            >
-              <Icon className="h-4 w-4" aria-hidden />
-              {v.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {view === null ? (
-        <p className="text-sm text-muted-foreground">Loading dashboard…</p>
-      ) : (
-        <ActiveComponent />
-      )}
-    </div>
-  )
+  return <RoleDashboard />
 }

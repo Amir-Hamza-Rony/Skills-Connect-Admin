@@ -16,7 +16,9 @@ export const GET = withAuth("reports.view",
     const byStage = new Map<string, number>();
     for (const o of accessibleOrders) byStage.set(o.status, (byStage.get(o.status) ?? 0) + 1);
 
-    const total = orders.length;
+    // Denominator must use the same role-scoped set as the stage counts,
+    // otherwise agent conversion percentages leak the wider business total.
+    const total = accessibleOrders.length;
     const completed = byStage.get("Completed") ?? 0;
 
     return NextResponse.json({
