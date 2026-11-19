@@ -28,17 +28,13 @@ import {
 } from "@/lib/fin-store"
 import { listClients, listOrders } from "@/lib/ops-store"
 import type { Client, Invoice, Order, Payment, PaymentMethod, QBSyncRecord } from "@/lib/types"
+import { formatMoney } from "@/lib/money-format"
 import { cn } from "@/lib/utils"
 
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
 import type { PaymentPlan } from "@/lib/types"
-
-const aud = (n: number | null | undefined) => {
-  if (n == null || !Number.isFinite(n)) return "AUD 0.00"
-  return `AUD ${n.toLocaleString("en-AU")}`
-}
 
 const METHODS: PaymentMethod[] = ["Bank Transfer", "Card", "Cash", "Other"]
 
@@ -98,8 +94,9 @@ export function FinancePage() {
 
   useEffect(() => {
     void api
-      .get<{ overdueAmount?: number }>("/reports/finance")
-      .then((r) => setOverdue(Number(r.overdueAmount ?? 0)))
+      .get<{ overdueAmount?: number | null }>("/reports/finance")
+      // Preserve null: a null total means mixed currencies, not zero.
+      .then((r) => setOverdue(r.overdueAmount == null ? null : Number(r.overdueAmount)))
       .catch(() => setOverdue(null))
   }, [])
 
@@ -127,6 +124,8 @@ export function FinancePage() {
 
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients])
   const orderById = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders])
+  // Only defined when the summary is single-currency; mixed totals are null.
+  const summaryCurrency = summary?.currencyBreakdown[0]?.currency
 
   async function refreshPlans(orderId: string) {
     setActivePlan((await getPlan(orderId)) ?? null)
@@ -205,7 +204,7 @@ export function FinancePage() {
       setInvoices(await listInvoices())
       setSummary(await financeSummary())
       setPayResult(
-        `Recorded ${aud(created.amount)} — allocated ${aud(created.allocatedAmount)} (${created.status}).`,
+        `Recorded ${formatMoney(created.amount, created.currency)} — allocated ${formatMoney(created.allocatedAmount, created.currency)} (${created.status}).`,
       )
       setPayOrder("")
       setPayInvoice("")
@@ -283,12 +282,13 @@ export function FinancePage() {
               Multiple currencies are present. Totals are unavailable; use the per-currency breakdown instead. No conversion is applied.
             </p>
           )}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {[
-              { label: "Invoiced", value: aud(summary.invoiced) },
-              { label: "Paid", value: aud(summary.collected) },
-              { label: "Outstanding", value: aud(summary.outstanding) },
-              { label: "Overdue", value: overdue === null ? "Unavailable" : aud(overdue) },
+              { label: "Invoiced", value: formatMoney(summary.invoiced, summaryCurrency) },
+              { label: "Collected", value: formatMoney(summary.collected, summaryCurrency) },
+              { label: "Unallocated", value: formatMoney(summary.unallocated, summaryCurrency) },
+              { label: "Outstanding", value: formatMoney(summary.outstanding, summaryCurrency) },
+              { label: "Overdue", value: formatMoney(overdue, summaryCurrency) },
             ].map((k) => (
               <div key={k.label} className="rounded-xl border bg-card p-4">
                 <p className="text-xs text-muted-foreground">{k.label}</p>
@@ -296,6 +296,21 @@ export function FinancePage() {
               </div>
             ))}
           </div>
+          {summary.currencyBreakdown.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {summary.currencyBreakdown.map((row) => (
+                <div key={row.currency} className="rounded-lg border bg-card/60 p-3 text-xs">
+                  <p className="font-semibold">{row.currency}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    Invoiced {formatMoney(row.invoiced, row.currency)} · Collected{" "}
+                    {formatMoney(row.collected, row.currency)} · Unallocated{" "}
+                    {formatMoney(row.unallocated, row.currency)} · Outstanding{" "}
+                    {formatMoney(row.outstanding, row.currency)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -345,7 +360,7 @@ export function FinancePage() {
                       </Link>
                     ),
                   },
-                  { key: "total", label: "Total", render: (i) => <span className="tabular-nums">{aud(i.total)}</span> },
+                  { key: "total", label: "Total", render: (i) => <span className="tabular-nums">{formatMoney(i.total, i.currency)}</span> },
                   { key: "dueDate", label: "Due", render: (i) => <span className="tabular-nums">{i.dueDate}</span> },
                   { key: "status", label: "Status", render: (i) => <InvoiceBadge status={i.status} /> },
                   { key: "qb", label: "QuickBooks", render: (i) => <QBBadge status={qbMap[i.id] ?? "Not Synced"} /> },
@@ -374,7 +389,7 @@ export function FinancePage() {
                 <option value="">Select order…</option>
                 {orders.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {clientById.get(o.clientId)?.legalName ?? o.id} · {aud(o.sellingPrice)}
+                    {clientById.get(o.clientId)?.legalName ?? o.id} · {formatMoney(o.sellingPrice, o.currency)}
                   </option>
                 ))}
               </select>
@@ -398,8 +413,8 @@ export function FinancePage() {
                 rowLabel={(x) => `${x.dueDate} ${x.amount}`}
                 columns={[
                   { key: "dueDate", label: "Due date" },
-                  { key: "amount", label: "Amount", render: (x) => <span className="tabular-nums">{aud(x.amount)}</span> },
-                  { key: "paidAmount", label: "Paid", render: (x) => <span className="tabular-nums">{aud(x.paidAmount)}</span> },
+                  { key: "amount", label: "Amount", render: (x) => <span className="tabular-nums">{formatMoney(x.amount, orderById.get(activePlan.orderId)?.currency)}</span> },
+                  { key: "paidAmount", label: "Paid", render: (x) => <span className="tabular-nums">{formatMoney(x.paidAmount, orderById.get(activePlan.orderId)?.currency)}</span> },
                   {
                     key: "status",
                     label: "Status",
@@ -445,8 +460,8 @@ export function FinancePage() {
                   ),
                 },
                 { key: "method", label: "Method" },
-                { key: "amount", label: "Amount", render: (p) => <span className="font-medium tabular-nums">{aud(p.amount)}</span> },
-                { key: "allocatedAmount", label: "Allocated", render: (p) => <span className="tabular-nums">{aud(p.allocatedAmount)}</span> },
+                { key: "amount", label: "Amount", render: (p) => <span className="font-medium tabular-nums">{formatMoney(p.amount, p.currency)}</span> },
+                { key: "allocatedAmount", label: "Allocated", render: (p) => <span className="tabular-nums">{formatMoney(p.allocatedAmount, p.currency)}</span> },
                 {
                   key: "status",
                   label: "Status",
@@ -536,7 +551,7 @@ export function FinancePage() {
                 <option value="">Select order…</option>
                 {orders.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {clientById.get(o.clientId)?.legalName ?? o.id} · {aud(o.sellingPrice)}
+                    {clientById.get(o.clientId)?.legalName ?? o.id} · {formatMoney(o.sellingPrice, o.currency)}
                   </option>
                 ))}
               </select>
@@ -547,7 +562,7 @@ export function FinancePage() {
                 <option value="">None</option>
                 {(invoices ?? []).filter((i) => !payOrder || i.orderId === payOrder).map((i) => (
                   <option key={i.id} value={i.id}>
-                    {i.invoiceNumber} · {aud(i.total)}
+                    {i.invoiceNumber} · {formatMoney(i.total, i.currency)}
                   </option>
                 ))}
               </select>
@@ -613,7 +628,7 @@ export function FinancePage() {
               <option value="">Select order…</option>
               {orders.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {clientById.get(o.clientId)?.legalName ?? o.id} · {aud(o.sellingPrice)}
+                  {clientById.get(o.clientId)?.legalName ?? o.id} · {formatMoney(o.sellingPrice, o.currency)}
                 </option>
               ))}
             </select>

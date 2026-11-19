@@ -140,6 +140,8 @@ export interface FinanceSummary {
   /** null when multiple currencies are present — never a cross-currency sum. */
   invoiced: number | null
   collected: number | null
+  /** Receipts not linked to an invoice; reported separately from `collected`. */
+  unallocated: number | null
   outstanding: number | null
   reportCurrency: string
   converted: boolean
@@ -149,6 +151,7 @@ export interface FinanceSummary {
     currency: string
     invoiced: number
     collected: number
+    unallocated: number
     outstanding: number
   }>
 }

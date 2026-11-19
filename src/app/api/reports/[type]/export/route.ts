@@ -93,6 +93,46 @@ async function bufferFromWorkbook(workbook: ExcelJS.Workbook): Promise<Buffer> {
 
 export { buildExcel, bufferFromWorkbook };
 
+const ROW_KEYS = [
+  "rows",
+  "items",
+  "clients",
+  "orders",
+  "supplierCosts",
+  "agentCommission",
+  "monthlySummary",
+  "customers",
+  "buckets",
+  "byQualification",
+  "byAgent",
+  "months",
+] as const;
+
+/**
+ * Extract tabular rows from a report payload. Accepts only arrays; nested
+ * per-currency maps are converted to one row per currency so summary reports
+ * such as finance/revenue/margin export meaningful data instead of "No data".
+ */
+export function extractRows(reportData: any): any[] {
+  if (!reportData || typeof reportData !== "object") return [];
+  for (const key of ROW_KEYS) {
+    const value = reportData[key];
+    if (Array.isArray(value)) return value;
+  }
+  if (reportData.byCurrency && typeof reportData.byCurrency === "object") {
+    return Object.entries(reportData.byCurrency).map(([currency, values]) => ({
+      currency,
+      ...(values && typeof values === "object" ? (values as object) : {}),
+    }));
+  }
+  // Last resort: emit scalar summary fields as a single row.
+  const summary: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(reportData)) {
+    if (value === null || typeof value !== "object") summary[key] = value;
+  }
+  return Object.keys(summary).length > 0 ? [summary] : [];
+}
+
 export const GET = withAuth(
   async (req: AuthedRequest, { params }: { params?: Promise<{ type?: string }> | { type?: string } | undefined }) => {
     const resolvedParams = await (params ?? {});
@@ -134,18 +174,12 @@ export const GET = withAuth(
 
     const reportData = await reportRes.json();
 
-    // Determine the rows array from the response.
-    let rows: any[] = [];
-    let title = type;
+    // Determine the rows array from the response. Only arrays are valid rows:
+    // scalar fields such as `clients` (a count in the finance report) must not
+    // be passed to buildExcel, which would fail on `.map`.
+    const title = type;
     const totalOverdue = reportData.totalOverdue;
-    if (reportData.clients) rows = reportData.clients;
-    else if (reportData.orders) rows = reportData.orders;
-    else if (reportData.supplierCosts) rows = reportData.supplierCosts;
-    else if (reportData.agentCommission) rows = reportData.agentCommission;
-    else if (reportData.monthlySummary) rows = reportData.monthlySummary;
-    else if (reportData.customers) rows = reportData.customers;
-    else if (reportData.buckets) rows = reportData.buckets;
-    else rows = reportData.rows || reportData.items || [];
+    const rows = extractRows(reportData);
 
     const generatedAt = new Date().toISOString();
 

@@ -1,22 +1,41 @@
 /**
  * GET /api/finance/summary — dashboard finance numbers
  *
- * Returns per-currency invoiced/collected/outstanding values. NO currency
- * conversion is performed: `converted` is always false and a requested
+ * Returns per-currency invoiced/collected/unallocated/outstanding values. NO
+ * currency conversion is performed: `converted` is always false and a requested
  * `reportCurrency` is echoed for compatibility only. When more than one
  * currency is present the top-level totals are `null` so callers cannot
  * accidentally present an invalid cross-currency sum as a real total.
+ *
+ * Definitions (shared with /reports/finance and /reports/clients):
+ *   collected   — payments allocated to a live invoice.
+ *   unallocated — receipts with no invoice link, reported separately.
+ * Payments to a void invoice are excluded from both.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { filterOrdersByRole } from "@/middleware/auth";
+import {
+  collectedAmount,
+  isExcludedPayment,
+  isInvoiceCollectedPayment,
+  isUnallocatedReceipt,
+  paymentCurrency,
+  unallocatedAmount,
+  voidInvoiceIdSet,
+} from "@/lib/finance-classification";
 
-type Money = { invoiced: number; collected: number; outstanding: number };
+type Money = {
+  invoiced: number;
+  collected: number;
+  unallocated: number;
+  outstanding: number;
+};
 
 function zero(): Money {
-  return { invoiced: 0, collected: 0, outstanding: 0 };
+  return { invoiced: 0, collected: 0, unallocated: 0, outstanding: 0 };
 }
 
 export const GET = withAuth("finance.view",
@@ -72,18 +91,39 @@ export const GET = withAuth("finance.view",
       byCurrency[cur].invoiced += Number(inv.total ?? 0);
     }
 
+    const voidInvoiceIds = voidInvoiceIdSet(invoices);
     for (const pay of payments) {
-      if (pay.status === "Void" || pay.status === "Refunded") continue;
-      const cur = pay.currency || "AUD";
+      if (isExcludedPayment(pay)) continue;
+      const cur = paymentCurrency(pay);
       if (!byCurrency[cur]) byCurrency[cur] = zero();
-      byCurrency[cur].collected += Number(pay.allocatedAmount ?? 0);
+      // Unallocated receipts are reported separately; they never inflate the
+      // amount collected against invoices.
+      if (isUnallocatedReceipt(pay)) {
+        byCurrency[cur].unallocated += unallocatedAmount(pay);
+      } else if (isInvoiceCollectedPayment(pay, voidInvoiceIds)) {
+        byCurrency[cur].collected += collectedAmount(pay);
+      }
     }
 
-    const currencyBreakdown: Array<{ currency: string; invoiced: number; collected: number; outstanding: number }> = [];
+    const currencyBreakdown: Array<{
+      currency: string;
+      invoiced: number;
+      collected: number;
+      unallocated: number;
+      outstanding: number;
+    }> = [];
 
     for (const [cur, m] of Object.entries(byCurrency)) {
-      const outstanding = Math.max(0, m.invoiced - m.collected);
-      currencyBreakdown.push({ currency: cur, invoiced: m.invoiced, collected: m.collected, outstanding });
+      // Persist the computed balance on the bucket so the single-currency
+      // top-level total is the real balance, not the zero initialiser.
+      m.outstanding = Math.max(0, m.invoiced - m.collected);
+      currencyBreakdown.push({
+        currency: cur,
+        invoiced: m.invoiced,
+        collected: m.collected,
+        unallocated: m.unallocated,
+        outstanding: m.outstanding,
+      });
     }
 
     currencyBreakdown.sort((a, b) => b.outstanding - a.outstanding);
@@ -95,6 +135,7 @@ export const GET = withAuth("finance.view",
     return NextResponse.json({
       invoiced: mixedCurrency ? null : single?.invoiced ?? 0,
       collected: mixedCurrency ? null : single?.collected ?? 0,
+      unallocated: mixedCurrency ? null : single?.unallocated ?? 0,
       outstanding: mixedCurrency ? null : single?.outstanding ?? 0,
       reportCurrency,
       converted: false,

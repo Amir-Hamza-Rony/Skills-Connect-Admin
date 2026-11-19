@@ -490,13 +490,41 @@ export type InvoiceStatus =
   | "Overdue"
   | "Void"
 
+/** Provider-independent external invoice sync state. */
+export type InvoiceExternalSyncStatus =
+  | "Not Synced"
+  | "Pending"
+  | "Synced"
+  | "Failed"
+
+export interface InvoiceExternalError {
+  code: string
+  message: string
+}
+
+export interface InvoiceExternalState {
+  status: InvoiceExternalSyncStatus
+  /** Registered provider name, when a sync has been attempted. */
+  provider: string | null
+  /** Identifier returned by the external provider after a successful sync. */
+  externalInvoiceId: string | null
+  /** Stable key callers can send to the provider to deduplicate retries. */
+  idempotencyKey: string | null
+  attempts: number
+  lastAttemptAt: string | null
+  lastSyncedAt: string | null
+  lastError: InvoiceExternalError | null
+}
+
 export interface Invoice {
   id: string
   orderId: string
   invoiceNumber: string
   total: number
+  currency?: Currency
   dueDate: string
   status: InvoiceStatus
+  external?: InvoiceExternalState | null
   createdAt: string
 }
 
@@ -531,6 +559,7 @@ export interface Payment {
   orderId: string
   invoiceId: string | null
   amount: number
+  currency?: Currency
   date: string
   method: PaymentMethod
   reference: string

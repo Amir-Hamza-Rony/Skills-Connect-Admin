@@ -473,6 +473,21 @@ describe("Phase 2 — Commission approval and payout", () => {
     const agentId = await seedAgent();
     const ruleId = await seedCommissionRule(new ObjectId(), agentId, "BDT");
 
+    // Seed the two eligible deals that produce the 8,000 BDT commission.
+    const db = (await import("@/lib/db")).getDb;
+    const ordersColl = await (await db()).collection("orders");
+    const now = new Date(Date.UTC(2027, 0, 15));
+    for (let i = 0; i < 2; i += 1) {
+      await ordersColl.insertOne({
+        salesAgentId: agentId,
+        status: "Completed",
+        currency: "BDT",
+        createdAt: now,
+        updatedAt: now,
+        history: [],
+      });
+    }
+
     const calc = await calculateCommission(
       authedRequest("POST", "/api/commission-records", {
         action: "calculate",

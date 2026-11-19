@@ -385,7 +385,7 @@ export function RoleDashboard() {
     <div className="space-y-5">
       <Section title="Overview metrics" kpis={data?.kpis.overview ?? []} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartFrame title="Revenue over time" caption="Separate series per source currency — no conversion is applied">
+        <ChartFrame title="Pipeline value over time" caption="Order selling prices by month, grouped by currency — not invoiced or collected revenue; no conversion is applied">
           <LineChart data={charts?.revenueOverTime ?? []} valueKey="amount" seriesKey="currency" />
         </ChartFrame>
         <ChartFrame title="Commission trend" caption="Approved or paid records only">

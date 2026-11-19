@@ -10,6 +10,15 @@ import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection } from "@/lib/db";
 import { filterOrdersByRole } from "@/middleware/auth";
 import { applyFinancialVisibility } from "@/lib/financial-visibility";
+import {
+  collectedAmount,
+  isExcludedPayment,
+  isInvoiceCollectedPayment,
+  isUnallocatedReceipt,
+  paymentCurrency,
+  unallocatedAmount,
+  voidInvoiceIdSet,
+} from "@/lib/finance-classification";
 
 function monthKey(dateStr: string | null | undefined): string {
   if (!dateStr) return "unknown";
@@ -39,14 +48,34 @@ export const GET = withAuth("reports.view",
     ]);
 
     const orders = filterOrdersByRole(auth, allOrders);
+    const accessibleOrderIds = new Set(orders.map((o: any) => String(o._id)));
+
+    // Invoices and payments must be scoped to the same accessible orders;
+    // otherwise a BDC sees business-wide financial aggregates.
+    const scopedInvoices = invoices.filter((i: any) =>
+      accessibleOrderIds.has(String(i.orderId)),
+    );
+    const scopedPayments = payments.filter((p: any) =>
+      accessibleOrderIds.has(String(p.orderId)),
+    );
+    const voidInvoiceIds = voidInvoiceIdSet(scopedInvoices);
 
     // Per-month, per-currency aggregation.
-    const map = new Map<string, Record<string, { invoiced: number; collected: number; outstanding: number; supplierCost: number; commissionEarned: number }>>();
+    const map = new Map<string, Record<string, { invoiced: number; collected: number; unallocated: number; outstanding: number; supplierCost: number; commissionEarned: number }>>();
 
     function ensure(month: string, cur: string) {
       if (!map.has(month)) map.set(month, {});
       const m = map.get(month)!;
-      if (!m[cur]) m[cur] = { invoiced: 0, collected: 0, outstanding: 0, supplierCost: 0, commissionEarned: 0 };
+      if (!m[cur]) {
+        m[cur] = {
+          invoiced: 0,
+          collected: 0,
+          unallocated: 0,
+          outstanding: 0,
+          supplierCost: 0,
+          commissionEarned: 0,
+        };
+      }
       return m[cur];
     }
 
@@ -57,7 +86,7 @@ export const GET = withAuth("reports.view",
       e.supplierCost += Number(o.supplierCostSnapshot ?? 0);
     }
 
-    for (const inv of invoices) {
+    for (const inv of scopedInvoices) {
       if (inv.status === "Void") continue;
       const month = monthKey(inv.createdAt);
       const cur = inv.currency || "AUD";
@@ -66,14 +95,20 @@ export const GET = withAuth("reports.view",
     }
 
     const paidByInvoice = new Map<string, number>();
-    for (const p of payments) {
-      if (p.status === "Void" || p.status === "Refunded") continue;
+    for (const p of scopedPayments) {
+      if (isExcludedPayment(p)) continue;
+      if (isUnallocatedReceipt(p)) {
+        // Attribute unallocated receipts to their own month/currency and keep
+        // them separate from invoice collection.
+        ensure(monthKey(p.date), paymentCurrency(p)).unallocated += unallocatedAmount(p);
+        continue;
+      }
+      if (!isInvoiceCollectedPayment(p, voidInvoiceIds)) continue;
       const invId = String(p.invoiceId);
-      if (!invId) continue;
       const m = paidByInvoice.get(invId) || 0;
-      paidByInvoice.set(invId, m + Number(p.allocatedAmount ?? 0));
+      paidByInvoice.set(invId, m + collectedAmount(p));
     }
-    for (const inv of invoices) {
+    for (const inv of scopedInvoices) {
       if (inv.status === "Void") continue;
       const paid = paidByInvoice.get(String(inv._id)) || 0;
       const month = monthKey(inv.createdAt);
@@ -89,8 +124,11 @@ export const GET = withAuth("reports.view",
       }
     }
 
-    // Commission earned per month (from commission records).
-    const commissionRecords = await (await collection("commission_records")).find({}).toArray();
+    // Commission earned per month. Only approved/paid records are real
+    // earnings; calculated proposals and rejected records are excluded.
+    const commissionRecords = await (await collection("commission_records"))
+      .find({ status: { $in: ["approved", "paid"] } })
+      .toArray();
     for (const rec of commissionRecords) {
       const month = `${rec.periodYear}-${String(rec.periodMonth).padStart(2, "0")}`;
       const cur = rec.commissionCurrency || "AUD";
@@ -98,17 +136,27 @@ export const GET = withAuth("reports.view",
       e.commissionEarned += Number(rec.commissionAmount ?? 0);
     }
 
-    const rows = Array.from(map.entries()).map(([month, byCurrency]) => ({
-      month,
-      byCurrency,
-      totals: {
-        invoiced: Object.values(byCurrency).reduce((s, v) => s + v.invoiced, 0),
-        collected: Object.values(byCurrency).reduce((s, v) => s + v.collected, 0),
-        outstanding: Object.values(byCurrency).reduce((s, v) => s + v.outstanding, 0),
-        supplierCost: Object.values(byCurrency).reduce((s, v) => s + v.supplierCost, 0),
-        commissionEarned: Object.values(byCurrency).reduce((s, v) => s + v.commissionEarned, 0),
-      },
-    })).sort((a, b) => a.month.localeCompare(b.month));
+    const zeroBucket = () => ({
+      invoiced: 0,
+      collected: 0,
+      unallocated: 0,
+      outstanding: 0,
+      supplierCost: 0,
+      commissionEarned: 0,
+    });
+    const rows = Array.from(map.entries()).map(([month, byCurrency]) => {
+      const currencies = Object.keys(byCurrency);
+      return {
+        month,
+        byCurrency,
+        mixedCurrency: currencies.length > 1,
+        totals: currencies.length === 1
+          ? byCurrency[currencies[0]]
+          : currencies.length === 0
+            ? zeroBucket()
+            : null,
+      };
+    }).sort((a, b) => a.month.localeCompare(b.month));
 
     const result = { monthlySummary: rows };
     applyFinancialVisibility(auth, result);

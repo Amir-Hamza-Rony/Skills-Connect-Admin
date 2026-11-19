@@ -156,6 +156,19 @@ export const POST = withAuth(
           err.status = 400;
           throw err;
         }
+        const expectedAmount = Number(record.commissionAmount);
+        if (
+          !Number.isFinite(expectedAmount) ||
+          Math.abs(amount - expectedAmount) > 0.000001 ||
+          currency !== String(record.commissionCurrency ?? "")
+        ) {
+          const err: any = new Error(
+            "Payout amount and currency must match the approved commission record.",
+          );
+          err.code = "BAD_REQUEST";
+          err.status = 400;
+          throw err;
+        }
 
         const now = new Date();
         await payoutsColl.insertOne(

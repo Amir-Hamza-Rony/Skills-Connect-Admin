@@ -23,6 +23,14 @@ import {
   canViewAllFinancials,
   canViewPriceAndRevenue,
 } from "@/lib/financial-visibility";
+import {
+  collectedAmount,
+  isInvoiceCollectedPayment,
+  isUnallocatedReceipt,
+  paymentCurrency,
+  unallocatedAmount,
+  voidInvoiceIdSet,
+} from "@/lib/finance-classification";
 
 type Kpi = {
   id: string;
@@ -37,6 +45,7 @@ type CurrencyTotals = {
   currency: string;
   invoiced: number;
   collected: number;
+  unallocated: number;
   outstanding: number;
   overdue: number;
 };
@@ -110,7 +119,7 @@ export const GET = withAuth("reports.view",
       (await collection("workflow-tasks")).find({}).toArray(),
       (await collection("rto-processing")).find({}).toArray(),
       (await collection("certificates")).find({}).toArray(),
-      (await collection("certificate-deliveries")).find({}).toArray(),
+      (await collection("certificate_deliveries")).find({}).toArray(),
       (await collection("qualifications")).find({}).toArray(),
       (await collection("rtos")).find({}).toArray(),
       (await collection("agents")).find({}).toArray(),
@@ -191,18 +200,26 @@ export const GET = withAuth("reports.view",
       ? (await (await collection("payments")).find({}).toArray()).filter(inScope)
       : [];
 
+    const voidInvoiceIds = voidInvoiceIdSet(scopedInvoices);
     const paidByInvoice = new Map<string, number>();
     for (const p of scopedPayments) {
-      if (p.status === "Void" || p.status === "Refunded") continue;
+      if (!isInvoiceCollectedPayment(p, voidInvoiceIds)) continue;
       const key = String(p.invoiceId);
-      paidByInvoice.set(key, (paidByInvoice.get(key) ?? 0) + Number(p.allocatedAmount ?? 0));
+      paidByInvoice.set(key, (paidByInvoice.get(key) ?? 0) + collectedAmount(p));
     }
 
     const currencyMap = new Map<string, CurrencyTotals>();
     const bucket = (currency: string) => {
       const key = currency || "AUD";
       if (!currencyMap.has(key)) {
-        currencyMap.set(key, { currency: key, invoiced: 0, collected: 0, outstanding: 0, overdue: 0 });
+        currencyMap.set(key, {
+          currency: key,
+          invoiced: 0,
+          collected: 0,
+          unallocated: 0,
+          outstanding: 0,
+          overdue: 0,
+        });
       }
       return currencyMap.get(key)!;
     };
@@ -222,8 +239,8 @@ export const GET = withAuth("reports.view",
       }
     }
     for (const p of scopedPayments) {
-      if (p.status === "Void" || p.status === "Refunded" || p.invoiceId) continue;
-      bucket((p as any).currency).collected += Number(p.allocatedAmount ?? 0);
+      if (!isUnallocatedReceipt(p)) continue;
+      bucket(paymentCurrency(p)).unallocated += unallocatedAmount(p);
     }
     const currencyTotals = Array.from(currencyMap.values())
       .map((b) => ({ ...b, outstanding: Math.max(0, b.outstanding) }))
@@ -231,7 +248,8 @@ export const GET = withAuth("reports.view",
 
     const financeKpis: Kpi[] = currencyTotals.flatMap((b) => [
       { id: `invoiced-${b.currency}`, label: `Invoiced (${b.currency})`, caption: "Excludes void invoices", value: b.invoiced, unit: "money" as const, currency: b.currency },
-      { id: `collected-${b.currency}`, label: `Collected (${b.currency})`, caption: "Allocated payments", value: b.collected, unit: "money" as const, currency: b.currency },
+      { id: `collected-${b.currency}`, label: `Collected (${b.currency})`, caption: "Allocated to invoices", value: b.collected, unit: "money" as const, currency: b.currency },
+      { id: `unallocated-${b.currency}`, label: `Unallocated (${b.currency})`, caption: "Receipts not linked to an invoice", value: b.unallocated, unit: "money" as const, currency: b.currency },
       { id: `outstanding-${b.currency}`, label: `Outstanding (${b.currency})`, caption: "Invoice balance", value: b.outstanding, unit: "money" as const, currency: b.currency },
       { id: `overdue-${b.currency}`, label: `Overdue (${b.currency})`, caption: "Past due, net of payments", value: b.overdue, unit: "money" as const, currency: b.currency },
     ]);

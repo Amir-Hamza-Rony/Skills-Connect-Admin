@@ -13,6 +13,7 @@ import { collection, safeObjectId } from "@/lib/db";
 import { canViewAllFinancials } from "@/lib/financial-visibility";
 
 type Row = {
+  agentId: string;
   agentName: string;
   eligibleDeals: number;
   commissionEarned: number;
@@ -109,27 +110,35 @@ export const GET = withAuth("reports.view",
     ]);
 
     const agentMap = new Map(agents.map((a: any) => [String(a._id), a.name]));
+    const recordCurrencyById = new Map(
+      records.map((rec: any) => [String(rec._id), String(rec.commissionCurrency || "AUD")]),
+    );
 
     const paidByRecord = new Map<string, number>();
     for (const p of payouts) {
       if (p.status === "failed") continue;
       const key = String(p.commissionRecordId);
+      const recordCurrency = recordCurrencyById.get(key);
+      if (!recordCurrency || (p.currency && String(p.currency) !== recordCurrency)) continue;
       paidByRecord.set(key, (paidByRecord.get(key) ?? 0) + Number(p.amount ?? 0));
     }
 
-    const byAgent = new Map<string, Row & { agentId: string }>();
+    // One row per agent and commission currency. A single row must never sum
+    // amounts that are labelled with different currencies.
+    const byAgent = new Map<string, Row>();
     const byCurrency: Record<string, Totals> = {};
 
     for (const rec of records) {
-      const key = String(rec.agentId);
+      const agentId = String(rec.agentId);
       const currency = String(rec.commissionCurrency || "AUD");
+      const key = `${agentId}|${currency}`;
       const earned = Number(rec.commissionAmount ?? 0);
       const paid = paidByRecord.get(String(rec._id)) ?? 0;
       const outstanding = Math.max(0, earned - paid);
 
       const row = byAgent.get(key) ?? {
-        agentId: key,
-        agentName: String(agentMap.get(key) ?? key),
+        agentId,
+        agentName: String(agentMap.get(agentId) ?? agentId),
         eligibleDeals: 0,
         commissionEarned: 0,
         commissionCurrency: currency,
