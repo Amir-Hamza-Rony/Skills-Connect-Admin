@@ -153,6 +153,12 @@ export async function exchangeCodeForTokens(
     const encryptedAccess = encryptToken(accessToken);
     const encryptedRefresh = encryptToken(refreshToken);
 
+    // Fail closed: never store plaintext OAuth tokens. Require a configured
+    // QB_ENCRYPTION_KEY before persisting any token.
+    if (!encryptedAccess || !encryptedRefresh) {
+      return { ok: false, error: "QuickBooks encryption is not configured. Set QB_ENCRYPTION_KEY before connecting." };
+    }
+
     const { collection } = await import("@/lib/db");
     const qbConns = await collection("qb_connections");
     await qbConns.updateOne(
@@ -160,12 +166,8 @@ export async function exchangeCodeForTokens(
       {
         $set: {
           realmId,
-          accessTokenEncrypted: encryptedAccess
-            ? JSON.stringify(encryptedAccess)
-            : accessToken, // degraded: store raw if encryption unavailable
-          refreshTokenEncrypted: encryptedRefresh
-            ? JSON.stringify(encryptedRefresh)
-            : refreshToken,
+          accessTokenEncrypted: JSON.stringify(encryptedAccess),
+          refreshTokenEncrypted: JSON.stringify(encryptedRefresh),
           tokenExpiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
           scope: json.scope ?? null,
           connectionStatus: "connected",
@@ -242,16 +244,18 @@ export async function refreshAccessToken(): Promise<{ ok: boolean; error?: strin
     const encryptedAccess = encryptToken(accessToken);
     const encryptedRefresh = encryptToken(newRefreshToken);
 
+    // Fail closed: never store plaintext OAuth tokens. Require a configured
+    // QB_ENCRYPTION_KEY before persisting any token.
+    if (!encryptedAccess || !encryptedRefresh) {
+      return { ok: false, error: "QuickBooks encryption is not configured. Set QB_ENCRYPTION_KEY before connecting." };
+    }
+
     await qbConns.updateOne(
       {},
       {
         $set: {
-          accessTokenEncrypted: encryptedAccess
-            ? JSON.stringify(encryptedAccess)
-            : accessToken,
-          refreshTokenEncrypted: encryptedRefresh
-            ? JSON.stringify(encryptedRefresh)
-            : newRefreshToken,
+          accessTokenEncrypted: JSON.stringify(encryptedAccess),
+          refreshTokenEncrypted: JSON.stringify(encryptedRefresh),
           tokenExpiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
           connectionStatus: "connected",
           updatedAt: new Date(),

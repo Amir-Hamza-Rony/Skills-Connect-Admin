@@ -1,9 +1,11 @@
 "use client"
-import { useEffect, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useState, type FormEvent } from "react"
 
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { ToastItem, useToast } from "@/components/toast"
 import {
   createExcelTemplate,
   deleteExcelTemplate,
@@ -19,6 +21,8 @@ export function ExcelTemplatesPage() {
   const [name, setName] = useState("")
   const [scope, setScope] = useState("clients")
   const [saving, setSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null)
+  const { toasts, addToast, dismissToast } = useToast()
 
   useEffect(() => {
     void (async () => {
@@ -41,21 +45,28 @@ export function ExcelTemplatesPage() {
       setName("")
       const data = await listExcelTemplates()
       setTemplates(data)
+      addToast({ title: "Template created", variant: "success" })
     } catch (err: any) {
-      alert(err.message || "Failed to create template")
+      addToast({ title: "Failed to create template", description: err.message, variant: "destructive" })
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("Delete this template?")) return
+    setDeleteConfirmOpen(id)
+  }
+
+  const handleDeleteConfirmed = async (id: string) => {
     try {
       await deleteExcelTemplate(id)
       const data = await listExcelTemplates()
       setTemplates(data)
+      setDeleteConfirmOpen(null)
+      addToast({ title: "Template deleted", variant: "success" })
     } catch (err: any) {
-      alert(err.message || "Failed to delete template")
+      setDeleteConfirmOpen(null)
+      addToast({ title: "Failed to delete template", description: err.message, variant: "destructive" })
     }
   }
 
@@ -131,6 +142,23 @@ export function ExcelTemplatesPage() {
           },
         ]}
       />
+
+      <ConfirmDialog
+        open={deleteConfirmOpen !== null}
+        onClose={() => setDeleteConfirmOpen(null)}
+        onConfirm={() => handleDeleteConfirmed(deleteConfirmOpen!)}
+        title="Delete template"
+        description="This action cannot be undone."
+        variant="destructive"
+      />
+
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto w-full max-w-xs">
+            <ToastItem toast={t} onDismiss={() => dismissToast(t.id)} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

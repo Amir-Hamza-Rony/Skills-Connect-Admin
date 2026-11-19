@@ -16,15 +16,32 @@ const CRUMBS: Record<string, [string, string]> = {
   "/rtos": ["Management", "RTOs & Colleges"],
   "/agents": ["Management", "Agents"],
   "/pricing": ["Management", "Supplier Pricing"],
+  "/price-categories": ["Management", "Price Categories"],
+  "/price-lists": ["Management", "Price Lists"],
+  "/additional-fees": ["Management", "Additional Fees"],
+  "/qualification-rto-mappings": ["Management", "Qualification ↔ RTO"],
   "/documents": ["Operations", "Documents"],
   "/workflow": ["Operations", "Workflow"],
+  "/rto-processing": ["Operations", "RTO Processing"],
   "/finance": ["Operations", "Finance"],
+  "/certificate-deliveries": ["Operations", "Certificate Deliveries"],
   "/reports": ["System", "Reports"],
   "/audit": ["System", "Audit"],
   "/users": ["System", "Users"],
   "/roles": ["System", "Roles"],
   "/settings": ["System", "Settings"],
+  "/commission-rules": ["Commission", "Commission Rules"],
+  "/commission-records": ["Commission", "Commission Records"],
+  "/commission-payouts": ["Commission", "Commission Payouts"],
+  "/reconciliation": ["Finance", "Reconciliation"],
+  "/rpl-partners": ["Partners", "RPL Partners"],
+  "/integrations/quickbooks": ["Integrations", "QuickBooks"],
 }
+/** Dynamic routes matched by prefix. */
+const DYNAMIC_CRUMBS: Array<[RegExp, [string, string]]> = [
+  [/^\/orders\//, ["Management", "Orders"]],
+  [/^\/excel\//, ["Excel", "Import"]],
+]
 
 /**
  * Fixed top header: drawer trigger (mobile) + breadcrumb + search trigger
@@ -41,7 +58,11 @@ export function Header({
 }) {
   const pathname = usePathname()
   const { user } = useAuth()
-  const [parent, current] = CRUMBS[pathname] ?? ["Overview", "Dashboard"]
+  const crumb = CRUMBS[pathname]
+  const dynamicCrumb = crumb
+    ? undefined
+    : DYNAMIC_CRUMBS.find(([re]) => re.test(pathname))?.[1]
+  const [parent, current] = crumb ?? dynamicCrumb ?? ["Overview", "Dashboard"]
   const CollapseIcon = collapsed ? PanelLeftOpen : PanelLeftClose
 
   return (
@@ -82,10 +103,12 @@ export function Header({
 
       <button
         type="button"
-        aria-label="Notifications (coming soon)"
+        aria-label="Notifications (not configured)"
         className="rounded-md p-2 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        disabled
       >
         <Bell className="size-5" aria-hidden />
+        <span className="sr-only">Notifications are not yet configured</span>
       </button>
 
       <Link

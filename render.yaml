@@ -77,37 +77,6 @@ services:
     healthCheckPath: /api/health/ready
     autoDeploy: false
 
-  # ---------------------------------------------------------------
-  # Background Worker — BullMQ queue + hourly overdue sweep
-  # Runs separately so jobs stay alive 24/7 (Express reference worker).
-  # ---------------------------------------------------------------
-  - type: worker
-    name: skills-connect-admin-worker
-    env: node
-    plan: standard
-    region: oregon
-    buildCommand: "npm ci && npm run server:build"
-    startCommand: "node server/dist/worker.js"
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: LOG_LEVEL
-        value: info
-      - key: MONGODB_URI
-        sync: false
-      - key: MONGODB_DB
-        value: skills_connect_admin
-      - key: REDIS_URL
-        sync: false
-      - key: QB_REALM_ID
-        sync: false
-      - key: QB_CLIENT_ID
-        sync: false
-      - key: QB_CLIENT_SECRET
-        sync: false
-      - key: QB_SANDBOX
-        value: false
-
 databases:
   - name: skills-connect-redis
     plan: starter

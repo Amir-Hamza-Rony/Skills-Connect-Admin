@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api"
 import {
@@ -40,6 +41,8 @@ export function CommissionRecordsPage() {
   const [search, setSearch] = useState("")
   const [saving, setSaving] = useState(false)
   const [calculateOpen, setCalculateOpen] = useState(false)
+  const [rejectOpen, setRejectOpen] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
@@ -110,18 +113,22 @@ export function CommissionRecordsPage() {
   }
 
   async function reject(record: CommissionRecord) {
-    const reason = window.prompt("Rejection reason (required):")
-    if (reason === null || !reason.trim()) {
+    setRejectOpen(record.id)
+    setRejectReason("")
+  }
+
+  async function handleRejectConfirmed(record: CommissionRecord) {
+    if (!rejectReason.trim()) {
       setError("Rejection reason is required.")
       return
     }
+    setRejectOpen(null)
     setError(null)
     setSaving(true)
     try {
-      // Reject via API is not exposed as a store function yet; use the Bearer-aware client.
       const data = await api.post<{ commissionRecord: CommissionRecord }>(
         `/commission-records/${record.id}/reject`,
-        { rejectionReason: reason.trim() },
+        { rejectionReason: rejectReason.trim() },
       )
       setRows((prev) =>
         prev?.map((r) => (r.id === data.commissionRecord.id ? data.commissionRecord : r)) ?? null,
@@ -130,6 +137,7 @@ export function CommissionRecordsPage() {
       setError(err?.message ?? "Failed to reject commission record.")
     } finally {
       setSaving(false)
+      setRejectReason("")
     }
   }
 
@@ -306,6 +314,38 @@ export function CommissionRecordsPage() {
           <div className="flex justify-end gap-2">
             <Button type="submit" disabled={calculating}>
               {calculating ? "Calculating…" : "Calculate commission"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={rejectOpen !== null}
+        onClose={() => setRejectOpen(null)}
+        title="Reject commission record"
+        description="Provide a reason for rejecting this commission record."
+      >
+        <form onSubmit={(e) => { e.preventDefault(); if (rejectOpen !== null) void handleRejectConfirmed({ id: rejectOpen } as CommissionRecord) }} className="space-y-3">
+          <div className="space-y-1.5">
+            <label htmlFor="reject-reason" className="text-sm font-medium">Rejection reason</label>
+            <textarea
+              id="reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              className={inputCls}
+              placeholder="Required"
+            />
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">{error}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRejectOpen(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!rejectReason.trim() || saving}>
+              {saving ? "Rejecting…" : "Reject"}
             </Button>
           </div>
         </form>
