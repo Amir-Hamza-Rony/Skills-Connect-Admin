@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { api } from "@/lib/api"
 
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -28,12 +29,18 @@ export function QuickBooksPage() {
 
   useEffect(() => {
     void (async () => {
-      const [st, sy] = await Promise.all([
-        fetch("/api/integrations/quickbooks/status").then((r) => r.json()),
-        fetch("/api/integrations/quickbooks/sync").then((r) => r.json()),
-      ])
-      setStatus(st)
-      setSyncs(sy.records ?? [])
+      try {
+        const [st, sy] = await Promise.all([
+          api.get<any>("/integrations/quickbooks/status"),
+          api.get<{ records?: any[] }>("/integrations/quickbooks/sync"),
+        ])
+        setStatus(st)
+        setSyncs(sy.records ?? [])
+      } catch {
+        setStatus(null)
+        setSyncs([])
+        setError("QuickBooks status is unavailable.")
+      }
     })()
   }, [])
 
@@ -41,17 +48,11 @@ export function QuickBooksPage() {
     setError(null)
     setConnecting(true)
     try {
-      const res = await fetch("/api/integrations/quickbooks/connect", { method: "GET" })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setError(err.message ?? "Connect failed.")
-        return
-      }
-      const data = await res.json()
+      const data = await api.get<{ url: string }>("/integrations/quickbooks/connect")
       setConnectUrl(data.url)
       setConnectDialog(true)
-    } catch {
-      setError("Connect failed.")
+    } catch (err: any) {
+      setError(err?.message ?? "Connect failed.")
     } finally {
       setConnecting(false)
     }
@@ -61,17 +62,10 @@ export function QuickBooksPage() {
     setError(null)
     setSaving(true)
     try {
-      const res = await fetch("/api/integrations/quickbooks/disconnect", {
-        method: "POST",
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setError(err.message ?? "Disconnect failed.")
-        return
-      }
+      await api.post("/integrations/quickbooks/disconnect")
       setStatus((prev: any) => (prev ? { ...prev, connectionStatus: "disconnected", authorised: false } : prev))
-    } catch {
-      setError("Disconnect failed.")
+    } catch (err: any) {
+      setError(err?.message ?? "Disconnect failed.")
     } finally {
       setSaving(false)
     }

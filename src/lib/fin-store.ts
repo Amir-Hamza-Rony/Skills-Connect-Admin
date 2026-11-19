@@ -137,10 +137,14 @@ export async function reverseAllocation(id: string, _actorId: string): Promise<{
 /* ---------- Summary (real API) ---------- */
 
 export interface FinanceSummary {
-  invoiced: number
-  collected: number
-  outstanding: number
+  /** null when multiple currencies are present — never a cross-currency sum. */
+  invoiced: number | null
+  collected: number | null
+  outstanding: number | null
   reportCurrency: string
+  converted: boolean
+  mixedCurrency: boolean
+  note: string | null
   currencyBreakdown: Array<{
     currency: string
     invoiced: number

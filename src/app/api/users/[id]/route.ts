@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
 import { collection, toObjectId } from "@/lib/db";
+import { resolvePrimaryRole } from "@/lib/permissions";
 
 export const GET = withAuth("users.manage",
   async (req, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
@@ -20,7 +21,7 @@ export const GET = withAuth("users.manage",
       full_name: user.full_name ?? user.name,
       email: user.email,
       phone: user.phone,
-      role: user.role ?? (user.roleNames?.[0] ?? null),
+      role: resolvePrimaryRole(user),
       roleNames: user.roleNames ?? [],
       agency_name: user.agency_name ?? null,
       b2b_tier: user.b2b_tier ?? "SILVER",
@@ -41,8 +42,22 @@ export const PATCH = withAuth("users.manage",
     const update: Record<string, unknown> = { updatedAt: new Date() };
     if (name !== undefined) update.name = name;
     if (phone !== undefined) update.phone = phone;
-    if (role !== undefined) update.role = role;
-    if (roleNames !== undefined) update.roleNames = roleNames;
+    if (roleNames !== undefined) {
+      const names = Array.isArray(roleNames) ? roleNames : [];
+      const primaryRole = resolvePrimaryRole({ role, roleNames: names });
+      if (!primaryRole) {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: "At least one valid role is required." } },
+          { status: 400 },
+        );
+      }
+      update.roleNames = names;
+      // Keep the legacy scalar derived from roleNames so PATCH cannot
+      // reintroduce the stale-role mismatch.
+      update.role = primaryRole;
+    } else if (role !== undefined) {
+      update.role = role;
+    }
     if (agency_name !== undefined) update.agency_name = agency_name;
     if (b2b_tier !== undefined) update.b2b_tier = b2b_tier;
     if (default_commission_pct !== undefined) update.default_commission_pct = default_commission_pct;

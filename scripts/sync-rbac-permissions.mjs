@@ -51,7 +51,7 @@ if (!uri) {
 }
 
 // Canonical RoleName values, in priority order.
-const ROLE_NAME_NORMALIZATION: Record<string, string> = {
+const ROLE_NAME_NORMALIZATION = {
   "super admin": "SUPER_ADMIN",
   "super_admin": "SUPER_ADMIN",
   "Super Admin": "SUPER_ADMIN",
@@ -86,8 +86,8 @@ async function main() {
       if (!user) break;
       scanned += 1;
 
-      const updates: Record<string, unknown> = {};
-      const roleNames: string[] = Array.isArray(user.roleNames)
+      const updates = {};
+      const roleNames = Array.isArray(user.roleNames)
         ? user.roleNames.map(String)
         : [];
 

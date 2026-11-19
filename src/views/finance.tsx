@@ -8,6 +8,7 @@ import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
+import { api } from "@/lib/api"
 import { hasPermission } from "@/lib/permissions"
 import {
   addInstalment,
@@ -93,6 +94,14 @@ export function FinancePage() {
   const [payMethod, setPayMethod] = useState<PaymentMethod>("Bank Transfer")
   const [payRef, setPayRef] = useState("")
   const [payResult, setPayResult] = useState<string | null>(null)
+  const [overdue, setOverdue] = useState<number | null>(null)
+
+  useEffect(() => {
+    void api
+      .get<{ overdueAmount?: number }>("/reports/finance")
+      .then((r) => setOverdue(Number(r.overdueAmount ?? 0)))
+      .catch(() => setOverdue(null))
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -268,18 +277,25 @@ export function FinancePage() {
       </div>
 
       {summary && (
-        <div className="grid grid-cols-2 gap-3 pt-4 lg:grid-cols-4">
-          {[
-            { label: "Invoiced", value: aud(summary.invoiced) },
-            { label: "Paid", value: aud(summary.collected) },
-            { label: "Outstanding", value: aud(summary.outstanding) },
-            { label: "Overdue", value: aud(summary.outstanding) },
-          ].map((k) => (
-            <div key={k.label} className="rounded-xl border bg-card p-4">
-              <p className="text-xs text-muted-foreground">{k.label}</p>
-              <p className="mt-1 text-lg font-bold tabular-nums">{k.value}</p>
-            </div>
-          ))}
+        <div className="space-y-2 pt-4">
+          {summary.mixedCurrency && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-300">
+              Multiple currencies are present. Totals are unavailable; use the per-currency breakdown instead. No conversion is applied.
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { label: "Invoiced", value: aud(summary.invoiced) },
+              { label: "Paid", value: aud(summary.collected) },
+              { label: "Outstanding", value: aud(summary.outstanding) },
+              { label: "Overdue", value: overdue === null ? "Unavailable" : aud(overdue) },
+            ].map((k) => (
+              <div key={k.label} className="rounded-xl border bg-card p-4">
+                <p className="text-xs text-muted-foreground">{k.label}</p>
+                <p className="mt-1 text-lg font-bold tabular-nums">{k.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

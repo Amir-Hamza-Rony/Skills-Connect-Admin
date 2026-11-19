@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { collection } from "@/lib/db";
-import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { resolvePrimaryRole, ROLE_PERMISSIONS } from "@/lib/permissions";
 import type { RoleName } from "@/lib/types";
 import {
   verifyPassword,
@@ -108,13 +108,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const permissions: string[] = roleNames.flatMap((role) =>
       ROLE_PERMISSIONS[role as RoleName] ?? [],
     );
+    // roleNames is authoritative; the legacy scalar can be stale (e.g. an
+    // ADMIN account still carrying role: "BDC"). Never let it win here.
+    const primaryRole = resolvePrimaryRole({ role: user.role, roleNames }) ?? undefined;
 
     const accessToken = signAccessToken({
       userId: String(user._id),
       name: user.name,
       email: user.email,
       full_name: user.full_name ?? user.name,
-      role: user.role ?? roleNames[0],
+      role: primaryRole,
       roleNames,
       agency_name: user.agency_name ?? null,
       b2b_tier: user.b2b_tier ?? "SILVER",
@@ -140,7 +143,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         name: user.name,
         full_name: user.full_name ?? user.name,
         email: user.email,
-        role: user.role ?? (roleNames[0] as RoleName),
+        role: primaryRole,
         roleNames,
         agency_name: user.agency_name ?? null,
         b2b_tier: user.b2b_tier ?? "SILVER",

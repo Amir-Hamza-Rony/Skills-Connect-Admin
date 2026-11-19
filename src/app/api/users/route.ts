@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth, requirePermission } from "@/middleware/auth";
 import { collection } from "@/lib/db";
 import { hashPassword } from "@/lib/api-auth";
+import { resolvePrimaryRole } from "@/lib/permissions";
 
 export const GET = withAuth("users.manage",
   async (req) => {
@@ -19,7 +20,7 @@ export const GET = withAuth("users.manage",
         full_name: u.full_name ?? u.name,
         email: u.email,
         phone: u.phone,
-        role: u.role ?? (u.roleNames?.[0] ?? null),
+        role: resolvePrimaryRole(u),
         roleNames: u.roleNames ?? [],
         agency_name: u.agency_name ?? null,
         b2b_tier: u.b2b_tier ?? "SILVER",
@@ -47,13 +48,22 @@ export const POST = withAuth("users.manage",
     const { hash } = await hashPassword(password);
     const now = new Date();
     const roleNamesArray = roleNames && Array.isArray(roleNames) ? roleNames : [role];
+    // Keep the legacy scalar consistent with the authoritative role list so
+    // new accounts cannot reproduce the ADMIN/B2B_AGENT label drift.
+    const primaryRole = resolvePrimaryRole({ role, roleNames: roleNamesArray });
+    if (!primaryRole) {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "At least one valid role is required." } },
+        { status: 400 },
+      );
+    }
     const result = await users.insertOne({
       email: email.toLowerCase(),
       name,
       full_name: name,
       phone: phone ?? "",
       passwordHash: hash,
-      role,
+      role: primaryRole,
       roleNames: roleNamesArray,
       agency_name: agency_name ?? null,
       b2b_tier: b2b_tier ?? "SILVER",
@@ -72,7 +82,7 @@ export const POST = withAuth("users.manage",
         full_name: name,
         email: email.toLowerCase(),
         phone: phone ?? "",
-        role,
+        role: primaryRole,
         roleNames: roleNamesArray,
         agency_name: agency_name ?? null,
         b2b_tier: b2b_tier ?? "SILVER",

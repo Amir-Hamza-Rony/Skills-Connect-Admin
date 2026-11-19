@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { api } from "@/lib/api"
 import {
   agentLabel,
   approveCommissionRecord,
@@ -117,14 +118,11 @@ export function CommissionRecordsPage() {
     setError(null)
     setSaving(true)
     try {
-      // Reject via API is not exposed as a store function yet; use fetch directly.
-      const res = await fetch(`/api/commission-records/${record.id}/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rejectionReason: reason.trim() }),
-      })
-      if (!res.ok) throw new Error("Reject failed")
-      const data = await res.json()
+      // Reject via API is not exposed as a store function yet; use the Bearer-aware client.
+      const data = await api.post<{ commissionRecord: CommissionRecord }>(
+        `/commission-records/${record.id}/reject`,
+        { rejectionReason: reason.trim() },
+      )
       setRows((prev) =>
         prev?.map((r) => (r.id === data.commissionRecord.id ? data.commissionRecord : r)) ?? null,
       )

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
 
@@ -51,15 +52,14 @@ const [resolveNote, setResolveNote] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
-      const res = await fetch(
-        `/api/reconciliation?status=${statusFilter}&entityType=${entityFilter || ""}`,
-      )
-      if (!res.ok) {
+      try {
+        const query = new URLSearchParams({ status: statusFilter, entityType: entityFilter })
+        const data = await api.get<{ items: any[] }>(`/reconciliation?${query.toString()}`)
+        setRows(data.items)
+      } catch {
         setError("Failed to load reconciliation items.")
-        return
+        setRows([])
       }
-      const data = await res.json()
-      setRows(data.items)
     })()
   }, [statusFilter, entityFilter])
 
@@ -87,16 +87,10 @@ const [resolveNote, setResolveNote] = useState<string | null>(null)
     }
     setSaving(true)
     try {
-      const res = await fetch(`/api/reconciliation/${resolveId}/resolve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: resolveStatus, resolutionNote: resolveNote.trim() }),
+      await api.post(`/reconciliation/${resolveId}/resolve`, {
+        status: resolveStatus,
+        resolutionNote: resolveNote.trim(),
       })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setError(err.message ?? "Resolve failed.")
-        return
-      }
       setRows((prev) =>
         prev?.map((r) => (r.id === resolveId ? { ...r, status: resolveStatus } : r)) ?? null,
       )

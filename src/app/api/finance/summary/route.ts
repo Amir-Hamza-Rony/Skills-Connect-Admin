@@ -1,10 +1,11 @@
 /**
  * GET /api/finance/summary — dashboard finance numbers
  *
- * Returns per-currency breakdown (invoiced/collected/outstanding) plus an
- * optional reporting-currency conversion using stored exchange rates. Never
- * recalculates historical transactions using today's rate — only stored
- * exchange-rate snapshots are used.
+ * Returns per-currency invoiced/collected/outstanding values. NO currency
+ * conversion is performed: `converted` is always false and a requested
+ * `reportCurrency` is echoed for compatibility only. When more than one
+ * currency is present the top-level totals are `null` so callers cannot
+ * accidentally present an invalid cross-currency sum as a real total.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -78,24 +79,29 @@ export const GET = withAuth("finance.view",
       byCurrency[cur].collected += Number(pay.allocatedAmount ?? 0);
     }
 
-    const totals: Money = zero();
     const currencyBreakdown: Array<{ currency: string; invoiced: number; collected: number; outstanding: number }> = [];
 
     for (const [cur, m] of Object.entries(byCurrency)) {
       const outstanding = Math.max(0, m.invoiced - m.collected);
-      totals.invoiced += m.invoiced;
-      totals.collected += m.collected;
-      totals.outstanding += outstanding;
       currencyBreakdown.push({ currency: cur, invoiced: m.invoiced, collected: m.collected, outstanding });
     }
 
     currencyBreakdown.sort((a, b) => b.outstanding - a.outstanding);
 
+    const currencies = Object.keys(byCurrency);
+    const mixedCurrency = currencies.length > 1;
+    const single = currencies.length === 1 ? byCurrency[currencies[0]] : null;
+
     return NextResponse.json({
-      invoiced: totals.invoiced,
-      collected: totals.collected,
-      outstanding: totals.outstanding,
+      invoiced: mixedCurrency ? null : single?.invoiced ?? 0,
+      collected: mixedCurrency ? null : single?.collected ?? 0,
+      outstanding: mixedCurrency ? null : single?.outstanding ?? 0,
       reportCurrency,
+      converted: false,
+      mixedCurrency,
+      note: mixedCurrency
+        ? "Multiple currencies are present. Use currencyBreakdown; no conversion is applied."
+        : null,
       currencyBreakdown,
     });
   },

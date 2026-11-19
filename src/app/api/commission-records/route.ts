@@ -228,12 +228,39 @@ export const POST = withAuth(
       ? rule.eligibleOrderStatuses
       : [];
 
+    // Attribution comes from the approved rule's responsibility (or the
+    // agent's own type for an agent-specific rule). Never count another
+    // responsibility's orders: the three relationships are deliberately
+    // separate and are not interchangeable.
+    const responsibility = rule.responsibility ?? agentDoc.type;
+    const RESPONSIBILITY_FIELDS: Record<string, string> = {
+      sales_closing: "salesAgentId",
+      certificate_source: "sourceAgentId",
+      rto_contact: "rtoContactId",
+    };
+    const ownershipField = RESPONSIBILITY_FIELDS[String(responsibility)];
+    if (!ownershipField) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "UNSUPPORTED_RESPONSIBILITY",
+            message: "The rule has no supported agent responsibility; no orders were counted.",
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    // Legacy records may store these ids as strings rather than ObjectIds.
+    const agentIdValues = [agentId, String(agentId)];
+
     const orders = await (await collection("orders"))
       .aggregate([
         {
           $match: {
             createdAt: { $gte: start, $lt: end },
             status: { $in: eligibleStatuses },
+            [ownershipField]: { $in: agentIdValues },
           },
         },
         {

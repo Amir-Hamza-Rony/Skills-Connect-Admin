@@ -11,6 +11,7 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     setupFiles: ["./tests/setup.ts"],
+    globalSetup: ["./tests/global-setup.ts"],
     teardownTimeout: 30000,
     testTimeout: 10000,
     pool: "forks",
