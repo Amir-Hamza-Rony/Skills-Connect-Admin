@@ -12,8 +12,13 @@ import { NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { ORDER_STATUS_GROUPS, type OrderStatus } from "@/lib/types";
 
 const PERMISSION = "commissions.manage";
+
+const VALID_ORDER_STATUSES = new Set<OrderStatus>(
+  ORDER_STATUS_GROUPS.flatMap((group) => group.statuses),
+);
 
 function mapDoc(d: any) {
   return {
@@ -192,25 +197,37 @@ export const POST = withAuth(
     }
 
     const now = new Date();
-    const rules = await (await collection("agent_commission_rules"))
+    const { start, end } = monthRange(periodMonth, periodYear);
+
+    const candidateRules = await (await collection("agent_commission_rules"))
       .find({
         status: "active",
         approvalStatus: "approved",
-        $and: [
-          { $or: [{ agentId }, { responsibility: agentDoc.type, agentId: null }] },
-          { $or: [{ effectiveTo: null }, { effectiveTo: { $gte: now } }] },
-        ],
-        $expr: {
-          $lte: [
-            { $dateFromString: { dateString: "$effectiveFrom", onError: "$effectiveFrom" } },
-            now,
-          ],
-        },
+        $or: [{ agentId }, { responsibility: agentDoc.type, agentId: null }],
       } as any)
       .toArray();
 
-    const rule = rules[0];
-    if (!rule) {
+    // Rule validity is checked against the requested commission period, not
+    // wall-clock time. Both BSON dates and legacy ISO strings are supported.
+    const applicableRules = candidateRules.filter((candidate: any) => {
+      const effectiveFrom = candidate.effectiveFrom
+        ? new Date(candidate.effectiveFrom)
+        : null;
+      if (
+        !effectiveFrom ||
+        Number.isNaN(effectiveFrom.getTime()) ||
+        effectiveFrom > end
+      ) {
+        return false;
+      }
+      if (candidate.effectiveTo) {
+        const effectiveTo = new Date(candidate.effectiveTo);
+        if (Number.isNaN(effectiveTo.getTime()) || effectiveTo < start) return false;
+      }
+      return true;
+    });
+
+    if (applicableRules.length === 0) {
       return NextResponse.json(
         {
           error: {
@@ -221,12 +238,44 @@ export const POST = withAuth(
         { status: 400 },
       );
     }
+    if (applicableRules.length > 1) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "AMBIGUOUS_RULE",
+            message: "More than one approved rule applies to this agent and period; no precedence policy is configured.",
+          },
+        },
+        { status: 400 },
+      );
+    }
+    const rule = applicableRules[0];
 
-    // Aggregate eligible orders for the period.
-    const { start, end } = monthRange(periodMonth, periodYear);
-    const eligibleStatuses = Array.isArray(rule.eligibleOrderStatuses)
-      ? rule.eligibleOrderStatuses
-      : [];
+    // Aggregate eligible orders for the period. Eligibility statuses come only
+    // from the stored rule; an unconfigured rule fails closed.
+    if (!Array.isArray(rule.eligibleOrderStatuses) || rule.eligibleOrderStatuses.length === 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "ELIGIBILITY_NOT_CONFIGURED",
+            message: "The applicable rule has no eligible order statuses configured.",
+          },
+        },
+        { status: 400 },
+      );
+    }
+    const eligibleStatuses = rule.eligibleOrderStatuses.map((status: unknown) => String(status));
+    if (eligibleStatuses.some((status: string) => !VALID_ORDER_STATUSES.has(status as OrderStatus))) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "INVALID_ELIGIBILITY_STATUS",
+            message: "The applicable rule contains an unknown order status.",
+          },
+        },
+        { status: 400 },
+      );
+    }
 
     // Attribution comes from the approved rule's responsibility (or the
     // agent's own type for an agent-specific rule). Never count another

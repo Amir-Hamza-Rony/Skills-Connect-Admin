@@ -1,11 +1,13 @@
 "use client"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ToastItem, useToast } from "@/components/toast"
 import {
   createCommissionRule,
   deleteCommissionRule,
@@ -60,6 +62,8 @@ export function CommissionRulesPage() {
   >("draft")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null)
+  const { toasts, addToast, dismissToast } = useToast()
 
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
 
@@ -199,14 +203,24 @@ export function CommissionRulesPage() {
   }
 
   async function removeRule(r: AgentCommissionRule) {
-    if (!window.confirm(`Delete commission rule for ${agentById.get(r.agentId ?? "")?.name ?? r.responsibility ?? "agent"}?`)) return
+    setDeleteConfirmOpen(r.id)
+  }
+
+  async function handleDeleteConfirmed(id: string) {
+    const r = rows?.find((x) => x.id === id)
+    if (!r) {
+      setDeleteConfirmOpen(null)
+      return
+    }
+    setDeleteConfirmOpen(null)
     setError(null)
     setSaving(true)
     try {
       await deleteCommissionRule(r.id)
       setRows((prev) => prev?.filter((x) => x.id !== r.id) ?? null)
+      addToast({ title: "Commission rule deleted", variant: "success" })
     } catch (err: any) {
-      setError(err?.message ?? "Failed to delete commission rule.")
+      addToast({ title: "Failed to delete commission rule", description: err.message, variant: "destructive" })
     } finally {
       setSaving(false)
     }
@@ -731,6 +745,23 @@ export function CommissionRulesPage() {
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen !== null}
+        onClose={() => setDeleteConfirmOpen(null)}
+        onConfirm={() => handleDeleteConfirmed(deleteConfirmOpen!)}
+        title="Delete commission rule"
+        description="This action cannot be undone."
+        variant="destructive"
+      />
+
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto w-full max-w-xs">
+            <ToastItem toast={t} onDismiss={() => dismissToast(t.id)} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -1,11 +1,13 @@
 "use client"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ToastItem, useToast } from "@/components/toast"
 import {
   createPriceCategory,
   deletePriceCategory,
@@ -33,6 +35,8 @@ export function PriceCategoriesPage() {
   const [status, setStatus] = useState<"active" | "inactive">("active")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null)
+  const { toasts, addToast, dismissToast } = useToast()
 
   useEffect(() => {
     void (async () => setRows(await listPriceCategories()))()
@@ -121,14 +125,24 @@ export function PriceCategoriesPage() {
   }
 
   async function removeCategory(c: PriceCategory) {
-    if (!window.confirm(`Delete price category ${c.code}?`)) return
+    setDeleteConfirmOpen(c.id)
+  }
+
+  async function handleDeleteConfirmed(id: string) {
+    const c = rows?.find((x) => x.id === id)
+    if (!c) {
+      setDeleteConfirmOpen(null)
+      return
+    }
+    setDeleteConfirmOpen(null)
     setError(null)
     setSaving(true)
     try {
       await deletePriceCategory(c.id)
       setRows((prev) => prev?.filter((r) => r.id !== c.id) ?? null)
+      addToast({ title: "Price category deleted", variant: "success" })
     } catch (err: any) {
-      setError(err?.message ?? "Failed to delete price category.")
+      addToast({ title: "Failed to delete price category", description: err.message, variant: "destructive" })
     } finally {
       setSaving(false)
     }
@@ -368,6 +382,23 @@ export function PriceCategoriesPage() {
           </div>
         </form>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen !== null}
+        onClose={() => setDeleteConfirmOpen(null)}
+        onConfirm={() => handleDeleteConfirmed(deleteConfirmOpen!)}
+        title="Delete price category"
+        description="This action cannot be undone."
+        variant="destructive"
+      />
+
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto w-full max-w-xs">
+            <ToastItem toast={t} onDismiss={() => dismissToast(t.id)} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

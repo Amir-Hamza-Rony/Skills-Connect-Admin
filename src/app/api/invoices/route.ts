@@ -13,6 +13,7 @@ import { withAuth, requirePermission, type AuthedRequest } from "@/middleware/au
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { enqueueSync } from "@/lib/quickbooks";
+import { defaultInvoiceExternalState } from "@/lib/invoice-integration";
 import type { Currency, InvoiceLineItem, QBSyncStatus2 } from "@/lib/types";
 
 function invalidId() {
@@ -24,6 +25,36 @@ function invalidId() {
 
 function lineItemTotal(item: InvoiceLineItem): number {
   return (item.amount * item.quantity) + item.taxAmount;
+}
+
+/**
+ * Line items feed the stored invoice total, so validate them before use.
+ * No currency conversion is configured: a line item's currency must equal the
+ * invoice currency. Invalid items fail closed rather than producing NaN or
+ * silently mixing currencies.
+ */
+function validateLineItems(
+  items: InvoiceLineItem[],
+  invoiceCurrency: string,
+): { code: string; message: string } | null {
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      return { code: "INVALID_LINE_ITEM", message: "Each line item must be an object." };
+    }
+    if (typeof item.amount !== "number" || !Number.isFinite(item.amount) || item.amount < 0) {
+      return { code: "INVALID_LINE_ITEM", message: "Line item amount must be a finite, non-negative number." };
+    }
+    if (typeof item.quantity !== "number" || !Number.isFinite(item.quantity) || item.quantity < 0) {
+      return { code: "INVALID_LINE_ITEM", message: "Line item quantity must be a finite, non-negative number." };
+    }
+    if (typeof item.taxAmount !== "number" || !Number.isFinite(item.taxAmount) || item.taxAmount < 0) {
+      return { code: "INVALID_LINE_ITEM", message: "Line item taxAmount must be a finite, non-negative number." };
+    }
+    if (typeof item.currency !== "string" || item.currency !== invoiceCurrency) {
+      return { code: "CURRENCY_MISMATCH", message: "Line item currency must match the invoice currency." };
+    }
+  }
+  return null;
 }
 
 export const GET = withAuth("finance.view",
@@ -71,6 +102,7 @@ export const GET = withAuth("finance.view",
         history: d.history,
         qbReference: d.qbReference,
         qbSyncStatus: d.qbSyncStatus,
+        external: d.external ?? null,
         createdAt: d.createdAt,
       })),
       total,
@@ -129,6 +161,13 @@ export const POST = withAuth("finance.manage",
     // Compute totals server-side from line items. Client-submitted totals are
     // not trusted. Fall back to order selling price + fees when no line items.
     const items: InvoiceLineItem[] = Array.isArray(lineItems) ? lineItems : [];
+    const lineItemError = validateLineItems(items, currency);
+    if (lineItemError) {
+      return NextResponse.json(
+        { error: lineItemError },
+        { status: 400 },
+      );
+    }
     let computedTotal = 0;
     for (const it of items) {
       computedTotal += lineItemTotal(it);
@@ -159,6 +198,7 @@ export const POST = withAuth("finance.manage",
       history: [historyEntry],
       qbReference: null,
       qbSyncStatus: "Not Synced",
+      external: defaultInvoiceExternalState(),
       createdAt: now,
       updatedAt: now,
     });
@@ -203,6 +243,7 @@ export const POST = withAuth("finance.manage",
         lineItems: items,
         qbReference: null,
         qbSyncStatus: "Not Synced",
+        external: defaultInvoiceExternalState(),
         createdAt: now,
       },
     }, { status: 201 });

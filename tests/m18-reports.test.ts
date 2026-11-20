@@ -139,9 +139,9 @@ describe("M1.8 — clients report financial visibility", () => {
     expect(body.clients.length).toBeGreaterThan(0);
     const client = body.clients[0];
     const cur = Object.keys(client.byCurrency)[0];
-    expect(client.byCurrency[cur].invoiced).toBe(10000);
+    expect(client.byCurrency[cur].invoiced).toBe(5000);
     expect(client.byCurrency[cur].collected).toBe(4000);
-    expect(client.byCurrency[cur].outstanding).toBe(6000);
+    expect(client.byCurrency[cur].outstanding).toBe(1000);
   });
 
   it("shows all financial fields for ADMIN", async () => {
@@ -154,9 +154,9 @@ describe("M1.8 — clients report financial visibility", () => {
     expect(body.clients.length).toBeGreaterThan(0);
     const client = body.clients[0];
     const cur = Object.keys(client.byCurrency)[0];
-    expect(client.byCurrency[cur].invoiced).toBe(10000);
+    expect(client.byCurrency[cur].invoiced).toBe(5000);
     expect(client.byCurrency[cur].collected).toBe(4000);
-    expect(client.byCurrency[cur].outstanding).toBe(6000);
+    expect(client.byCurrency[cur].outstanding).toBe(1000);
   });
 });
 

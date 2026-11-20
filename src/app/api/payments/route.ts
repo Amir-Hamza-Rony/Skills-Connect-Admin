@@ -183,6 +183,20 @@ export const POST = withAuth("finance.manage",
             err.status = 400;
             throw err;
           }
+          if (invoice.status === "Void") {
+            const err: any = new Error("Cannot allocate a payment to a void invoice.");
+            err.code = "INVOICE_VOID";
+            err.status = 400;
+            throw err;
+          }
+          // No FX conversion is configured. Reject cross-currency allocation
+          // instead of treating different currencies as equal amounts.
+          if (invoice.currency && paymentCurrency !== String(invoice.currency)) {
+            const err: any = new Error("Payment currency must match the invoice currency.");
+            err.code = "CURRENCY_MISMATCH";
+            err.status = 400;
+            throw err;
+          }
 
           const payments = await collection("payments");
           const allocated = await payments
@@ -254,19 +268,22 @@ export const POST = withAuth("finance.manage",
           const inv = allocated2[0];
           const allocatedTotal = Number(inv?.allocatedTotal ?? 0);
           const invoiceTotal = Number(invoice.total ?? 0);
-          let invStatus = invoice.status;
-          if (allocatedTotal >= invoiceTotal && invoiceTotal > 0) invStatus = "Paid";
-          else if (allocatedTotal > 0) invStatus = "Part Paid";
-          await invoices.updateOne(
-            { _id: invoiceOid },
-            { $set: { status: invStatus, updatedAt: now } },
-            { session },
-          );
+          // A void invoice must never be resurrected by an allocation.
+          if (invoice.status !== "Void") {
+            let invStatus = invoice.status;
+            if (allocatedTotal >= invoiceTotal && invoiceTotal > 0) invStatus = "Paid";
+            else if (allocatedTotal > 0) invStatus = "Part Paid";
+            await invoices.updateOne(
+              { _id: invoiceOid },
+              { $set: { status: invStatus, updatedAt: now } },
+              { session },
+            );
+          }
         }
       });
     } catch (err: any) {
       await session.endSession().catch(() => {});
-      if (err.code === "NOT_FOUND" || err.code === "BAD_REQUEST" || err.code === "OVER_ALLOCATION" || err.code === "DUPLICATE_ALLOCATION") {
+      if (err.code === "NOT_FOUND" || err.code === "BAD_REQUEST" || err.code === "OVER_ALLOCATION" || err.code === "DUPLICATE_ALLOCATION" || err.code === "INVOICE_VOID" || err.code === "CURRENCY_MISMATCH") {
         return NextResponse.json(
           { error: { code: err.code, message: err.message } },
           { status: err.status ?? 400 },

@@ -60,7 +60,7 @@ const indexes = [
   { coll: "payments", keys: { status: 1 }, unique: false, name: "idx_payments_status" },
   { coll: "payments", keys: { createdAt: -1 }, unique: false, name: "idx_payments_createdAt" },
   { coll: "commission_records", keys: { agentId: 1, periodMonth: 1, periodYear: 1 }, unique: true, name: "uniq_commission_records_agent_period" },
-  { coll: "commission_payouts", keys: { commissionRecordId: 1 }, unique: false, name: "idx_commission_payouts_recordId" },
+  { coll: "commission_payouts", keys: { commissionRecordId: 1 }, unique: true, name: "uniq_commission_payouts_recordId" },
   { coll: "rto-processing", keys: { orderId: 1 }, unique: false, name: "idx_rto_processing_orderId" },
 ];
 

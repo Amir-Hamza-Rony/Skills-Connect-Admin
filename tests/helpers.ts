@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { signAccessToken } from "@/lib/api-auth";
 import { getDb } from "@/lib/db";
 import { ObjectId } from "mongodb";
+import { ROLE_PERMISSIONS } from "@/lib/permissions";
 
 export function makeToken(roleNames: string[] = ["SUPER_ADMIN"], permissions: string[] = []) {
   return signAccessToken({
@@ -32,16 +33,7 @@ export function makeSuperAdminToken() {
 }
 
 export function makeAdminToken() {
-  return makeToken(["ADMIN"], [
-    "users.manage", "roles.manage", "clients.view", "clients.manage",
-    "orders.view", "orders.manage", "rto.manage", "agents.manage",
-    "qualifications.manage", "pricing.manage",
-    "documents.view", "documents.review",
-    "finance.view", "finance.manage", "qb.retry", "qb.manage",
-    "reports.view", "audit.view", "settings.manage",
-    "commissions.manage", "commissions.view", "finance.reconcile",
-    "rplPartners.manage", "rplPartners.view",
-  ]);
+  return makeToken(["ADMIN"], ROLE_PERMISSIONS.ADMIN);
 }
 
 export function makeBDCToken(userId = "test-bdc-1") {
