@@ -12,6 +12,9 @@ import { getDb } from "@/lib/db";
 import {
   authedRequest,
   clearDb,
+  makeAdminToken,
+  makeBDCToken,
+  makeSuperAdminToken,
   seedAgent,
 } from "./helpers";
 
@@ -286,5 +289,79 @@ describe("Phase 5 — commission corrections", () => {
     const body = await json(res);
     const row = body.monthlySummary.find((item: any) => item.month === "2027-01");
     expect(row.byCurrency.AUD.commissionEarned).toBe(100);
+  });
+
+  it("excludes orders assigned to a different agent under sales_closing responsibility", async () => {
+    const agentId = await seedAgent("sales_closing");
+    const otherAgentId = new ObjectId();
+
+    await insertRule({
+      agentId: null,
+      responsibility: "sales_closing",
+    });
+
+    // Order owned by this agent — should be counted.
+    await insertCompletedOrder("salesAgentId", agentId);
+    // Order owned by a different agent — should NOT be counted.
+    await insertCompletedOrder("salesAgentId", otherAgentId);
+
+    const res = await calculateCommission(
+      authedRequest("POST", "/api/commission-records", {
+        action: "calculate",
+        agentId: String(agentId),
+        periodMonth: 1,
+        periodYear: 2027,
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect((await json(res)).commissionRecord.eligibleDealCount).toBe(1);
+  });
+
+  it("rejects BDC access to commission calculation", async () => {
+    const agentId = await seedAgent("sales_closing");
+    await insertRule({ agentId, responsibility: "sales_closing" });
+    await insertCompletedOrder("salesAgentId", agentId);
+
+    const res = await calculateCommission(
+      authedRequest("POST", "/api/commission-records", {
+        action: "calculate",
+        agentId: String(agentId),
+        periodMonth: 1,
+        periodYear: 2027,
+      }, makeBDCToken()),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects ADMIN access to commission calculation (lacks commissions.manage)", async () => {
+    const agentId = await seedAgent("sales_closing");
+    await insertRule({ agentId, responsibility: "sales_closing" });
+    await insertCompletedOrder("salesAgentId", agentId);
+
+    const res = await calculateCommission(
+      authedRequest("POST", "/api/commission-records", {
+        action: "calculate",
+        agentId: String(agentId),
+        periodMonth: 1,
+        periodYear: 2027,
+      }, makeAdminToken()),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("allows SUPER_ADMIN commission calculation", async () => {
+    const agentId = await seedAgent("sales_closing");
+    await insertRule({ agentId, responsibility: "sales_closing" });
+    await insertCompletedOrder("salesAgentId", agentId);
+
+    const res = await calculateCommission(
+      authedRequest("POST", "/api/commission-records", {
+        action: "calculate",
+        agentId: String(agentId),
+        periodMonth: 1,
+        periodYear: 2027,
+      }, makeSuperAdminToken()),
+    );
+    expect(res.status).toBe(201);
   });
 });

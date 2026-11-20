@@ -209,6 +209,34 @@ describe("Phase 5 — finance integrity", () => {
     expect(row.byCurrency.AUD.unallocated).toBe(250);
     expect(row.byCurrency.AUD.outstanding).toBe(600);
   });
+
+  it("reports overdueAmount for invoices with Overdue status", async () => {
+    const clientId = await seedClient(new ObjectId(), "Overdue Client");
+    const orderId = await seedOrder(
+      new ObjectId(),
+      clientId,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { currency: "AUD" },
+    );
+    const created = await createAudInvoice(String(orderId), [lineItem({ amount: 1000 })]);
+    const invoiceId = (await json(created)).invoice.id;
+
+    const db = await getDb();
+    await db.collection("invoices").updateOne(
+      { _id: new ObjectId(invoiceId) },
+      { $set: { status: "Overdue", dueDate: new Date("2027-01-01") } },
+    );
+
+    const finance = await json(
+      await financeReport(authedRequest("GET", "/api/reports/finance")),
+    );
+    expect(finance.byCurrency.AUD.overdueAmount).toBe(1000);
+    expect(finance.overdueAmount).toBe(1000);
+    expect(finance.outstanding).toBe(1000);
+  });
 });
 
 describe("Phase 5 — finance scoping and masking", () => {
