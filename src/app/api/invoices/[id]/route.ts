@@ -11,6 +11,11 @@ import { writeAudit } from "@/lib/audit";
 
 const UPDATABLE_FIELDS = new Set(["dueDate", "status"]);
 
+// Only manually managed lifecycle states may be set here. Payment-derived
+// states, Overdue and Void are owned by their dedicated flows; allowing them
+// through PATCH would bypass the void endpoint and its audit event.
+const PATCHABLE_STATUSES = new Set(["Draft", "Sent"]);
+
 export const GET = withAuth("finance.view",
   async (req: AuthedRequest, { params }: { params?: Promise<{ id?: string }> | { id?: string } | undefined }) => {
     const resolvedParams = await (params ?? {});
@@ -40,6 +45,7 @@ export const GET = withAuth("finance.view",
       history: doc.history,
       qbReference: doc.qbReference,
       qbSyncStatus: doc.qbSyncStatus,
+      external: doc.external ?? null,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     });
@@ -77,6 +83,17 @@ export const PATCH = withAuth("finance.manage",
     for (const field of UPDATABLE_FIELDS) {
       if (body[field] === undefined) continue;
       const next = body[field] === null ? null : String(body[field]).trim() || null;
+      if (field === "status" && next !== null && !PATCHABLE_STATUSES.has(String(next))) {
+        return NextResponse.json(
+          {
+            error: {
+              code: "INVALID_STATUS",
+              message: "Status cannot be set through PATCH. Use the dedicated status endpoint.",
+            },
+          },
+          { status: 400 },
+        );
+      }
       update[field] = next;
       if (String(doc[field]) !== String(next)) {
         history.push({ timestamp: now, field, before: doc[field], after: next, actorId: actor.userId });
@@ -117,6 +134,7 @@ export const PATCH = withAuth("finance.manage",
         lineItems: updated?.lineItems,
         qbReference: updated?.qbReference,
         qbSyncStatus: updated?.qbSyncStatus,
+        external: updated?.external ?? null,
         createdAt: updated?.createdAt,
         updatedAt: updated?.updatedAt,
       },

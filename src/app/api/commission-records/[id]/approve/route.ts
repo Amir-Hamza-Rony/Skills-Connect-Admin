@@ -58,17 +58,17 @@ export const POST = withAuth(
       return NextResponse.json(
         {
           error: {
-            code: "BAD_REQUEST",
+            code: "CONFLICT",
             message: `Cannot approve a record in ${record.status} status.`,
           },
         },
-        { status: 400 },
+        { status: 409 },
       );
     }
 
     const now = new Date();
-    await coll.updateOne(
-      { _id: oid },
+    const update = await coll.updateOne(
+      { _id: oid, status: "calculated" },
       {
         $set: {
           status: "approved",
@@ -78,6 +78,17 @@ export const POST = withAuth(
         },
       },
     );
+    if (update.matchedCount === 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "CONFLICT",
+            message: "The commission record is no longer in calculated status.",
+          },
+        },
+        { status: 409 },
+      );
+    }
 
     const updated = await coll.findOne({ _id: oid });
 

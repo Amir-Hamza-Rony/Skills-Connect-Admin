@@ -12,6 +12,7 @@ import {
   invalidId,
 } from "@/lib/pricing-validation";
 import { writeAudit } from "@/lib/audit";
+import { ORDER_STATUS_GROUPS, type OrderStatus } from "@/lib/types";
 
 const PERMISSION = "commissions.manage";
 
@@ -21,6 +22,20 @@ const VALID_AGENT_TYPES = new Set([
   "rto_contact",
 ]);
 
+const VALID_ELIGIBLE_STATUSES = new Set<OrderStatus>(
+  ORDER_STATUS_GROUPS.flatMap((group) => group.statuses),
+);
+
+function normalizeEligibleStatuses(value: unknown): string[] | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) throw new Error("eligibleOrderStatuses must be an array.");
+  const statuses = value.map((status) => String(status));
+  if (statuses.some((status) => !VALID_ELIGIBLE_STATUSES.has(status as OrderStatus))) {
+    throw new Error("eligibleOrderStatuses contains an unknown order status.");
+  }
+  return statuses;
+}
+
 function mapDoc(d: any) {
   return {
     id: String(d._id),
@@ -29,6 +44,7 @@ function mapDoc(d: any) {
     effectiveFrom: d.effectiveFrom,
     effectiveTo: d.effectiveTo,
     tiers: d.tiers,
+    eligibleOrderStatuses: d.eligibleOrderStatuses ?? null,
     commissionCurrency: d.commissionCurrency,
     additionalIncentiveAmount: d.additionalIncentiveAmount,
     additionalIncentiveCurrency: d.additionalIncentiveCurrency,
@@ -164,6 +180,16 @@ export const PATCH = withAuth(
       }
       update.tiers = body.tiers;
     }
+    if (body.eligibleOrderStatuses !== undefined) {
+      try {
+        update.eligibleOrderStatuses = normalizeEligibleStatuses(body.eligibleOrderStatuses);
+      } catch (err: any) {
+        return NextResponse.json(
+          { error: { code: "BAD_REQUEST", message: err?.message ?? "Invalid eligible statuses." } },
+          { status: 400 },
+        );
+      }
+    }
     if (body.commissionCurrency !== undefined) {
       if (!isValidCurrency(body.commissionCurrency)) {
         return NextResponse.json(
@@ -208,18 +234,17 @@ export const PATCH = withAuth(
           { status: 400 },
         );
       }
-      update.effectiveFrom = new Date(String(body.effectiveFrom)).toISOString();
+      update.effectiveFrom = new Date(String(body.effectiveFrom));
     }
     if (body.effectiveTo !== undefined) {
-      update.effectiveTo = body.effectiveTo
-        ? new Date(String(body.effectiveTo)).toISOString()
-        : null;
-      if (update.effectiveTo && !isValidDate(update.effectiveTo as string)) {
+      const rawEffectiveTo = body.effectiveTo ? String(body.effectiveTo) : null;
+      if (rawEffectiveTo && !isValidDate(rawEffectiveTo)) {
         return NextResponse.json(
           { error: { code: "BAD_REQUEST", message: "Effective to date is invalid." } },
           { status: 400 },
         );
       }
+      update.effectiveTo = rawEffectiveTo ? new Date(rawEffectiveTo) : null;
     }
     if (body.status !== undefined) {
       if (!["active", "inactive"].includes(String(body.status))) {
@@ -258,11 +283,13 @@ export const PATCH = withAuth(
         status: existing.status,
         approvalStatus: existing.approvalStatus,
         tiers: existing.tiers,
+        eligibleOrderStatuses: existing.eligibleOrderStatuses ?? null,
       },
       after: {
         status: updated?.status,
         approvalStatus: updated?.approvalStatus,
         tiers: updated?.tiers,
+        eligibleOrderStatuses: updated?.eligibleOrderStatuses ?? null,
       },
     });
 

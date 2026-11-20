@@ -160,8 +160,9 @@ async function seedPopulatedDataset() {
 
   await insertRaw("certificates", { orderId: o1, status: "Certificate File Received", fileData: "synthetic" });
   await insertRaw("certificates", { orderId: o8, status: "Certificate File Received" });
-  await insertRaw("certificate-deliveries", { orderId: o1, deliveryStatus: "delivered" });
-  await insertRaw("certificate-deliveries", { orderId: o8, deliveryStatus: "pending" });
+  // Collection name must match the API routes: certificate_deliveries.
+  await insertRaw("certificate_deliveries", { orderId: o1, deliveryStatus: "delivered" });
+  await insertRaw("certificate_deliveries", { orderId: o8, deliveryStatus: "pending" });
 
   const inv1 = await insertRaw("invoices", {
     orderId: o1, invoiceNumber: "SYN-INV-1", total: 5000, currency: "AUD",
@@ -198,7 +199,7 @@ async function seedPopulatedDataset() {
       status: "Allocated", amount: allocatedAmount,
     });
   }
-  // Unallocated receipt: counted as collected in its own currency only.
+  // Unallocated receipt: reported separately from invoice collection.
   await insertRaw("payments", {
     orderId: o7, invoiceId: null, allocatedAmount: 500, currency: "AUD",
     status: "Unallocated", amount: 500,
@@ -308,11 +309,24 @@ describe("Phase 4 — populated synthetic dashboard dataset", () => {
     const aud = body.currencyTotals.find((c: any) => c.currency === "AUD");
     const bdt = body.currencyTotals.find((c: any) => c.currency === "BDT");
     expect(body.currencyTotals).toHaveLength(2);
-    expect(aud).toMatchObject({ invoiced: 17000, collected: 6500, outstanding: 11000, overdue: 11000 });
-    expect(bdt).toMatchObject({ invoiced: 15000, collected: 8000, outstanding: 7000, overdue: 0 });
+    expect(aud).toMatchObject({
+      invoiced: 17000,
+      collected: 6000,
+      unallocated: 500,
+      outstanding: 11000,
+      overdue: 11000,
+    });
+    expect(bdt).toMatchObject({
+      invoiced: 15000,
+      collected: 8000,
+      unallocated: 0,
+      outstanding: 7000,
+      overdue: 0,
+    });
 
     expect(kpi(body, "finance", "invoiced-AUD")).toBe(17000);
     expect(kpi(body, "finance", "collected-BDT")).toBe(8000);
+    expect(kpi(body, "finance", "unallocated-AUD")).toBe(500);
     expect(kpi(body, "commission", "commission-AUD")).toBe(1500);
     expect(kpi(body, "commission", "commission-BDT")).toBe(2000);
     expect(body.availability.commission.available).toBe(true);

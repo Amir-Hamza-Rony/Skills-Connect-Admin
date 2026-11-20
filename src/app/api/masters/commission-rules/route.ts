@@ -17,6 +17,7 @@ import {
   invalidId,
 } from "@/lib/pricing-validation";
 import { writeAudit } from "@/lib/audit";
+import { ORDER_STATUS_GROUPS, type OrderStatus } from "@/lib/types";
 
 const PERMISSION = "commissions.manage";
 
@@ -26,6 +27,20 @@ const VALID_AGENT_TYPES = new Set([
   "rto_contact",
 ]);
 
+const VALID_ELIGIBLE_STATUSES = new Set<OrderStatus>(
+  ORDER_STATUS_GROUPS.flatMap((group) => group.statuses),
+);
+
+function normalizeEligibleStatuses(value: unknown): string[] | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) throw new Error("eligibleOrderStatuses must be an array.");
+  const statuses = value.map((status) => String(status));
+  if (statuses.some((status) => !VALID_ELIGIBLE_STATUSES.has(status as OrderStatus))) {
+    throw new Error("eligibleOrderStatuses contains an unknown order status.");
+  }
+  return statuses;
+}
+
 function mapDoc(d: any) {
   return {
     id: String(d._id),
@@ -34,6 +49,7 @@ function mapDoc(d: any) {
     effectiveFrom: d.effectiveFrom,
     effectiveTo: d.effectiveTo,
     tiers: d.tiers,
+    eligibleOrderStatuses: d.eligibleOrderStatuses ?? null,
     commissionCurrency: d.commissionCurrency,
     additionalIncentiveAmount: d.additionalIncentiveAmount,
     additionalIncentiveCurrency: d.additionalIncentiveCurrency,
@@ -210,6 +226,16 @@ export const POST = withAuth(
       );
     }
 
+    let eligibleOrderStatuses: string[] | null = null;
+    try {
+      eligibleOrderStatuses = normalizeEligibleStatuses(body.eligibleOrderStatuses);
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: err?.message ?? "Invalid eligible statuses." } },
+        { status: 400 },
+      );
+    }
+
     if (!isValidCurrency(body.commissionCurrency)) {
       return NextResponse.json(
         { error: { code: "BAD_REQUEST", message: "Invalid commission currency." } },
@@ -287,9 +313,10 @@ export const POST = withAuth(
     const result = await coll.insertOne({
       agentId,
       responsibility,
-      effectiveFrom: effectiveFrom.toISOString(),
-      effectiveTo: effectiveTo ? effectiveTo.toISOString() : null,
+      effectiveFrom,
+      effectiveTo,
       tiers: body.tiers,
+      eligibleOrderStatuses,
       commissionCurrency: body.commissionCurrency,
       additionalIncentiveAmount,
       additionalIncentiveCurrency,
@@ -314,6 +341,7 @@ export const POST = withAuth(
       after: {
         responsibility: created?.responsibility,
         tiers: created?.tiers,
+        eligibleOrderStatuses: created?.eligibleOrderStatuses ?? null,
         commissionCurrency: created?.commissionCurrency,
         status: created?.status,
         approvalStatus: created?.approvalStatus,

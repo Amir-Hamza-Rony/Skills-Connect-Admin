@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { filterOrdersByRole } from "@/middleware/auth";
+import { applyFinancialVisibility } from "@/lib/financial-visibility";
 
 export const GET = withAuth("reports.view",
   async (req: AuthedRequest) => {
@@ -19,7 +20,10 @@ export const GET = withAuth("reports.view",
     const clientId = searchParams.get("clientId");
     const currency = searchParams.get("currency");
 
-    const invoiceFilter: Record<string, unknown> = { status: { $nin: ["Void", "Paid"] } };
+    // Include Paid invoices: a refunded payment leaves the invoice status
+    // "Paid" while a real balance remains. Net balances are computed below,
+    // so fully paid invoices are skipped naturally. Void is always excluded.
+    const invoiceFilter: Record<string, unknown> = { status: { $ne: "Void" } };
     if (from || to) {
       invoiceFilter.createdAt = {};
       if (from) (invoiceFilter.createdAt as Record<string, unknown>).$gte = new Date(from);
@@ -69,6 +73,7 @@ export const GET = withAuth("reports.view",
 
     // Per-customer, per-currency aggregation.
     const customerMap = new Map<string, { name: string; byCurrency: Record<string, { outstanding: number; overdue: number }> }>();
+    const currenciesSeen = new Set<string>();
 
     for (const inv of invoices) {
       const orderClientId = orderMap.get(String(inv.orderId));
@@ -76,6 +81,7 @@ export const GET = withAuth("reports.view",
       const clientObj = clients.find((c: any) => String(c._id) === orderClientId);
       const clientName = clientObj ? clientObj.legalName : "Unknown";
       const cur = inv.currency || "AUD";
+      currenciesSeen.add(cur);
       const paid = paidByInvoice.get(String(inv._id)) || 0;
       const outstanding = Math.max(0, Number(inv.total ?? 0) - paid);
       if (outstanding <= 0) continue;
@@ -107,19 +113,44 @@ export const GET = withAuth("reports.view",
       }
     }
 
-    const rows = Array.from(customerMap.values()).map((c) => ({
-      clientId: c.name && Array.from(customerMap.entries()).find(([, v]) => v === c)?.[0] || "",
-      clientName: c.name,
-      byCurrency: c.byCurrency,
-      totalOutstanding: Object.values(c.byCurrency).reduce((s, v) => s + v.outstanding, 0),
-      totalOverdue: Object.values(c.byCurrency).reduce((s, v) => s + v.overdue, 0),
+    const mixedCurrency = currenciesSeen.size > 1;
+    const rows = Array.from(customerMap.entries()).map(([id, c]) => {
+      const customerCurrencies = Object.keys(c.byCurrency);
+      const customerMixed = customerCurrencies.length > 1;
+      return {
+        clientId: id,
+        clientName: c.name,
+        byCurrency: c.byCurrency,
+        mixedCurrency: customerMixed,
+        totalOutstanding: customerMixed
+          ? null
+          : customerCurrencies.length === 0
+            ? 0
+            : c.byCurrency[customerCurrencies[0]].outstanding,
+        totalOverdue: customerMixed
+          ? null
+          : customerCurrencies.length === 0
+            ? 0
+            : c.byCurrency[customerCurrencies[0]].overdue,
+      };
+    });
+
+    // Cross-currency bucket amounts are unavailable: expose per-currency
+    // buckets instead of silently adding different currencies together.
+    const bucketRows = buckets.map((b) => ({
+      label: b.label,
+      count: b.count,
+      amount: mixedCurrency ? null : b.amount,
     }));
 
-    return NextResponse.json({
+    const response = {
       customers: rows,
-      buckets,
-      totalOutstanding: buckets.reduce((s, b) => s + b.amount, 0),
-      totalOverdue: buckets.slice(1).reduce((s, b) => s + b.amount, 0),
-    });
+      buckets: bucketRows,
+      mixedCurrency,
+      totalOutstanding: mixedCurrency ? null : buckets.reduce((s, b) => s + b.amount, 0),
+      totalOverdue: mixedCurrency ? null : buckets.slice(1).reduce((s, b) => s + b.amount, 0),
+    };
+
+    return NextResponse.json(applyFinancialVisibility(auth, response));
   },
 );

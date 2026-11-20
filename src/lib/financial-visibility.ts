@@ -45,11 +45,19 @@ const PRICE_REVENUE_FIELDS = [
   "invoiced",
   "clientInvoiced",
   "collected",
+  // Unallocated receipts are cash/revenue data; never expose to B2B_AGENT.
+  "unallocated",
+  "unallocatedAmount",
   "paid",
   "outstanding",
+  "overdue",
   "overdueAmount",
+  "totalOutstanding",
+  "totalOverdue",
   "commissionEarned",
   "feeTotal",
+  // Generic report aggregate keys (ageing buckets, instalments, payments).
+  "amount",
 ] as const;
 
 const COST_MARGIN = new Set<string>(COST_MARGIN_FIELDS);

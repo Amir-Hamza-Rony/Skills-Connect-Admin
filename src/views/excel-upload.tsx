@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
+import { ConfirmDialog } from "@/components/confirm-dialog"
+import { ToastItem, useToast } from "@/components/toast"
 import {
   createExcelTemplate,
   deleteExcelTemplate,
@@ -26,6 +28,8 @@ export function ExcelUploadPage() {
   const [templateName, setTemplateName] = useState("")
   const [templateScope, setTemplateScope] = useState("clients")
   const [saving, setSaving] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null)
+  const { toasts, addToast, dismissToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -46,7 +50,7 @@ export function ExcelUploadPage() {
       const p = await uploadExcelFile(f)
       setPreview(p)
     } catch (err: any) {
-      alert(err.message || "Upload failed")
+      addToast({ title: "Upload failed", description: err.message, variant: "destructive" })
     } finally {
       setUploading(false)
     }
@@ -61,13 +65,13 @@ export function ExcelUploadPage() {
         sourceData: r,
       }))
       await executeExcelImport(selectedTemplate, rows)
-      alert("Import completed")
+      addToast({ title: "Import completed", variant: "success" })
       setPreview(null)
       setFile(null)
       setSelectedTemplate(null)
       if (fileInputRef.current) fileInputRef.current.value = ""
     } catch (err: any) {
-      alert(err.message || "Import failed")
+      addToast({ title: "Import failed", description: err.message, variant: "destructive" })
     } finally {
       setImporting(false)
     }
@@ -87,23 +91,28 @@ export function ExcelUploadPage() {
       const data = await listExcelTemplates()
       setTemplates(data)
       setMappingOpen(false)
-      alert("Template created")
+      addToast({ title: "Template created", variant: "success" })
     } catch (err: any) {
-      alert(err.message || "Failed to create template")
+      addToast({ title: "Failed to create template", description: err.message, variant: "destructive" })
     } finally {
       setSaving(false)
     }
   }
 
   const handleTemplateDelete = async (id: string) => {
-    if (!window.confirm("Delete this template?")) return
+    setDeleteConfirmOpen(id)
+  }
+
+  const handleTemplateDeleteConfirmed = async (id: string) => {
     try {
       await deleteExcelTemplate(id)
       const data = await listExcelTemplates()
       setTemplates(data)
-      alert("Template deleted")
+      setDeleteConfirmOpen(null)
+      addToast({ title: "Template deleted", variant: "success" })
     } catch (err: any) {
-      alert(err.message || "Failed to delete template")
+      setDeleteConfirmOpen(null)
+      addToast({ title: "Failed to delete template", description: err.message, variant: "destructive" })
     }
   }
 
@@ -286,6 +295,23 @@ export function ExcelUploadPage() {
           />
         </div>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen !== null}
+        onClose={() => setDeleteConfirmOpen(null)}
+        onConfirm={() => handleTemplateDeleteConfirmed(deleteConfirmOpen!)}
+        title="Delete template"
+        description="This action cannot be undone."
+        variant="destructive"
+      />
+
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {toasts.map((t) => (
+          <div key={t.id} className="pointer-events-auto w-full max-w-xs">
+            <ToastItem toast={t} onDismiss={() => dismissToast(t.id)} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
