@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId, getClient } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
+import { newTransactionCurrencyError } from "@/lib/pricing-validation";
 
 const PERMISSION = "commissions.manage";
 
@@ -109,6 +110,15 @@ export const POST = withAuth(
     const paymentDate = body.paymentDate ? new Date(String(body.paymentDate)) : null;
     const paymentReference = String(body.paymentReference ?? "").trim() || null;
 
+    // New commission payouts must use AUD only and must match the approved
+    // commission record's currency (which is AUD for new records).
+    if (currency !== "AUD") {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "New commission payouts must use AUD." } },
+        { status: 400 },
+      );
+    }
+
     if (!commissionRecordId) {
       return NextResponse.json(
         { error: { code: "BAD_REQUEST", message: "commissionRecordId is required." } },
@@ -118,12 +128,6 @@ export const POST = withAuth(
     if (!Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json(
         { error: { code: "BAD_REQUEST", message: "Amount must be a positive number." } },
-        { status: 400 },
-      );
-    }
-    if (!["AUD", "BDT", "USD", "GBP", "EUR", "INR"].includes(currency)) {
-      return NextResponse.json(
-        { error: { code: "BAD_REQUEST", message: "Invalid currency." } },
         { status: 400 },
       );
     }

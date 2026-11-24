@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { ObjectId } from "mongodb";
 
+import { getDb } from "@/lib/db";
 import { POST as createOrder } from "@/app/api/orders/route";
 import {
   POST as createInvoice,
@@ -143,15 +144,21 @@ describe("Phase 4 — Invoice management", () => {
         total: 5500,
       }),
     );
-    await createInvoice(
-      authedRequest("POST", "/api/invoices", {
-        orderId: orderIdB,
-        currency: "BDT",
-        issueDate: "2027-02-01",
-        dueDate: "2027-03-01",
-        total: 6000,
-      }),
-    );
+    // Historical BDT invoice: seeded directly, bypassing the AUD-only API.
+    const db = await getDb();
+    await db.collection("invoices").insertOne({
+      _id: new ObjectId(),
+      orderId: orderIdB,
+      invoiceNumber: "INV-HIST-BDT",
+      total: 6000,
+      currency: "BDT",
+      issueDate: "2027-02-01",
+      dueDate: "2027-03-01",
+      status: "Draft",
+      lineItems: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     const listRes = await listInvoices(
       authedRequest("GET", "/api/invoices?currency=BDT"),
@@ -279,26 +286,31 @@ describe("Phase 4 — Finance summary multi-currency", () => {
         ],
       }),
     );
-    await createInvoice(
-      authedRequest("POST", "/api/invoices", {
-        orderId: orderIdB,
-        currency: "BDT",
-        issueDate: "2027-02-01",
-        dueDate: "2027-03-01",
-        total: 6000,
-        lineItems: [
-          {
-            id: "line-1",
-            description: "Tuition",
-            amount: 6000,
-            currency: "BDT",
-            quantity: 1,
-            taxAmount: 0,
-            taxRate: 0,
-          },
-        ],
-      }),
-    );
+    // Historical BDT invoice: seeded directly, bypassing the AUD-only API.
+    const db = await getDb();
+    await db.collection("invoices").insertOne({
+      _id: new ObjectId(),
+      orderId: orderIdB,
+      invoiceNumber: "INV-HIST-BDT",
+      total: 6000,
+      currency: "BDT",
+      issueDate: "2027-02-01",
+      dueDate: "2027-03-01",
+      status: "Draft",
+      lineItems: [
+        {
+          id: "line-1",
+          description: "Tuition",
+          amount: 6000,
+          currency: "BDT",
+          quantity: 1,
+          taxAmount: 0,
+          taxRate: 0,
+        },
+      ],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     const res = await financeSummary(
       authedRequest("GET", "/api/finance/summary"),

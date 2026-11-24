@@ -15,7 +15,7 @@ import {
   listCommissionRules,
   updateCommissionRule,
 } from "@/lib/store"
-import type { Agent, AgentCommissionRule, CommissionTier } from "@/lib/types"
+import type { Agent, AgentCommissionRule, CommissionTier, Currency } from "@/lib/types"
 
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -49,12 +49,10 @@ export function CommissionRulesPage() {
   const [tiers, setTiers] = useState<CommissionTier[]>([
     { minDeals: 1, maxDeals: null, commissionPerDeal: 0 },
   ])
-  const [commissionCurrency, setCommissionCurrency] = useState<
-    "AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR"
-  >("BDT")
+  const [commissionCurrency, setCommissionCurrency] = useState<Currency>("AUD")
   const [additionalIncentiveAmount, setAdditionalIncentiveAmount] = useState("")
   const [additionalIncentiveCurrency, setAdditionalIncentiveCurrency] = useState<
-    "AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR" | ""
+    Currency | ""
   >("")
   const [status, setStatus] = useState<"active" | "inactive">("active")
   const [approvalStatus, setApprovalStatus] = useState<
@@ -151,7 +149,7 @@ export function CommissionRulesPage() {
       setEffectiveFrom("")
       setEffectiveTo("")
       setTiers([{ minDeals: 1, maxDeals: null, commissionPerDeal: 0 }])
-      setCommissionCurrency("BDT")
+      setCommissionCurrency("AUD")
       setAdditionalIncentiveAmount("")
       setAdditionalIncentiveCurrency("")
       setStatus("active")
@@ -237,11 +235,6 @@ export function CommissionRulesPage() {
 
   const CURRENCIES: Array<{ value: string; label: string }> = [
     { value: "AUD", label: "AUD" },
-    { value: "BDT", label: "BDT" },
-    { value: "USD", label: "USD" },
-    { value: "GBP", label: "GBP" },
-    { value: "EUR", label: "EUR" },
-    { value: "INR", label: "INR" },
   ]
 
   const RESPONSIBILITIES: Array<{ value: string; label: string }> = [

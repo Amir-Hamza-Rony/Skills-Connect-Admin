@@ -16,6 +16,7 @@ import { writeAudit } from "@/lib/audit";
 import type { Currency } from "@/lib/types";
 import { applyFinancialVisibility } from "@/lib/financial-visibility";
 import { nextEnrollmentCode } from "@/lib/enrollment-code";
+import { newTransactionCurrencyError } from "@/lib/pricing-validation";
 
 function invalidId() {
   return NextResponse.json(
@@ -272,13 +273,20 @@ export const POST = withAuth("orders.manage",
       }
     }
 
-    // Exchange-rate snapshot: placeholder 1 unless a real FX source is configured.
-    if (sellingCurrency !== "AUD") {
-      exchangeRate = 1;
-      convertedAmount = resolvedSellingPrice;
-    } else {
-      convertedAmount = resolvedSellingPrice;
+    // New orders must use AUD only. Reject a non-AUD price list so no
+    // non-AUD order is created. Historical multi-currency orders are preserved
+    // exactly as stored; this restriction applies to new order creation only.
+    const currencyError = newTransactionCurrencyError(sellingCurrency);
+    if (currencyError) {
+      return NextResponse.json(
+        { error: { code: currencyError.code, message: currencyError.message } },
+        { status: 400 },
+      );
     }
+
+    // No currency conversion is performed for new orders.
+    exchangeRate = null;
+    convertedAmount = resolvedSellingPrice;
 
     // Capture additional fees applicable to the qualification (snapshot).
     const additionalFees: Array<{

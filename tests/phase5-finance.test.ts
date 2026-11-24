@@ -91,11 +91,13 @@ describe("Phase 5 — finance integrity", () => {
     expect(payments).toBe(0);
   });
 
-  it("rejects a payment whose currency differs from the invoice", async () => {
+  it("rejects a payment whose currency is not AUD", async () => {
     const orderId = await seedOrder();
     const created = await createAudInvoice(orderId, [lineItem()]);
     const invoiceId = (await json(created)).invoice.id;
 
+    // New payments must be recorded in AUD; a non-AUD payment is rejected at
+    // the API boundary before any invoice currency-mismatch check.
     const payment = await recordPayment(
       authedRequest("POST", "/api/payments", {
         orderId: String(orderId),
@@ -107,7 +109,9 @@ describe("Phase 5 — finance integrity", () => {
       }),
     );
     expect(payment.status).toBe(400);
-    expect((await json(payment)).error.code).toBe("CURRENCY_MISMATCH");
+    const body = await json(payment);
+    expect(body.error.code).toBe("BAD_REQUEST");
+    expect(body.error.message).toContain("AUD");
   });
 
   it("rejects invalid invoice line items", async () => {
@@ -362,15 +366,34 @@ describe("Phase 5 — finance scoping and masking", () => {
       const orderId = await seedOrder(new ObjectId(), clientId, undefined, undefined, undefined, undefined, {
         currency,
       });
-      await createInvoice(
-        authedRequest("POST", "/api/invoices", {
-          orderId: String(orderId),
+      if (currency === "AUD") {
+        await createInvoice(
+          authedRequest("POST", "/api/invoices", {
+            orderId: String(orderId),
+            currency,
+            issueDate: "2027-01-10",
+            dueDate: "2027-02-10",
+            lineItems: [lineItem({ amount: 1000, currency })],
+          }),
+        );
+      } else {
+        // Historical BDT invoice: seeded directly, bypassing the AUD-only API.
+        const db = await getDb();
+        const oid = new ObjectId();
+        await db.collection("invoices").insertOne({
+          _id: oid,
+          orderId,
+          invoiceNumber: `INV-HIST-${currency}`,
+          total: 1000,
           currency,
           issueDate: "2027-01-10",
           dueDate: "2027-02-10",
-          lineItems: [lineItem({ amount: 1000, currency })],
-        }),
-      );
+          status: "Draft",
+          lineItems: [{ id: "line-1", description: "Tuition", amount: 1000, currency, quantity: 1, taxAmount: 0, taxRate: 0 }],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
     }
 
     const res = await outstandingReport(
