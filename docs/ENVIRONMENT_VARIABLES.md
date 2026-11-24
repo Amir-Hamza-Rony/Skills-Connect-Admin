@@ -60,6 +60,16 @@ All secrets are supplied through the hosting provider's environment / secret man
 |----------|---------|----------|---------|
 | `REDIS_URL` | Redis connection URL | No | No |
 
+**Redis — provisioned vs. integrated distinction:**
+
+| Category | Status | Details |
+|---|---|---|
+| Provisioned Redis service | Yes | `render.yaml` provisions `skills-connect-redis` externally |
+| Actual Redis application integration | No | `REDIS_URL` is not referenced anywhere in application source code |
+| Implemented background jobs | No | No BullMQ, no ioredis, no worker scripts |
+| Planned background jobs | Future only | Redis is available externally for future use |
+| Current job behavior | Inline / deferred | Jobs run inline or are deferred |
+
 **Important:** Redis is provisioned externally (see `render.yaml`) but the application **does not currently connect to Redis**. Rate limiting is in-memory only (see `src/lib/rate-limit.ts`). `REDIS_URL` is not referenced anywhere in application source code. Do not assume Redis-backed rate limiting or job queues are operational.
 
 ## File Storage

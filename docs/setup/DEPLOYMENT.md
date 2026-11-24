@@ -82,6 +82,14 @@ See `docs/ENVIRONMENT_VARIABLES.md` for the complete inventory.
 
 ### Redis
 
+| Category | Status | Details |
+|---|---|---|
+| Provisioned Redis service | Yes | `render.yaml` provisions `skills-connect-redis` (starter plan, oregon region) |
+| Actual Redis application integration | No | No `REDIS_URL` reference in `src/`; application does not connect to Redis |
+| Implemented background jobs | No | No BullMQ, no ioredis, no worker scripts in `package.json` |
+| Planned background jobs | Future only | Redis is provisioned for future background job use but is not integrated |
+| Current job behavior | Inline / deferred | QuickBooks sync, overdue checks run inline or are deferred; no background processor |
+
 `render.yaml` provisions a Redis database (`skills-connect-redis`), but the application **does not currently connect to Redis**. Rate limiting is in-memory only (see `src/lib/rate-limit.ts`). Redis is provisioned for future background job use but is not integrated into the application code. Do not assume Redis-backed rate limiting or job queues are operational.
 
 ---

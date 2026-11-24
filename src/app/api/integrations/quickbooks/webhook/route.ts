@@ -15,11 +15,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { collection } from "@/lib/db";
 import type { QBEntityType } from "@/lib/types";
 
-function safeEqual(a: string, b: string): boolean {
+export function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a, "utf8");
   const bufB = Buffer.from(b, "utf8");
   if (bufA.length !== bufB.length) {
-    timingSafeEqual(bufA, bufA);
+    // Lengths differ — cannot be equal. Still perform constant-time work so
+    // the length-mismatch path is not distinguishable by timing, then return
+    // false. timingSafeEqual requires equal-length buffers, so compare bufA
+    // against a zero buffer of its own length (always false, constant time).
+    timingSafeEqual(bufA, Buffer.alloc(bufA.length));
     return false;
   }
   return timingSafeEqual(bufA, bufB);
