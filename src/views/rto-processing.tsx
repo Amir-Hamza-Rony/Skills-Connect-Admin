@@ -188,11 +188,6 @@ export function RtoProcessingPage() {
 
   const CURRENCIES: Array<{ value: string; label: string }> = [
     { value: "AUD", label: "AUD" },
-    { value: "BDT", label: "BDT" },
-    { value: "USD", label: "USD" },
-    { value: "GBP", label: "GBP" },
-    { value: "EUR", label: "EUR" },
-    { value: "INR", label: "INR" },
   ]
 
   const STATUSES: RtoProcessingStatus[] = [

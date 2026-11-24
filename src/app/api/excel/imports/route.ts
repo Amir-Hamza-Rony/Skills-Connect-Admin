@@ -90,6 +90,8 @@ export const GET = withAuth(
 
     const filter: Record<string, unknown> = {};
     if (status) filter.status = status;
+    // Exclude Price Matrix guard documents from import history.
+    filter.type = { $ne: "price_matrix_lock" };
 
     const coll = await collection("excel_imports");
     const [docs, total] = await Promise.all([

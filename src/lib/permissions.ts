@@ -121,6 +121,7 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/excel/templates": "finance.manage",
   "/excel/upload": "finance.manage",
   "/excel/imports": "finance.manage",
+  "/price-matrix-import": "pricing.manage",
 }
 
 /** Default dashboard view per role. */

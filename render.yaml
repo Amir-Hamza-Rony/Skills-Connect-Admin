@@ -62,6 +62,9 @@ services:
       - key: SEED_ADMIN_NAME
         value: Super Admin
       # QuickBooks (optional — degrades gracefully when not configured)
+      # QB_ENCRYPTION_KEY is required before any OAuth token can be stored.
+      - key: QB_ENCRYPTION_KEY
+        sync: false    # Set manually in Render dashboard; never commit a real key
       - key: QB_REALM_ID
         sync: false
       - key: QB_CLIENT_ID

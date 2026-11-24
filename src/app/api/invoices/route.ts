@@ -14,6 +14,7 @@ import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { enqueueSync } from "@/lib/quickbooks";
 import { defaultInvoiceExternalState } from "@/lib/invoice-integration";
+import { newTransactionCurrencyError } from "@/lib/pricing-validation";
 import type { Currency, InvoiceLineItem, QBSyncStatus2 } from "@/lib/types";
 
 function invalidId() {
@@ -132,8 +133,12 @@ export const POST = withAuth("finance.manage",
     const orderOid = safeObjectId(orderId);
     if (!orderOid) return invalidId();
 
-    if (!["AUD", "BDT", "USD", "GBP", "EUR", "INR"].includes(currency)) {
-      return NextResponse.json({ error: { code: "BAD_REQUEST", message: "Invalid currency." } }, { status: 400 });
+    // New invoices must be created in AUD only. Historical multi-currency
+    // invoices are preserved exactly as stored; this restriction applies to
+    // new transaction creation at the API boundary.
+    const currencyError = newTransactionCurrencyError(currency);
+    if (currencyError) {
+      return NextResponse.json({ error: { code: currencyError.code, message: currencyError.message } }, { status: 400 });
     }
 
     const issue = new Date(issueDate);

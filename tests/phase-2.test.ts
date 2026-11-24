@@ -301,7 +301,7 @@ describe("Phase 2 — Commission rules", () => {
         agentId: String(agentId),
         effectiveFrom: "2027-01-01",
         tiers: [{ minDeals: 1, maxDeals: null, commissionPerDeal: 4000 }],
-        commissionCurrency: "BDT",
+        commissionCurrency: "AUD",
         status: "active",
         approvalStatus: "draft",
       }),
@@ -309,7 +309,7 @@ describe("Phase 2 — Commission rules", () => {
     expect(res.status).toBe(201);
     const body = await json(res);
     expect(body.commissionRule.approvalStatus).toBe("draft");
-    expect(body.commissionRule.commissionCurrency).toBe("BDT");
+    expect(body.commissionRule.commissionCurrency).toBe("AUD");
   });
 
   it("requires either agentId or responsibility, not both", async () => {
@@ -329,7 +329,7 @@ describe("Phase 2 — Commission rules", () => {
 
   it("lists commission rules filtered by approval status", async () => {
     const agentId = await seedAgent();
-    await seedCommissionRule(new ObjectId(), agentId, "BDT");
+    await seedCommissionRule(new ObjectId(), agentId, "AUD");
 
     const list = await listCommissionRules(
       authedRequest("GET", "/api/masters/commission-rules?approvalStatus=approved"),
@@ -345,7 +345,7 @@ describe("Phase 2 — Commission calculation", () => {
 
   it("calculates a commission record for an agent and period", async () => {
     const agentId = await seedAgent();
-    await seedCommissionRule(new ObjectId(), agentId, "BDT");
+    await seedCommissionRule(new ObjectId(), agentId, "AUD");
 
     // Create eligible Completed orders in the period.
     const clientId = await seedClient();
@@ -414,7 +414,7 @@ describe("Phase 2 — Commission calculation", () => {
 
   it("prevents duplicate calculation for the same agent and period", async () => {
     const agentId = await seedAgent();
-    await seedCommissionRule(new ObjectId(), agentId, "BDT");
+    await seedCommissionRule(new ObjectId(), agentId, "AUD");
 
     const a = await calculateCommission(
       authedRequest("POST", "/api/commission-records", {
@@ -446,7 +446,7 @@ describe("Phase 2 — Commission approval and payout", () => {
 
   it("approves then pays out a commission record", async () => {
     const agentId = await seedAgent();
-    const ruleId = await seedCommissionRule(new ObjectId(), agentId, "BDT");
+    const ruleId = await seedCommissionRule(new ObjectId(), agentId, "AUD");
 
     const calc = await calculateCommission(
       authedRequest("POST", "/api/commission-records", {
@@ -471,7 +471,7 @@ describe("Phase 2 — Commission approval and payout", () => {
 
   it("records a payout and marks the record paid", async () => {
     const agentId = await seedAgent();
-    const ruleId = await seedCommissionRule(new ObjectId(), agentId, "BDT");
+    const ruleId = await seedCommissionRule(new ObjectId(), agentId, "AUD");
 
     // Seed the two eligible deals that produce the 8,000 BDT commission.
     const db = (await import("@/lib/db")).getDb;
@@ -507,7 +507,7 @@ describe("Phase 2 — Commission approval and payout", () => {
       authedRequest("POST", "/api/commission-payouts", {
         commissionRecordId: recordId,
         amount: 8000,
-        currency: "BDT",
+        currency: "AUD",
         paymentDate: "2027-02-01",
         paymentReference: "PAY-001",
       }),

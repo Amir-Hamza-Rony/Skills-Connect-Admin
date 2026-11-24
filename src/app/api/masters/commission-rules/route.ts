@@ -12,7 +12,6 @@ import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import {
   requireFields,
-  isValidCurrency,
   isValidDate,
   invalidId,
 } from "@/lib/pricing-validation";
@@ -236,9 +235,17 @@ export const POST = withAuth(
       );
     }
 
-    if (!isValidCurrency(body.commissionCurrency)) {
+    // New commission rules must use AUD only, so that commission records and
+    // payouts derived from them are also AUD. Historical rules keep their
+    // original currency; this restriction applies to new rule creation only.
+    if (body.commissionCurrency !== "AUD") {
       return NextResponse.json(
-        { error: { code: "BAD_REQUEST", message: "Invalid commission currency." } },
+        {
+          error: {
+            code: "BAD_REQUEST",
+            message: "New commission rules must use AUD.",
+          },
+        },
         { status: 400 },
       );
     }
@@ -290,10 +297,10 @@ export const POST = withAuth(
       );
     }
     let additionalIncentiveCurrency: string | null = null;
-    if (body.additionalIncentiveCurrency !== undefined) {
-      if (!isValidCurrency(body.additionalIncentiveCurrency)) {
+    if (body.additionalIncentiveCurrency !== undefined && body.additionalIncentiveCurrency !== null && body.additionalIncentiveCurrency !== "") {
+      if (String(body.additionalIncentiveCurrency) !== "AUD") {
         return NextResponse.json(
-          { error: { code: "BAD_REQUEST", message: "Invalid additional incentive currency." } },
+          { error: { code: "BAD_REQUEST", message: "New commission rules must use AUD." } },
           { status: 400 },
         );
       }

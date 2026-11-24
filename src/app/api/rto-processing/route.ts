@@ -179,6 +179,14 @@ export const POST = withAuth(
       );
     }
 
+    const processingCurrency = body.processingCurrency ? String(body.processingCurrency) : null;
+    if (processingCurrency !== null && processingCurrency !== "AUD") {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "New RTO processing records must use AUD." } },
+        { status: 400 },
+      );
+    }
+
     const now = new Date();
     const submissionDate = body.submissionDate ? new Date(String(body.submissionDate)) : null;
     if (submissionDate && Number.isNaN(submissionDate.getTime())) {
@@ -205,7 +213,7 @@ export const POST = withAuth(
       processingStatus,
       rtoReference: body.rtoReference ? String(body.rtoReference).trim() : null,
       processingFees,
-      processingCurrency: body.processingCurrency ? String(body.processingCurrency) : null,
+      processingCurrency,
       notes: body.notes ? String(body.notes).trim() : null,
       history: [historyEntry],
       createdAt: now.toISOString(),
