@@ -68,7 +68,7 @@ export function FinancePage() {
 
   const [creatingInv, setCreatingInv] = useState(false)
   const [invOrder, setInvOrder] = useState("")
-  const [invCurrency, setInvCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
+  const [invCurrency, setInvCurrency] = useState<"AUD">("AUD")
   const [invTotal, setInvTotal] = useState("")
   const [invIssue, setInvIssue] = useState("")
   const [invDue, setInvDue] = useState("")
@@ -85,7 +85,7 @@ export function FinancePage() {
   const [payOrder, setPayOrder] = useState("")
   const [payInvoice, setPayInvoice] = useState("")
   const [payAmount, setPayAmount] = useState("")
-  const [payCurrency, setPayCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
+  const [payCurrency, setPayCurrency] = useState<"AUD">("AUD")
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [payMethod, setPayMethod] = useState<PaymentMethod>("Bank Transfer")
   const [payRef, setPayRef] = useState("")
@@ -576,9 +576,7 @@ export function FinancePage() {
             <div className="space-y-1.5">
               <label htmlFor="pay-currency" className="text-sm font-medium">Currency</label>
               <select id="pay-currency" value={payCurrency} onChange={(e) => setPayCurrency(e.target.value as any)} className={inputCls}>
-                {["AUD", "BDT", "USD", "GBP", "EUR", "INR"].map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+                <option key="AUD" value="AUD">AUD</option>
               </select>
             </div>
             <div className="space-y-1.5">
@@ -641,9 +639,7 @@ export function FinancePage() {
             <div className="space-y-1.5">
               <label htmlFor="inv-currency" className="text-sm font-medium">Currency</label>
               <select id="inv-currency" value={invCurrency} onChange={(e) => setInvCurrency(e.target.value as any)} className={inputCls}>
-                {["AUD", "BDT", "USD", "GBP", "EUR", "INR"].map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+                <option key="AUD" value="AUD">AUD</option>
               </select>
             </div>
             <div className="space-y-1.5">

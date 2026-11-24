@@ -60,6 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Price Lists", icon: DollarSign, href: "/price-lists" },
       { label: "Additional Fees", icon: Plus, href: "/additional-fees" },
       { label: "Qualification ↔ RTO", icon: Link, href: "/qualification-rto-mappings" },
+      { label: "Price Matrix Import", icon: Upload, href: "/price-matrix-import" },
       { label: "RPL Partners", icon: Users, href: "/rpl-partners" },
       { label: "Import Templates", icon: ClipboardList, href: "/excel/templates" },
     ],

@@ -8,7 +8,6 @@ import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import {
   requireFields,
-  isValidCurrency,
   isValidDate,
   isPositiveAmount,
   invalidId,
@@ -152,9 +151,11 @@ export const POST = withAuth(
       );
     }
 
-    if (!isValidCurrency(body.currency)) {
+    // New additional fees must use AUD only. Historical multi-currency fees
+    // are preserved exactly as stored.
+    if (body.currency !== "AUD") {
       return NextResponse.json(
-        { error: { code: "BAD_REQUEST", message: "Invalid currency." } },
+        { error: { code: "BAD_REQUEST", message: "New additional fees must use AUD." } },
         { status: 400 },
       );
     }

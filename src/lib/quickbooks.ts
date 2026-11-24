@@ -17,6 +17,14 @@
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { enqueueJob } from "@/lib/jobs";
+import {
+  qbTransportConfig,
+  syncCustomer,
+  syncInvoice,
+  syncPayment,
+  type QBTransportConfig,
+} from "@/lib/quickbooks-transport";
 import type { QBEntityType } from "@/lib/types";
 
 export interface QBStatus {
@@ -52,7 +60,7 @@ function encryptionKey(): Buffer | null {
   return scryptSync(secret, "skills-connect-qb", 32);
 }
 
-function encryptToken(plaintext: string): { iv: string; authTag: string; ciphertext: string } | null {
+export function encryptToken(plaintext: string): { iv: string; authTag: string; ciphertext: string } | null {
   const key = encryptionKey();
   if (!key) return null;
   const iv = randomBytes(16);
@@ -66,7 +74,7 @@ function encryptToken(plaintext: string): { iv: string; authTag: string; ciphert
   };
 }
 
-function decryptToken(encrypted: { iv: string; authTag: string; ciphertext: string }): string | null {
+export function decryptToken(encrypted: { iv: string; authTag: string; ciphertext: string }): string | null {
   const key = encryptionKey();
   if (!key) return null;
   try {
@@ -438,6 +446,19 @@ export async function enqueueSync({
     });
     const created = await coll.findOne({ _id: result.insertedId });
     if (!created) return null;
+
+    // Enqueue a background job so the cron processor can pick up this sync.
+    // Idempotency key prevents duplicate jobs.
+    await enqueueJob({
+      type: "qb_sync",
+      payload: {
+        entityType: created.entityType,
+        entityId: String(created.entityId),
+        qbSyncId: String(created._id),
+      },
+      idempotencyKey: `qb-sync-job:${idempotencyKey}`,
+    });
+
     return {
       id: String(created._id),
       entityType: created.entityType,
@@ -493,7 +514,38 @@ export async function retrySync(
       if (!token) {
         result = { ok: false, error: "No valid QuickBooks access token." };
       } else {
-        result = { ok: false, error: "QuickBooks transport not implemented in Next.js." };
+        const config = qbTransportConfig();
+        if (!config) {
+          result = { ok: false, error: "QuickBooks realm ID is not configured." };
+        } else {
+          // Map entity type to transport operation.
+          if (entityType === "customer") {
+            result = await syncCustomer(config, {
+              displayName: record.qbReference ?? record.entityId,
+              currency: "AUD",
+            });
+          } else if (entityType === "invoice") {
+            result = await syncInvoice(config, {
+              customerRef: { value: record.qbReference ?? record.entityId },
+              line: [
+                {
+                  amount: 0,
+                  detailType: "SalesItemLineDetail",
+                  description: "Synced from Skills Connect Admin",
+                },
+              ],
+              currency: "AUD",
+            });
+          } else if (entityType === "payment") {
+            result = await syncPayment(config, {
+              customerRef: { value: record.qbReference ?? record.entityId },
+              amount: 0,
+              currency: "AUD",
+            });
+          } else {
+            result = { ok: false, error: `Unsupported QB entity type: ${entityType}` };
+          }
+        }
       }
     }
 

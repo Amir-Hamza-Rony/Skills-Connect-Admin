@@ -61,7 +61,7 @@ async function insertRule(overrides: Record<string, unknown> = {}) {
     effectiveTo: null,
     tiers: [{ minDeals: 1, maxDeals: null, commissionPerDeal: 4000 }],
     eligibleOrderStatuses: ["Completed"],
-    commissionCurrency: "BDT",
+    commissionCurrency: "AUD",
     additionalIncentiveAmount: null,
     additionalIncentiveCurrency: null,
     status: "active",
@@ -118,7 +118,7 @@ describe("Phase 5 — commission corrections", () => {
         effectiveTo: "2027-12-31",
         eligibleOrderStatuses: ["Completed"],
         tiers: [{ minDeals: 1, maxDeals: null, commissionPerDeal: 4000 }],
-        commissionCurrency: "BDT",
+        commissionCurrency: "AUD",
         status: "active",
         approvalStatus: "approved",
       }),
@@ -208,22 +208,26 @@ describe("Phase 5 — commission corrections", () => {
   });
 
   it("requires payout amount and currency to match the approved record", async () => {
-    const recordId = await insertCommissionRecord();
+    // New commission records and payouts must use AUD.
+    const recordId = await insertCommissionRecord({ commissionCurrency: "AUD", convertedAmount: 8000 });
 
+    // A non-AUD payout is rejected at the API boundary.
     const wrongCurrency = await createPayout(
       authedRequest("POST", "/api/commission-payouts", {
         commissionRecordId: String(recordId),
         amount: 8000,
-        currency: "AUD",
+        currency: "BDT",
       }),
     );
     expect(wrongCurrency.status).toBe(400);
+    expect((await json(wrongCurrency)).error.code).toBe("BAD_REQUEST");
 
+    // An AUD payout matching the approved record succeeds.
     const payout = await createPayout(
       authedRequest("POST", "/api/commission-payouts", {
         commissionRecordId: String(recordId),
         amount: 8000,
-        currency: "BDT",
+        currency: "AUD",
       }),
     );
     expect(payout.status).toBe(201);
@@ -232,7 +236,7 @@ describe("Phase 5 — commission corrections", () => {
       authedRequest("POST", "/api/commission-payouts", {
         commissionRecordId: String(recordId),
         amount: 8000,
-        currency: "BDT",
+        currency: "AUD",
       }),
     );
     expect(duplicate.status).toBe(409);

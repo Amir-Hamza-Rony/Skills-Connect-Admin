@@ -40,6 +40,34 @@ export const VALID_CURRENCIES = new Set([
   "INR",
 ]);
 
+/**
+ * The only currency accepted for newly created financial transactions.
+ * Historical records keep their original, persisted currency; this constant
+ * applies to new transaction creation only (invoices, payments, commission
+ * records, payouts, orders).
+ */
+export const NEW_TRANSACTION_CURRENCY = "AUD";
+
+export function isNewTransactionCurrency(currency: unknown): currency is "AUD" {
+  return currency === NEW_TRANSACTION_CURRENCY;
+}
+
+/**
+ * Returns a validation error response when a submitted currency is not AUD for
+ * a new financial transaction. Returns null when the currency is AUD or absent
+ * (callers default absent to AUD).
+ */
+export function newTransactionCurrencyError(currency: unknown): { code: string; message: string } | null {
+  if (currency === undefined || currency === null || currency === "") return null;
+  if (String(currency) !== NEW_TRANSACTION_CURRENCY) {
+    return {
+      code: "BAD_REQUEST",
+      message: `New financial transactions must use ${NEW_TRANSACTION_CURRENCY}. Received: ${String(currency)}.`,
+    };
+  }
+  return null;
+}
+
 export function isValidCurrency(v: unknown): v is string {
   return typeof v === "string" && VALID_CURRENCIES.has(v);
 }

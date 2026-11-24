@@ -13,6 +13,7 @@ import { withAuth, type AuthedRequest } from "@/middleware/auth";
 import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { ORDER_STATUS_GROUPS, type OrderStatus } from "@/lib/types";
+import { newTransactionCurrencyError } from "@/lib/pricing-validation";
 
 const PERMISSION = "commissions.manage";
 
@@ -251,6 +252,22 @@ export const POST = withAuth(
     }
     const rule = applicableRules[0];
 
+    // New commission records must use AUD only. Reject rules configured with a
+    // non-AUD (or missing) commission currency so no non-AUD commission record
+    // is created.
+    const commissionCurrency = rule.commissionCurrency;
+    if (commissionCurrency !== "AUD") {
+      return NextResponse.json(
+        {
+          error: {
+            code: "BAD_REQUEST",
+            message: `New commission records must use AUD. Commission rule currency was "${String(commissionCurrency ?? "")}".`,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     // Aggregate eligible orders for the period. Eligibility statuses come only
     // from the stored rule; an unconfigured rule fails closed.
     if (!Array.isArray(rule.eligibleOrderStatuses) || rule.eligibleOrderStatuses.length === 0) {
@@ -335,23 +352,11 @@ export const POST = withAuth(
 
     const commissionPerDeal = tierApplied ? tierApplied.commissionPerDeal : 0;
     const commissionAmount = eligibleDealCount * commissionPerDeal;
-    const commissionCurrency = rule.commissionCurrency;
 
-    // Currency conversion snapshot when order currency differs from commission currency.
-    let exchangeRate: number | null = null;
-    let convertedAmount: number | null = null;
-    if (eligibleDealCount > 0 && commissionCurrency) {
-      // Use the selling currency of the first eligible order as the sale currency
-      // snapshot. Real implementations would use a configured FX rate source.
-      const saleCurrency = orders[0]?.currency || "AUD";
-      if (saleCurrency !== commissionCurrency) {
-        // Placeholder rate: management must configure a real FX source.
-        exchangeRate = 1;
-        convertedAmount = commissionAmount;
-      } else {
-        convertedAmount = commissionAmount;
-      }
-    }
+    // New commission records use AUD; no currency conversion is performed and
+    // the placeholder exchange-rate snapshot is not applied.
+    const exchangeRate: number | null = null;
+    const convertedAmount: number | null = eligibleDealCount > 0 ? commissionAmount : null;
 
     const additionalIncentiveAmount =
       rule.additionalIncentiveAmount && tierApplied

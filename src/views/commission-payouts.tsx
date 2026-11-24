@@ -26,7 +26,7 @@ export function CommissionPayoutsPage() {
   const [creating, setCreating] = useState(false)
   const [recordId, setRecordId] = useState("")
   const [amount, setAmount] = useState("")
-  const [currency, setCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("BDT")
+  const [currency, setCurrency] = useState<"AUD">("AUD")
   const [paymentDate, setPaymentDate] = useState("")
   const [paymentReference, setPaymentReference] = useState("")
   const [statusFilter, setStatusFilter] = useState<"pending" | "paid" | "failed" | "">("")
@@ -67,7 +67,7 @@ export function CommissionPayoutsPage() {
       setCreating(false)
       setRecordId("")
       setAmount("")
-      setCurrency("BDT")
+      setCurrency("AUD")
       setPaymentDate("")
       setPaymentReference("")
     } catch (err: any) {
@@ -88,11 +88,6 @@ export function CommissionPayoutsPage() {
 
   const CURRENCIES: Array<{ value: string; label: string }> = [
     { value: "AUD", label: "AUD" },
-    { value: "BDT", label: "BDT" },
-    { value: "USD", label: "USD" },
-    { value: "GBP", label: "GBP" },
-    { value: "EUR", label: "EUR" },
-    { value: "INR", label: "INR" },
   ]
 
   return (

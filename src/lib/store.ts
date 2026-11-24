@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api"
+import { apiFetch, uploadFile } from "@/lib/api"
 import type {
   Agent,
   Order,
@@ -690,4 +690,94 @@ export async function updateCertificateDelivery(
     { method: "PATCH", body: patch },
   )
   return data.certificateDelivery
+}
+
+/* ---------- Price Matrix Import ---------- */
+
+export interface PriceMatrixPreviewRow {
+  rowNum: number
+  qualificationCode: string | null
+  qualificationTitle: string | null
+  qualificationId: string | null
+  rtoName: string | null
+  rtoCode: string | null
+  rtoId: string | null
+  wholesaleCost: number | null
+  currency: string
+  status: "Ready" | "Pending Review" | "Conflict" | "Invalid" | "Imported"
+  errors: string[]
+}
+
+export interface PriceMatrixPreview {
+  filename: string
+  sheet: string
+  headers: string[]
+  rtoPricePairs: Array<{ rtoCol: number; priceCol: number; rtoHeader: string }>
+  totalRows: number
+  readyCount: number
+  pendingCount: number
+  rows: PriceMatrixPreviewRow[]
+}
+
+export interface PriceMatrixAgent {
+  id: string
+  name: string
+  contact: string
+}
+
+export interface PriceMatrixPreviewResult {
+  preview: PriceMatrixPreview
+  agents: PriceMatrixAgent[]
+}
+
+export interface PriceMatrixImportRow {
+  qualificationId: string
+  rtoId: string
+  sourceAgentId: string
+  wholesaleCost: number
+  currency: string
+  effectiveFrom: string
+  effectiveTo: string | null
+}
+
+export interface PriceMatrixImportResult {
+  totalRows: number
+  importedCount: number
+  pendingCount: number
+  errorCount: number
+  imported: Array<{
+    rowIndex: number
+    id: string
+    qualificationId: string
+    rtoId: string
+    sourceAgentId: string
+    wholesaleCost: number
+  }>
+  pending: Array<{
+    rowIndex: number
+    reason: string
+    row: PriceMatrixImportRow
+  }>
+  errors: Array<{
+    rowIndex: number
+    code: string
+    message: string
+  }>
+}
+
+/** Upload and parse the Price Matrix sheet for preview. Returns unresolved rows flagged as "Pending Review". */
+export async function previewPriceMatrix(file: File): Promise<PriceMatrixPreviewResult> {
+  const formData = new FormData()
+  formData.append("file", file)
+  const data = await uploadFile<PriceMatrixPreviewResult>("/excel/price-matrix/preview", formData)
+  return data
+}
+
+/** Import verified Price Matrix rows as supplier routes. Unresolved rows are reported as pending and not imported. */
+export async function importPriceMatrix(rows: PriceMatrixImportRow[]): Promise<PriceMatrixImportResult> {
+  const data = await apiFetch<{ result: PriceMatrixImportResult }>("/excel/price-matrix/import", {
+    method: "POST",
+    body: { rows },
+  })
+  return data.result
 }

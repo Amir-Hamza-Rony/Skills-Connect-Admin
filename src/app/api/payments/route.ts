@@ -17,6 +17,7 @@ import { collection, safeObjectId, getClient } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { enqueueSync } from "@/lib/quickbooks";
 import { checkOrderAccess } from "@/middleware/auth";
+import { newTransactionCurrencyError } from "@/lib/pricing-validation";
 
 function invalidId() {
   return NextResponse.json(
@@ -95,14 +96,15 @@ export const POST = withAuth("finance.manage",
       throw err;
     }
 
-    if (!["AUD", "BDT", "USD", "GBP", "EUR", "INR"].includes(currency ?? "AUD")) {
-      return NextResponse.json(
-        { error: { code: "BAD_REQUEST", message: "Invalid currency." } },
-        { status: 400 },
-      );
+    // New payments must be recorded in AUD only. Absent currency defaults to
+    // AUD. Historical multi-currency payments are preserved exactly as stored.
+    const currencyError = newTransactionCurrencyError(currency);
+    if (currencyError) {
+      return NextResponse.json({ error: { code: currencyError.code, message: currencyError.message } }, { status: 400 });
     }
 
-    const paymentCurrency = currency ?? "AUD";
+    const paymentCurrency =
+      currency === undefined || currency === null || currency === "" ? "AUD" : String(currency);
 
     let invoiceOid: import("mongodb").ObjectId | null = null;
     if (invoiceId) {
