@@ -86,7 +86,7 @@ async function resolveQualification(code: string): Promise<{ id: string | null; 
 function parsePriceMatrixSheet(ws: ExcelJS.Worksheet): {
   headers: string[];
   rtoPricePairs: Array<{ rtoCol: number; priceCol: number; rtoHeader: string }>;
-  dataRows: Array<{ rowNum: number; cells: Record<string, unknown> }>;
+  dataRows: Array<{ rowNum: number; cells: unknown[] }>;
 } {
   const headers: string[] = [];
   const headerRow = ws.getRow(2);
@@ -105,7 +105,7 @@ function parsePriceMatrixSheet(ws: ExcelJS.Worksheet): {
     }
   }
 
-  const dataRows: Array<{ rowNum: number; cells: Record<string, unknown> }> = [];
+  const dataRows: Array<{ rowNum: number; cells: unknown[] }> = [];
   for (let rowNum = 3; rowNum <= ws.rowCount; rowNum++) {
     const row = ws.getRow(rowNum);
     let hasAnyValue = false;
@@ -116,11 +116,12 @@ function parsePriceMatrixSheet(ws: ExcelJS.Worksheet): {
     });
     if (!hasAnyValue) continue;
 
-    const cells: Record<string, unknown> = {};
-    headers.forEach((h, idx) => {
-      const cell = row.getCell(idx + 1);
-      if (h) cells[h] = cell.value;
-    });
+    // Store cells by 1-based column index (index 0 unused) so that duplicate
+    // header names (e.g. multiple "RTO" columns) do not overwrite each other.
+    const cells: unknown[] = [];
+    for (let col = 1; col <= headers.length; col++) {
+      cells[col] = row.getCell(col).value;
+    }
     dataRows.push({ rowNum, cells });
   }
 
@@ -209,14 +210,17 @@ export const POST = withAuth(
     }> = [];
 
     for (const { rowNum, cells } of dataRows) {
-      const qualCode = cells["Course Code"] ?? cells["A"] ?? null;
-      const qualTitle = cells["Qualifications"] ?? cells["B"] ?? null;
+      const qualCode = cells[1] ?? null;
+      const qualTitle = cells[2] ?? null;
 
-      const qualResolved = await resolveQualification(qualCode ? String(qualCode) : "");
+      const qualCodeStr = typeof qualCode === "object" ? String(qualCode) : String(qualCode ?? "");
+      const qualTitleStr = typeof qualTitle === "object" ? String(qualTitle) : String(qualTitle ?? "");
+
+      const qualResolved = await resolveQualification(qualCodeStr);
 
       for (const { rtoCol, priceCol } of rtoPricePairs) {
-        const rtoName = cells[headers[rtoCol - 1]] ?? null;
-        const rawPrice = cells[headers[priceCol - 1]];
+        const rtoName = cells[rtoCol] ?? null;
+        const rawPrice = cells[priceCol];
 
         // Skip rows with no price (no offer from this RTO).
         if (rawPrice === null || rawPrice === undefined || rawPrice === "") continue;
@@ -236,17 +240,18 @@ export const POST = withAuth(
           }
         }
 
-        const rtoResolved = await resolveRto(rtoName ? String(rtoName) : "");
+        const rtoNameStr = typeof rtoName === "object" ? String(rtoName) : String(rtoName ?? "");
+        const rtoResolved = await resolveRto(rtoNameStr);
 
         const hasErrors = errors.length > 0 || !qualResolved.id || !rtoResolved.id || wholesaleCost === null;
         const status = hasErrors ? "Pending Review" : "Ready";
 
         previewRows.push({
           rowNum,
-          qualificationCode: qualCode ? String(qualCode) : null,
-          qualificationTitle: qualTitle ? String(qualTitle) : null,
+          qualificationCode: qualCodeStr || null,
+          qualificationTitle: qualTitleStr || null,
           qualificationId: qualResolved.id,
-          rtoName: rtoName ? String(rtoName) : null,
+          rtoName: rtoNameStr || null,
           rtoCode: rtoResolved.code,
           rtoId: rtoResolved.id,
           wholesaleCost,

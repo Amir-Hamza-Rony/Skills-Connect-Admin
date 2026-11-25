@@ -44,7 +44,7 @@ export function PriceListsPage() {
   const [qualificationId, setQualificationId] = useState("")
   const [priceCategoryId, setPriceCategoryId] = useState("")
   const [amount, setAmount] = useState("")
-  const [currency, setCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
+  const [currency, setCurrency] = useState<"AUD">("AUD")
   const [effectiveFrom, setEffectiveFrom] = useState("")
   const [effectiveTo, setEffectiveTo] = useState("")
   const [status, setStatus] = useState<"active" | "inactive" | "draft">("active")

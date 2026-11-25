@@ -172,13 +172,17 @@ export const POST = withAuth(
         continue;
       }
 
-      // Validate currency.
-      const validCurrencies = new Set(["AUD", "BDT", "USD", "GBP", "EUR", "INR"]);
-      if (!row.currency || !validCurrencies.has(row.currency)) {
-        pending.push({ rowIndex: i, reason: `Currency must be one of: ${Array.from(validCurrencies).join(", ")}.`, row });
+      // Validate currency. New transactions must be AUD only. Empty or
+      // non-AUD currency pends the row rather than defaulting.
+      if (!row.currency || String(row.currency) !== "AUD") {
+        pending.push({
+          rowIndex: i,
+          reason: `Currency must be AUD. Received: ${String(row.currency ?? "")}.`,
+          row,
+        });
         continue;
       }
-      const currency = row.currency;
+      const currency = "AUD";
 
       // Validate effective dates.
       if (!row.effectiveFrom) {

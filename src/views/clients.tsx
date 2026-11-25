@@ -25,6 +25,9 @@ export function ClientsPage() {
   const [preferredName, setPreferredName] = useState("")
   const [phone, setPhone] = useState("")
   const [email, setEmail] = useState("")
+  const [usiNumber, setUsiNumber] = useState("")
+  const [dob, setDob] = useState("")
+  const [visaStatus, setVisaStatus] = useState("")
   const [address, setAddress] = useState("")
   const [sourceAgentId, setSourceAgentId] = useState("")
   const [notes, setNotes] = useState("")
@@ -57,6 +60,10 @@ export function ClientsPage() {
         legalName: legalName.trim(),
         preferredName: preferredName.trim() || legalName.trim(),
         email: email.trim(),
+        phone: phone.trim() || undefined,
+        dob: dob.trim() || null,
+        usiNumber: usiNumber.trim() || null,
+        visaStatus: visaStatus.trim() || null,
         contacts: [
           { label: "Mobile", type: "phone", value: phone.trim(), primary: true },
           { label: "Email", type: "email", value: email.trim(), primary: true },
@@ -84,6 +91,9 @@ export function ClientsPage() {
       setPreferredName("")
       setPhone("")
       setEmail("")
+      setUsiNumber("")
+      setDob("")
+      setVisaStatus("")
       setAddress("")
       setSourceAgentId("")
       setNotes("")
@@ -186,6 +196,20 @@ export function ClientsPage() {
               <label htmlFor="c-email" className="text-sm font-medium">Email</label>
               <input id="c-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="client@example.com" className={inputCls} />
             </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="c-usi" className="text-sm font-medium">USI Number</label>
+              <input id="c-usi" value={usiNumber} onChange={(e) => setUsiNumber(e.target.value)} placeholder="1234567890" className={inputCls} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="c-dob" className="text-sm font-medium">Date of Birth</label>
+              <input id="c-dob" type="date" value={dob} onChange={(e) => setDob(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="c-visa" className="text-sm font-medium">Visa Status</label>
+            <input id="c-visa" value={visaStatus} onChange={(e) => setVisaStatus(e.target.value)} placeholder="e.g. Citizen, PR, Student Visa" className={inputCls} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="c-addr" className="text-sm font-medium">Address</label>

@@ -33,6 +33,7 @@ export function QualificationsPage() {
   const [title, setTitle] = useState("")
   const [pkg, setPkg] = useState("")
   const [industry, setIndustry] = useState("")
+  const [licensingRefs, setLicensingRefs] = useState("")
   const [status, setStatus] = useState<QualificationStatus>("current")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,6 +66,9 @@ export function QualificationsPage() {
         trainingPackage: pkg.trim(),
         industry: industry.trim(),
         status,
+        licensingRefs: licensingRefs.trim()
+          ? JSON.parse(licensingRefs.trim())
+          : [],
       })
       setRows((prev) => (prev ? [created, ...prev] : [created]))
       setCreating(false)
@@ -72,6 +76,7 @@ export function QualificationsPage() {
       setTitle("")
       setPkg("")
       setIndustry("")
+      setLicensingRefs("")
       setStatus("current")
     } catch (err: any) {
       setError(err?.message ?? "Failed to create qualification. The code may already exist.")
@@ -304,6 +309,21 @@ export function QualificationsPage() {
                 className={inputCls}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="q-licensing" className="text-sm font-medium">Licensing Refs (JSON array)</label>
+            <textarea
+              id="q-licensing"
+              value={licensingRefs}
+              onChange={(e) => setLicensingRefs(e.target.value)}
+              placeholder="JSON array of licensing refs"
+              rows={2}
+              className={inputCls}
+            />
+            <p className="text-xs text-muted-foreground">
+              Optional. Example JSON array of licensing refs with authority,
+              industry, prerequisites and outcome fields.
+            </p>
           </div>
           {error && (
             <p role="alert" className="text-sm text-destructive">{error}</p>

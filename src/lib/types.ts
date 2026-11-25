@@ -120,7 +120,7 @@ export interface RplPartner {
 
 export type RouteStatus = "active" | "expired"
 
-export type Currency = "AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR"
+export type Currency = "AUD"
 
 export interface SupplierRoute {
   id: string
@@ -373,7 +373,6 @@ export interface Order {
   exchangeRate: number | null
   /** Converted reporting amount at order time. */
   convertedAmount: number | null
-  /** Additional fees snapshot applied at order creation. */
   additionalFees: Array<{
     feeId: string
     description: string | null
