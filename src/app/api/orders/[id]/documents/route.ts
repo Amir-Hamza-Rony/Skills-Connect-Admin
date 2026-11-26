@@ -1,54 +1,29 @@
 /**
- * GET /api/orders/[id]/documents — document list for one order (requires documents.view)
- * Mirrors Express `GET /orders/:id/documents`.
+ * GET /api/orders/[id]/documents — list documents for a specific order
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { withAuth, requirePermission } from "@/middleware/auth";
-import type { AuthedRequest } from "@/middleware/auth";
-import { collection, toObjectId } from "@/lib/db";
-import { checkOrderAccess } from "@/middleware/auth";
+import { NextResponse } from "next/server";
+import { withAuth, type AuthedRequest } from "@/middleware/auth";
+import { collection, safeObjectId } from "@/lib/db";
 
-export const GET = withAuth("documents.view",
-  async (req: NextRequest, { params }: { params?: Promise<Record<string, unknown>> | Record<string, unknown> | undefined }) => {
+export const GET = withAuth(
+  async (req: AuthedRequest, { params }: { params?: Promise<{ id?: string }> | { id?: string } | undefined }) => {
     const resolvedParams = await (params ?? {});
     const { id } = resolvedParams;
 
-    let orderId;
-    try {
-      orderId = toObjectId(id);
-    } catch {
-      return NextResponse.json(
-        { error: { code: "INVALID_ID", message: "Invalid order id." } },
-        { status: 400 },
-      );
+    const oid = safeObjectId(id);
+    if (!oid) {
+      return NextResponse.json({ error: { code: "INVALID_ID", message: "Invalid order id." } }, { status: 400 });
     }
 
-    const orders = await collection("orders");
-    const order = await orders.findOne({ _id: orderId });
-    if (!order) {
-      return NextResponse.json(
-        { error: { code: "NOT_FOUND", message: "Order not found." } },
-        { status: 404 },
-      );
-    }
-
-    const auth = (req as AuthedRequest).auth!;
-    if (!checkOrderAccess(auth, order)) {
-      return NextResponse.json(
-        { error: { code: "FORBIDDEN", message: "Not authorized to access this order." } },
-        { status: 403 },
-      );
-    }
-
-    const docs = await collection("documents");
-    const documents = await docs
-      .find({ orderId })
-      .sort({ type: 1, version: -1 })
+    const coll = await collection("documents");
+    const docs = await coll
+      .find({ orderId: oid })
+      .sort({ createdAt: -1 })
       .toArray();
 
     return NextResponse.json({
-      documents: documents.map((d: any) => ({
+      documents: docs.map((d: any) => ({
         id: String(d._id),
         orderId: String(d.orderId),
         clientId: String(d.clientId),
@@ -58,10 +33,10 @@ export const GET = withAuth("documents.view",
         contentType: d.contentType,
         sizeBytes: d.sizeBytes,
         status: d.status,
-        receivedAt: d.receivedAt ?? null,
-        reviewedAt: d.reviewedAt ?? null,
-        reviewedBy: d.reviewedBy ? String(d.reviewedBy) : null,
-        rejectionReason: d.rejectionReason ?? null,
+        receivedAt: d.receivedAt,
+        reviewedAt: d.reviewedAt,
+        reviewedBy: d.reviewedBy,
+        rejectionReason: d.rejectionReason,
         createdAt: d.createdAt,
         updatedAt: d.updatedAt,
       })),

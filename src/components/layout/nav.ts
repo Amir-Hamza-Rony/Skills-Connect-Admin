@@ -61,6 +61,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Additional Fees", icon: Plus, href: "/additional-fees" },
       { label: "Qualification ↔ RTO", icon: Link, href: "/qualification-rto-mappings" },
       { label: "Price Matrix Import", icon: Upload, href: "/price-matrix-import" },
+      { label: "Full Master Hub Import", icon: Upload, href: "/excel/import-master-hub" },
       { label: "Bulk RTO Import", icon: Upload, href: "/excel/bulk-rtos" },
       { label: "Bulk Qualification Import", icon: Upload, href: "/excel/bulk-quals" },
       { label: "Bulk Mapping Import", icon: Upload, href: "/excel/bulk-mappings" },

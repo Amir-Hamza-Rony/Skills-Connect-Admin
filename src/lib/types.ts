@@ -4,7 +4,7 @@
  * future REST/MongoDB backend can plug in without UI changes.
  */
 
-export type RoleName = "SUPER_ADMIN" | "ADMIN" | "BDC" | "B2B_AGENT"
+export type RoleName = "SUPER_ADMIN" | "ADMIN" | "BDC" | "B2B_AGENT" | "EMPLOYEE"
 
 export interface Role {
   id: string
