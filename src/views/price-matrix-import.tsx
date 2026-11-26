@@ -118,7 +118,7 @@ export function PriceMatrixImportPage() {
         rtoId: r.rtoId!,
         sourceAgentId: agentSelections[r.rowNum] ?? "",
         wholesaleCost: r.wholesaleCost ?? 0,
-        currency: r.currency,
+        currency: "AUD",
         effectiveFrom: new Date().toISOString(),
         effectiveTo: null,
       }))

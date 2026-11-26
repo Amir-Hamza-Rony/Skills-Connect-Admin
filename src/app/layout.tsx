@@ -19,34 +19,10 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
-/**
- * Theme bootstrap: runs before first paint to avoid flash of wrong theme.
- * Stores ONLY the non-sensitive theme preference ("light" | "dark" | "system").
- * First-time users (no stored value) fall back to the OS preference (System).
- */
-const themeBootstrap = `(function () {
-  try {
-    var stored = localStorage.getItem("sc-theme") || "system";
-    var dark =
-      stored === "dark" ||
-      (stored === "system" &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches);
-    document.documentElement.classList.toggle("dark", dark);
-    document.documentElement.style.colorScheme = dark ? "dark" : "light";
-  } catch (e) {
-    /* storage unavailable — fall back to OS preference */
-    try {
-      var osDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.classList.toggle("dark", osDark);
-    } catch (_) {}
-  }
-})();`
-
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       <body>
         <Providers>{children}</Providers>

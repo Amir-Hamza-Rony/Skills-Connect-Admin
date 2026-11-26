@@ -113,7 +113,7 @@ export async function listQualifications(): Promise<Qualification[]> {
 }
 
 export async function createQualification(
-  q: Omit<Qualification, "id" | "licensingRefs">,
+  q: Omit<Qualification, "id">,
 ): Promise<Qualification> {
   const data = await apiFetch<{ qualification: Qualification }>("/masters/qualifications", {
     method: "POST",
@@ -735,7 +735,7 @@ export interface PriceMatrixImportRow {
   rtoId: string
   sourceAgentId: string
   wholesaleCost: number
-  currency: string
+  currency: "AUD"
   effectiveFrom: string
   effectiveTo: string | null
 }

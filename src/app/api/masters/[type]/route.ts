@@ -16,6 +16,7 @@ import {
   isAgentUnique,
   isValidDate,
 } from "@/lib/master-validation";
+import { generateDemoContact } from "@/lib/demo-contact";
 
 const PERMISSION_MAP: Record<string, string> = {
   qualifications: "qualifications.manage",
@@ -27,7 +28,7 @@ const PERMISSION_MAP: Record<string, string> = {
 const REQUIRED: Record<string, string[]> = {
   qualifications: ["code", "title", "trainingPackage", "industry", "status"],
   rtos: ["legalName", "tradingName", "rtoCode", "status"],
-  agents: ["name", "type", "contact"],
+  agents: ["name", "type"],
   "supplier-routes": [
     "qualificationId",
     "sourceAgentId",
@@ -220,7 +221,7 @@ export const POST = withAuth(
 
     if (type === "agents") {
       const name = String(body.name).trim();
-      const contact = String(body.contact).trim();
+      const contact = String(body.contact ?? "").trim() || generateDemoContact(name);
       const agentType = String(body.type);
       if (!VALID_AGENT_TYPES.has(agentType)) {
         return NextResponse.json(

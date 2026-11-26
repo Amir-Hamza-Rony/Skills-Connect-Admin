@@ -8,6 +8,7 @@ import { withAuth, requirePermission } from "@/middleware/auth";
 import { collection } from "@/lib/db";
 import { hashPassword } from "@/lib/api-auth";
 import { resolvePrimaryRole } from "@/lib/permissions";
+import { generateDemoContact } from "@/lib/demo-contact";
 
 export const GET = withAuth("users.manage",
   async (req) => {
@@ -61,7 +62,7 @@ export const POST = withAuth("users.manage",
       email: email.toLowerCase(),
       name,
       full_name: name,
-      phone: phone ?? "",
+      phone: phone ? String(phone).trim() : generateDemoContact(name),
       passwordHash: hash,
       role: primaryRole,
       roleNames: roleNamesArray,
@@ -81,7 +82,7 @@ export const POST = withAuth("users.manage",
         name,
         full_name: name,
         email: email.toLowerCase(),
-        phone: phone ?? "",
+        phone: phone ? String(phone).trim() : generateDemoContact(name),
         role: primaryRole,
         roleNames: roleNamesArray,
         agency_name: agency_name ?? null,
