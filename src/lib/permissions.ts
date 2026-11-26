@@ -73,6 +73,11 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "documents.view",
     "reports.view",
   ],
+  EMPLOYEE: [
+    "clients.view",
+    "orders.view",
+    "documents.view",
+  ],
 }
 
 /**
@@ -121,7 +126,12 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/excel/templates": "finance.manage",
   "/excel/upload": "finance.manage",
   "/excel/imports": "finance.manage",
+  "/excel/bulk-students": "finance.manage",
   "/price-matrix-import": "pricing.manage",
+  "/excel/import-master-hub": "rto.manage",
+  "/excel/bulk-rtos": "rto.manage",
+  "/excel/bulk-quals": "qualifications.manage",
+  "/excel/bulk-mappings": "qualifications.manage",
 }
 
 /** Default dashboard view per role. */
@@ -129,11 +139,12 @@ export const DEFAULT_VIEW_FOR: Record<RoleName, string> = {
   SUPER_ADMIN: "management",
   ADMIN: "management",
   BDC: "agent",
-  B2B_AGENT: "agent",
+  B2B_AGENT: "b2b",
+  EMPLOYEE: "employee",
 }
 
-/** All four role names, for UI checkbox population. */
-export const ALL_ROLES: RoleName[] = ["SUPER_ADMIN", "ADMIN", "BDC", "B2B_AGENT"]
+/** All five role names, for UI checkbox population. */
+export const ALL_ROLES: RoleName[] = ["SUPER_ADMIN", "ADMIN", "BDC", "B2B_AGENT", "EMPLOYEE"]
 
 /**
  * Resolve the single role that drives dashboard scoping and display.

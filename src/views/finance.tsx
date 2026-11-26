@@ -34,6 +34,18 @@ import { cn } from "@/lib/utils"
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
 
+const RETURN_WINDOW_DAYS = 7
+
+function isRefundEligible(paymentDate: string | null | undefined): boolean {
+  if (!paymentDate) return false
+  const paidAt = new Date(paymentDate)
+  if (Number.isNaN(paidAt.getTime())) return false
+  const now = new Date()
+  const diffMs = now.getTime() - paidAt.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  return diffDays <= RETURN_WINDOW_DAYS
+}
+
 import type { PaymentPlan } from "@/lib/types"
 
 const METHODS: PaymentMethod[] = ["Bank Transfer", "Card", "Cash", "Other"]
@@ -91,6 +103,10 @@ export function FinancePage() {
   const [payRef, setPayRef] = useState("")
   const [payResult, setPayResult] = useState<string | null>(null)
   const [overdue, setOverdue] = useState<number | null>(null)
+
+  const [refunding, setRefunding] = useState(false)
+  const [refundTarget, setRefundTarget] = useState<Payment | null>(null)
+  const [refundReason, setRefundReason] = useState("")
 
   useEffect(() => {
     void api
@@ -218,9 +234,24 @@ export function FinancePage() {
   }
 
   async function onRefund(p: Payment) {
-    const updated = await refundPayment(p.id, actor)
-    setPayments((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
-    setSummary(await financeSummary())
+    setRefundTarget(p)
+    setRefundReason("")
+  }
+
+  async function handleRefundConfirm() {
+    if (!refundTarget) return
+    setRefunding(true)
+    try {
+      const updated = await refundPayment(refundTarget.id, actor, refundReason.trim() || undefined)
+      setPayments((prev) => prev.map((x) => (x.id === updated.id ? updated : x)))
+      setSummary(await financeSummary())
+      setRefundTarget(null)
+      setRefundReason("")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Refund failed.")
+    } finally {
+      setRefunding(false)
+    }
   }
 
   async function onRetryQB(r: QBSyncRecord) {
@@ -478,12 +509,21 @@ export function FinancePage() {
                   key: "actions",
                   label: "Actions",
                   render: (p) =>
-                    p.status !== "Refunded" && p.status !== "Void" ? (
-                      <Button size="sm" variant="outline" onClick={() => void onRefund(p)}>
+                    p.status === "Refunded" || p.status === "Void" ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : !isRefundEligible(p.date) ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        title="Outside 7-day return window"
+                      >
                         Refund
                       </Button>
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <Button size="sm" variant="outline" onClick={() => void onRefund(p)}>
+                        Refund
+                      </Button>
                     ),
                 },
               ]}
@@ -608,6 +648,44 @@ export function FinancePage() {
             </Button>
             <Button type="submit" disabled={saving}>
               {saving ? "Recording…" : "Record payment"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={refundTarget !== null}
+        onClose={() => setRefundTarget(null)}
+        title="Refund Payment"
+        description={`7-day return policy — refund eligible within ${RETURN_WINDOW_DAYS} days of payment.`}
+      >
+        <form onSubmit={(e) => { e.preventDefault(); handleRefundConfirm() }} className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Payment</label>
+            <p className="text-sm text-muted-foreground">
+              {refundTarget?.reference} · {formatMoney(refundTarget?.amount ?? 0, refundTarget?.currency ?? "AUD")} · {refundTarget?.date}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="refund-reason" className="text-sm font-medium">Refund reason</label>
+            <textarea
+              id="refund-reason"
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="Reason for refund…"
+              rows={3}
+              className={inputCls}
+            />
+          </div>
+          {formError && (
+            <p role="alert" className="text-sm text-destructive">{formError}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRefundTarget(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={refunding || !refundTarget}>
+              {refunding ? "Refunding…" : "Confirm Refund"}
             </Button>
           </div>
         </form>

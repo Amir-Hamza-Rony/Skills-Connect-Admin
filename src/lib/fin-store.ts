@@ -124,8 +124,8 @@ export async function recordPayment(
   return data.payment
 }
 
-export async function refundPayment(id: string, _actorId: string): Promise<Payment> {
-  const data = await api.post<{ payment: Payment }>(`/payments/${id}/refund`)
+export async function refundPayment(id: string, _actorId: string, reason?: string): Promise<Payment> {
+  const data = await api.post<{ payment: Payment }>(`/payments/${id}/refund`, { reason })
   return data.payment
 }
 

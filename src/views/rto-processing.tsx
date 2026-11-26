@@ -48,7 +48,7 @@ export function RtoProcessingPage() {
   const [submissionDate, setSubmissionDate] = useState("")
   const [rtoReference, setRtoReference] = useState("")
   const [processingFees, setProcessingFees] = useState("")
-  const [processingCurrency, setProcessingCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
+  const [processingCurrency, setProcessingCurrency] = useState<"AUD">("AUD")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

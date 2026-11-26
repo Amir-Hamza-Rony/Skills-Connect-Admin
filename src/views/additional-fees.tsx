@@ -38,7 +38,7 @@ export function AdditionalFeesPage() {
   >("qualification")
   const [referenceId, setReferenceId] = useState("")
   const [amount, setAmount] = useState("")
-  const [currency, setCurrency] = useState<"AUD" | "BDT" | "USD" | "GBP" | "EUR" | "INR">("AUD")
+  const [currency, setCurrency] = useState<"AUD">("AUD")
   const [description, setDescription] = useState("")
   const [effectiveFrom, setEffectiveFrom] = useState("")
   const [effectiveTo, setEffectiveTo] = useState("")

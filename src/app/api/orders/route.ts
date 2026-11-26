@@ -225,12 +225,9 @@ export const POST = withAuth("orders.manage",
 
     // Resolve the client selling price from the price list (server-side).
     // Client-submitted sellingPrice is only a fallback when no price list applies.
-    let sellingCurrency = "AUD";
     let resolvedPriceListId: string | null = null;
     let resolvedPriceCategoryId: string | null = null;
     let resolvedSellingPrice = Number(sellingPrice);
-    let exchangeRate: number | null = null;
-    let convertedAmount: number | null = resolvedSellingPrice;
 
     const priceListIdOid = priceListId ? safeObjectId(String(priceListId)) : null;
     const priceCategoryIdOid = priceCategoryId ? safeObjectId(String(priceCategoryId)) : null;
@@ -247,7 +244,6 @@ export const POST = withAuth("orders.manage",
       resolvedPriceListId = String(pl._id);
       resolvedPriceCategoryId = String(pl.priceCategoryId);
       resolvedSellingPrice = Number(pl.amount);
-      sellingCurrency = pl.currency;
     } else if (priceCategoryIdOid) {
       const priceLists = await collection("price_lists");
       const pl = await priceLists.findOne({
@@ -269,24 +265,17 @@ export const POST = withAuth("orders.manage",
         resolvedPriceListId = String(pl._id);
         resolvedPriceCategoryId = String(pl.priceCategoryId);
         resolvedSellingPrice = Number(pl.amount);
-        sellingCurrency = pl.currency;
       }
     }
 
-    // New orders must use AUD only. Reject a non-AUD price list so no
-    // non-AUD order is created. Historical multi-currency orders are preserved
-    // exactly as stored; this restriction applies to new order creation only.
-    const currencyError = newTransactionCurrencyError(sellingCurrency);
+    // New orders must use AUD only.
+    const currencyError = newTransactionCurrencyError("AUD");
     if (currencyError) {
       return NextResponse.json(
         { error: { code: currencyError.code, message: currencyError.message } },
         { status: 400 },
       );
     }
-
-    // No currency conversion is performed for new orders.
-    exchangeRate = null;
-    convertedAmount = resolvedSellingPrice;
 
     // Capture additional fees applicable to the qualification (snapshot).
     const additionalFees: Array<{
@@ -314,7 +303,7 @@ export const POST = withAuth("orders.manage",
           feeId: String(f._id),
           description: f.description,
           amount: Number(f.amount),
-          currency: f.currency,
+          currency: "AUD",
           isOptional: f.isOptional !== false,
         });
         feeTotal += Number(f.amount);
@@ -335,15 +324,13 @@ export const POST = withAuth("orders.manage",
       sellingPrice: resolvedSellingPrice,
       supplierCostSnapshot,
       otherCost: Number(otherCost),
-      currency: sellingCurrency,
+      currency: "AUD",
       priceCategoryId: resolvedPriceCategoryId,
       priceListId: resolvedPriceListId,
       supplierRouteId,
       rtoContactId: rtoContactId ? safeObjectId(String(rtoContactId)) : null,
       rtoContactName: rtoContactName ? String(rtoContactName).trim() || null : null,
       rplPartnerId: resolvedRplPartnerId,
-      exchangeRate,
-      convertedAmount,
       additionalFees,
       feeTotal,
       completedAt: null,
@@ -405,7 +392,6 @@ export const POST = withAuth("orders.manage",
       after: {
         status: "New",
         sellingPrice: resolvedSellingPrice,
-        sellingCurrency,
         supplierCostSnapshot,
         otherCost: Number(otherCost),
         priceListId: resolvedPriceListId,

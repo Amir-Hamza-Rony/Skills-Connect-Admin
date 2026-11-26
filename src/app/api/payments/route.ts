@@ -40,7 +40,6 @@ export const GET = withAuth("finance.view",
       method: d.method,
       status: d.status,
       verificationStatus: d.verificationStatus,
-      exchangeRate: d.exchangeRate,
       date: d.date,
     }));
     return NextResponse.json({ payments: paymentList });
@@ -60,11 +59,20 @@ export const POST = withAuth("finance.manage",
       );
     }
 
-    const { orderId, invoiceId, amount, date, method, reference, idempotencyKey, currency, exchangeRate, exchangeRateSource, verificationStatus } = body;
+    const { orderId, invoiceId, amount, date, method, reference, idempotencyKey, verificationStatus, currency } = body;
 
     if (!orderId || !date || !method) {
       return NextResponse.json(
         { error: { code: "BAD_REQUEST", message: "Missing required fields." } },
+        { status: 400 },
+      );
+    }
+
+    // New payments must be recorded in AUD only. Reject any non-AUD currency.
+    const paymentCurrencyError = newTransactionCurrencyError(currency);
+    if (paymentCurrencyError) {
+      return NextResponse.json(
+        { error: { code: paymentCurrencyError.code, message: paymentCurrencyError.message } },
         { status: 400 },
       );
     }
@@ -96,13 +104,7 @@ export const POST = withAuth("finance.manage",
       throw err;
     }
 
-    // New payments must be recorded in AUD only. Absent currency defaults to
-    // AUD. Historical multi-currency payments are preserved exactly as stored.
-    const currencyError = newTransactionCurrencyError(currency);
-    if (currencyError) {
-      return NextResponse.json({ error: { code: currencyError.code, message: currencyError.message } }, { status: 400 });
-    }
-
+    // New payments must be recorded in AUD only. Absent currency defaults to AUD.
     const paymentCurrency =
       currency === undefined || currency === null || currency === "" ? "AUD" : String(currency);
 
@@ -124,19 +126,6 @@ export const POST = withAuth("finance.manage",
     const paymentVerificationStatus = verificationStatus && validVerification.has(verificationStatus)
       ? verificationStatus
       : "Unverified";
-
-    let exchangeRateNum: number | null = null;
-    let exchangeRateAt: string | null = null;
-    if (exchangeRate !== undefined && exchangeRate !== null && exchangeRate !== "") {
-      exchangeRateNum = Number(exchangeRate);
-      if (!Number.isFinite(exchangeRateNum) || exchangeRateNum <= 0) {
-        return NextResponse.json(
-          { error: { code: "BAD_REQUEST", message: "Exchange rate must be a positive number." } },
-          { status: 400 },
-        );
-      }
-      exchangeRateAt = new Date().toISOString();
-    }
 
     const client = await getClient();
     const session = client.startSession();
@@ -191,14 +180,6 @@ export const POST = withAuth("finance.manage",
             err.status = 400;
             throw err;
           }
-          // No FX conversion is configured. Reject cross-currency allocation
-          // instead of treating different currencies as equal amounts.
-          if (invoice.currency && paymentCurrency !== String(invoice.currency)) {
-            const err: any = new Error("Payment currency must match the invoice currency.");
-            err.code = "CURRENCY_MISMATCH";
-            err.status = 400;
-            throw err;
-          }
 
           const payments = await collection("payments");
           const allocated = await payments
@@ -226,7 +207,7 @@ export const POST = withAuth("finance.manage",
           orderId: orderOid,
           invoiceId: invoiceOid ?? null,
           amount: amountNum,
-          currency: paymentCurrency,
+          currency: "AUD",
           date: new Date(date),
           method,
           reference: reference ?? "",
@@ -234,9 +215,6 @@ export const POST = withAuth("finance.manage",
           idempotencyKey: idempotencyKey ?? null,
           status: allocatedAmount > 0 ? "Allocated" : "Unallocated",
           verificationStatus: paymentVerificationStatus,
-          exchangeRate: exchangeRateNum,
-          exchangeRateSource: exchangeRateSource ?? null,
-          exchangeRateAt: exchangeRateAt,
           createdAt: now,
           updatedAt: now,
         };
@@ -317,11 +295,10 @@ export const POST = withAuth("finance.manage",
         orderId,
         invoiceId,
         amount: result.payment.amount,
-        currency: result.payment.currency,
+        currency: paymentCurrency,
         allocatedAmount: result.payment.allocatedAmount,
         status: result.payment.status,
         verificationStatus: result.payment.verificationStatus,
-        exchangeRate: result.payment.exchangeRate,
       },
     });
 
@@ -331,12 +308,11 @@ export const POST = withAuth("finance.manage",
         orderId: result.payment.orderId,
         invoiceId: result.payment.invoiceId,
         amount: result.payment.amount,
-        currency: result.payment.currency,
+        currency: paymentCurrency,
         allocatedAmount: result.payment.allocatedAmount,
         method: result.payment.method,
         status: result.payment.status,
         verificationStatus: result.payment.verificationStatus,
-        exchangeRate: result.payment.exchangeRate,
         date: result.payment.date,
       },
     }, { status: 201 });

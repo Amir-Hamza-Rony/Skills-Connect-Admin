@@ -64,6 +64,12 @@ const CONFIG: Record<RoleName, RoleConfig> = {
     tabs: ["overview", "clients", "orders"],
     sections: ["overview", "pipeline"],
   },
+  EMPLOYEE: {
+    title: "Employee portal",
+    subtitle: "Assigned tasks and orders",
+    tabs: ["overview"],
+    sections: ["overview"],
+  },
 }
 
 const TAB_LABELS: Record<TabId, string> = {

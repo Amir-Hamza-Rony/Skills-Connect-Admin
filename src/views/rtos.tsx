@@ -42,6 +42,8 @@ export function RtosPage() {
   const [legalName, setLegalName] = useState("")
   const [tradingName, setTradingName] = useState("")
   const [rtoCode, setRtoCode] = useState("")
+  const [cricosCode, setCricosCode] = useState("")
+  const [contacts, setContacts] = useState("")
   const [status, setStatus] = useState<RtoStatus>("active")
   const [website, setWebsite] = useState("")
   const [accreditationNumber, setAccreditationNumber] = useState("")
@@ -78,8 +80,10 @@ export function RtosPage() {
         legalName: legalName.trim(),
         tradingName: tradingName.trim(),
         rtoCode: rtoCode.trim().toUpperCase(),
-        cricosCode: null,
-        contacts: [],
+        cricosCode: cricosCode.trim() || null,
+        contacts: contacts.trim()
+          ? [{ name: "", role: "", email: "", phone: contacts.trim() }]
+          : [],
         status,
         complianceNote: "",
         website: website.trim() || "",
@@ -95,6 +99,8 @@ export function RtosPage() {
       setLegalName("")
       setTradingName("")
       setRtoCode("")
+      setCricosCode("")
+      setContacts("")
       setStatus("active")
       setWebsite("")
       setAccreditationNumber("")
@@ -122,6 +128,10 @@ export function RtosPage() {
         legalName: legalName.trim(),
         tradingName: tradingName.trim(),
         rtoCode: rtoCode.trim().toUpperCase(),
+        cricosCode: cricosCode.trim() || null,
+        contacts: contacts.trim()
+          ? [{ name: "", role: "", email: "", phone: contacts.trim() }]
+          : [],
         status,
         website: website.trim() || "",
         accreditationNumber: accreditationNumber.trim() || null,
@@ -254,6 +264,10 @@ export function RtosPage() {
                     setLegalName(r.legalName)
                     setTradingName(r.tradingName)
                     setRtoCode(r.rtoCode)
+                    setCricosCode(r.cricosCode ?? "")
+                    setContacts(Array.isArray(r.contacts) && r.contacts.length > 0
+                      ? r.contacts.map((c: any) => `${c.name || ""} ${c.email || ""} ${c.phone || ""}`).join("; ")
+                      : "")
                     setStatus(r.status)
                     setWebsite(r.website ?? "")
                     setAccreditationNumber(r.accreditationNumber ?? "")
@@ -324,6 +338,27 @@ export function RtosPage() {
                 className={inputCls}
               />
             </div>
+            <div className="space-y-1.5">
+              <label htmlFor="rto-cricos" className="text-sm font-medium">CRICOS Provider Code</label>
+              <input
+                id="rto-cricos"
+                value={cricosCode}
+                onChange={(e) => setCricosCode(e.target.value)}
+                placeholder="00000K"
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="rto-contacts" className="text-sm font-medium">Contact Details</label>
+            <textarea
+              id="rto-contacts"
+              value={contacts}
+              onChange={(e) => setContacts(e.target.value)}
+              placeholder="Name, email, phone"
+              rows={2}
+              className={inputCls}
+            />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -467,6 +502,27 @@ export function RtosPage() {
                 className={inputCls}
               />
             </div>
+            <div className="space-y-1.5">
+              <label htmlFor="er-cricos" className="text-sm font-medium">CRICOS Provider Code</label>
+              <input
+                id="er-cricos"
+                value={cricosCode}
+                onChange={(e) => setCricosCode(e.target.value)}
+                placeholder="00000K"
+                className={inputCls}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="er-contacts" className="text-sm font-medium">Contact Details</label>
+            <textarea
+              id="er-contacts"
+              value={contacts}
+              onChange={(e) => setContacts(e.target.value)}
+              placeholder="Name, email, phone"
+              rows={2}
+              className={inputCls}
+            />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">

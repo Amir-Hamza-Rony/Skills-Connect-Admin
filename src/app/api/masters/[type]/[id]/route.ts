@@ -14,6 +14,7 @@ import {
   isAgentUnique,
   isValidDate,
 } from "@/lib/master-validation";
+import { generateDemoContact } from "@/lib/demo-contact";
 
 const PERMISSION_MAP: Record<string, string> = {
   qualifications: "qualifications.manage",
@@ -150,9 +151,11 @@ export const PATCH = withAuth(
         update.accreditationNotes = String(body.accreditationNotes ?? "").trim() || null;
     } else if (type === "agents") {
       const nextName = body.name !== undefined ? String(body.name).trim() : String(existing.name);
-      const nextContact = body.contact !== undefined ? String(body.contact).trim() : String(existing.contact);
+      const nextContact = body.contact !== undefined
+        ? String(body.contact).trim() || generateDemoContact(nextName)
+        : String(existing.contact);
       if (body.name !== undefined) update.name = nextName;
-      if (body.contact !== undefined) update.contact = nextContact;
+      if (body.contact !== undefined || body.name !== undefined) update.contact = nextContact;
       if ((body.name !== undefined || body.contact !== undefined) && !(await isAgentUnique(nextName, nextContact, String(existing._id)))) {
         return NextResponse.json(
           { error: { code: "CONFLICT", message: "An agent with this name and contact already exists." } },

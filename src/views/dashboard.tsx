@@ -1,20 +1,42 @@
 "use client"
 
-import { RoleDashboard } from "@/components/dashboard/role-dashboard"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth"
 
 /**
- * Dashboard entry point.
+ * Dashboard entry point — redirects to the role-specific dedicated dashboard.
  *
- * The previous version exposed five in-page views (management / finance /
- * operations / agent / rto) that were rendered unconditionally, so any role
- * could open any view — including finance data it had no permission for —
- * and several views produced `NaN` because the underlying APIs mask those
- * fields. It also leaked a debug theme string into the subtitle.
- *
- * All four real roles now share one server-authorised experience. The shell
- * selects tabs and content from the verified role, while the API re-checks
- * scope and masking on every request. Frontend role checks are cosmetic only.
+ * After login, all users land here first and are immediately routed to the
+ * dashboard matching their assigned role:
+ *   SUPER_ADMIN → /dashboard/super-admin
+ *   ADMIN       → /dashboard/admin
+ *   B2B_AGENT   → /dashboard/b2b-agent
+ *   BDC         → /dashboard/bdc-agent
+ *   EMPLOYEE    → /dashboard/employee
  */
 export function Dashboard() {
-  return <RoleDashboard />
+  const { user, authLoading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (authLoading || !user) return
+    const roleNames = user.roleNames ?? []
+    if (roleNames.includes("SUPER_ADMIN")) {
+      router.replace("/dashboard/super-admin")
+    } else if (roleNames.includes("ADMIN")) {
+      router.replace("/dashboard/admin")
+    } else if (roleNames.includes("B2B_AGENT")) {
+      router.replace("/dashboard/b2b-agent")
+    } else if (roleNames.includes("BDC")) {
+      router.replace("/dashboard/bdc-agent")
+    } else if (roleNames.includes("EMPLOYEE")) {
+      router.replace("/dashboard/employee")
+    } else {
+      router.replace("/dashboard/employee")
+    }
+  }, [authLoading, user, router])
+
+  if (authLoading || !user) return null
+  return null
 }

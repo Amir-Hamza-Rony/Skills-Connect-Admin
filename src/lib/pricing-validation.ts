@@ -31,14 +31,7 @@ export function normalizeCode(v: unknown): string {
   return String(v ?? "").trim().toUpperCase();
 }
 
-export const VALID_CURRENCIES = new Set([
-  "AUD",
-  "BDT",
-  "USD",
-  "GBP",
-  "EUR",
-  "INR",
-]);
+export const VALID_CURRENCIES = new Set(["AUD"])
 
 /**
  * The only currency accepted for newly created financial transactions.
