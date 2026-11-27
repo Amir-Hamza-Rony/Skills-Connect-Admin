@@ -103,6 +103,7 @@ export function verifyAccessToken(token: string): {
   agency_name?: string | null;
   b2b_tier?: "SILVER" | "GOLD" | "PLATINUM";
   default_commission_pct?: number;
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_BROKER" | null;
   permissions: string[];
 } {
   const payload = verifyPayload(token, ACCESS_SECRET);
@@ -123,6 +124,7 @@ export function verifyAccessToken(token: string): {
     agency_name: ((payload as { agency_name?: unknown }).agency_name as string | null) ?? null,
     b2b_tier: ((payload as { b2b_tier?: unknown }).b2b_tier as "SILVER" | "GOLD" | "PLATINUM" | undefined),
     default_commission_pct: ((payload as { default_commission_pct?: unknown }).default_commission_pct as number | undefined),
+    channelType: ((payload as { channelType?: unknown }).channelType as "IN_HOUSE_B2C" | "EXTERNAL_BROKER" | null | undefined),
     permissions: Array.isArray((payload as { permissions: unknown }).permissions)
       ? (payload as { permissions: unknown[] }).permissions.filter((p): p is string => typeof p === "string")
       : [],

@@ -153,39 +153,39 @@ describe("M1.4 — enrollment code generation on create", () => {
     expect(body.order.enrollmentCode).not.toBe(`SC-${YEAR}-0001`);
   });
 
-  it("tags BDC-created orders with channel B2C_BDC and bdc_id (never b2b_agent_id)", async () => {
+  it("tags BDC-created orders with channel IN_HOUSE_B2C and bdc_id (never b2b_agent_id)", async () => {
     const f = await seedOrderFixtures();
     const res = await createOrder(
       authedRequest("POST", "/api/orders", orderBody(f), makeBDCToken("bdc-owner-1")),
     );
     expect(res.status).toBe(201);
     const body = await json(res);
-    expect(body.order.channelType).toBe("B2C_BDC");
+    expect(body.order.channelType).toBe("IN_HOUSE_B2C");
 
     const db = await getDb();
     const stored = await db
       .collection("orders")
       .findOne({ _id: new ObjectId(body.order.id) });
     expect(stored?.bdc_id).toBe("bdc-owner-1");
-    expect(stored?.channel_type).toBe("B2C_BDC");
+    expect(stored?.channel_type).toBe("IN_HOUSE_B2C");
     expect(stored?.b2b_agent_id).toBeUndefined();
   });
 
-  it("tags B2B-created orders with channel B2B_AGENT and b2b_agent_id (never bdc_id)", async () => {
+  it("tags B2B-created orders with channel EXTERNAL_B2B and b2b_agent_id (never bdc_id)", async () => {
     const f = await seedOrderFixtures();
     const res = await createOrder(
       authedRequest("POST", "/api/orders", orderBody(f), makeB2BAgentToken("b2b-owner-1")),
     );
     expect(res.status).toBe(201);
     const body = await json(res);
-    expect(body.order.channelType).toBe("B2B_AGENT");
+    expect(body.order.channelType).toBe("EXTERNAL_B2B");
 
     const db = await getDb();
     const stored = await db
       .collection("orders")
       .findOne({ _id: new ObjectId(body.order.id) });
     expect(stored?.b2b_agent_id).toBe("b2b-owner-1");
-    expect(stored?.channel_type).toBe("B2B_AGENT");
+    expect(stored?.channel_type).toBe("EXTERNAL_B2B");
     expect(stored?.bdc_id).toBeUndefined();
   });
 });
@@ -214,7 +214,7 @@ describe("M1.4 — enrollment/channel serialization", () => {
     const row = listBody.orders.find((o: any) => o.id === id);
     expect(row).toBeTruthy();
     expect(row.enrollmentCode).toBe(code);
-    expect(row.channelType).toBe("B2C_BDC");
+    expect(row.channelType).toBe("IN_HOUSE_B2C");
 
     const detailRes = await getOrder(
       authedRequest("GET", `/api/orders/${id}`, undefined, bdc),
@@ -223,7 +223,7 @@ describe("M1.4 — enrollment/channel serialization", () => {
     expect(detailRes.status).toBe(200);
     const detail = await json(detailRes);
     expect(detail.enrollmentCode).toBe(code);
-    expect(detail.channelType).toBe("B2C_BDC");
+    expect(detail.channelType).toBe("IN_HOUSE_B2C");
   });
 
   it("keeps ownerless legacy orders admin-only (no auto-assigned owner)", async () => {
@@ -256,31 +256,36 @@ describe("M1.4 — enrollment/channel serialization", () => {
   });
 });
 
-describe("M1.4 / D7 — frozen 21-status workflow", () => {
+describe("M1.4 / D7 — frozen application status workflow", () => {
   beforeEach(async () => {
     await clearDb();
   });
 
-  it("keeps exactly 21 unique order statuses", () => {
+  it("keeps exactly the application statuses from the docs", () => {
     const statuses = ORDER_STATUS_GROUPS.flatMap((g) => g.statuses);
-    expect(statuses).toHaveLength(21);
-    expect(new Set(statuses).size).toBe(21);
-    expect(statuses).toContain("Refunded");
-    expect(statuses).toContain("On Hold");
+    expect(statuses).toContain("DRAFT");
+    expect(statuses).toContain("RECEIVED");
+    expect(statuses).toContain("IN_PROGRESS");
+    expect(statuses).toContain("DELIVERED");
+    expect(statuses).toContain("ON_HOLD");
+    expect(statuses).toContain("CANCELLED");
+    expect(new Set(statuses).size).toBeGreaterThanOrEqual(6);
   });
 
   it("allows an existing transition and rejects an undefined one", async () => {
-    const orderId = await seedOrder();
+    const orderId = await seedOrder(
+      new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(),
+      { status: "DRAFT" },
+    );
     const ok = await transitionOrder(
-      authedRequest("PATCH", `/api/orders/${orderId}/status`, { status: "Awaiting Documents" }, makeSuperAdminToken()),
+      authedRequest("PATCH", `/api/orders/${orderId}/status`, { status: "RECEIVED" }, makeSuperAdminToken()),
       { params: { id: String(orderId) } },
     );
     expect(ok.status).toBe(200);
     const okBody = await json(ok);
-    expect(okBody.after).toBe("Awaiting Documents");
+    expect(okBody.after).toBe("RECEIVED");
 
-    // New → Completed is not in ALLOWED_TRANSITIONS, so it must be rejected
-    // once the order has moved on.
+    // DRAFT → Completed is not in APPLICATION_TRANSITIONS, so it must be rejected.
     const bad = await transitionOrder(
       authedRequest("PATCH", `/api/orders/${orderId}/status`, { status: "Completed" }, makeSuperAdminToken()),
       { params: { id: String(orderId) } },

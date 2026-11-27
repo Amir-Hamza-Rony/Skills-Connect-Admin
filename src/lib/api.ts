@@ -65,7 +65,9 @@ export interface AuthUser {
   id: string
   email: string
   name: string
+  role?: RoleName
   roleNames: RoleName[]
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_BROKER" | null
   permissions: Permission[]
 }
 

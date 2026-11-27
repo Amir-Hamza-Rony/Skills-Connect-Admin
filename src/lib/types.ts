@@ -4,7 +4,17 @@
  * future REST/MongoDB backend can plug in without UI changes.
  */
 
-export type RoleName = "SUPER_ADMIN" | "ADMIN" | "BDC" | "B2B_AGENT" | "EMPLOYEE"
+export type RoleName =
+  | "SUPER_ADMIN"
+  | "OPS_ADMIN"
+  | "ACCOUNTS"
+  | "SALES_BDC"
+  | "EXTERNAL_BROKER"
+  | "CANDIDATE"
+  | "ADMIN"
+  | "BDC"
+  | "B2B_AGENT"
+  | "EMPLOYEE"
 
 export interface Role {
   id: string
@@ -26,6 +36,8 @@ export interface User {
   active: boolean
   is_active: boolean
   lastLoginAt: string | null
+  /** Channel type: IN_HOUSE_B2C or EXTERNAL_B2B (docs v5.1/v5.0). */
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_B2B" | null
 }
 
 /**
@@ -178,6 +190,12 @@ export type Permission =
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
 
 export type OrderStatus =
+  | "DRAFT"
+  | "RECEIVED"
+  | "IN_PROGRESS"
+  | "DELIVERED"
+  | "ON_HOLD"
+  | "CANCELLED"
   | "Lead"
   | "Qualified"
   | "Won"
@@ -196,14 +214,14 @@ export type OrderStatus =
   | "Approved"
   | "Certificate Issued"
   | "Completed"
-  | "On Hold"
-  | "Cancelled"
   | "Refunded"
 
 export const ORDER_STATUS_GROUPS: Array<{
   group: string
   statuses: OrderStatus[]
 }> = [
+  { group: "Application", statuses: ["DRAFT", "RECEIVED", "IN_PROGRESS", "DELIVERED"] },
+  { group: "Exception", statuses: ["ON_HOLD", "CANCELLED"] },
   { group: "Sales", statuses: ["Lead", "Qualified", "Won", "Lost"] },
   {
     group: "Onboarding",
@@ -218,7 +236,6 @@ export const ORDER_STATUS_GROUPS: Array<{
     statuses: ["Under Assessment", "Additional Evidence Required", "Rework Required"],
   },
   { group: "Completion", statuses: ["Approved", "Certificate Issued", "Completed"] },
-  { group: "Exception", statuses: ["On Hold", "Cancelled", "Refunded"] },
 ]
 
 export type DocumentStatus =
@@ -388,7 +405,7 @@ export interface Order {
   /** Server-generated `SC-YYYY-NNNN`; never accepted from a request body. */
   enrollmentCode?: string | null
   /** DB key remains snake_case `channel_type`; this is the API-facing name. */
-  channelType?: "B2C_BDC" | "B2B_AGENT" | null
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_B2B" | null
   /** User-id space owner fields (NOT agent ids). Never auto-assigned. */
   bdc_id?: string | null
   b2b_agent_id?: string | null
@@ -398,6 +415,35 @@ export interface Order {
   updatedAt: string
   completedAt: string | null
   history: StatusChange[]
+  /** 4-Layer Controlled Pricing Matrix (docs v5.1 §2, v5.0 §2). */
+  /** True RTO Base Cost — confidential fee owed to Issuing RTO / Partner. */
+  trueRtoCost?: number | null
+  /** Snapshot of true RTO cost locked on RECEIVED status. */
+  snapTrueRtoCost?: number | null
+  /** Approved Internal Floor — internal transfer floor set by Super Admin. */
+  approvedInternalCost?: number | null
+  /** Snapshot of approved internal cost locked on RECEIVED status. */
+  snapApprovedInternalCost?: number | null
+  /** B2B Fixed Wholesale Price — tiered wholesale rate billed to External Brokers. */
+  b2bWholesalePrice?: number | null
+  /** Snapshot of B2B wholesale price locked on RECEIVED status. */
+  snapB2bWholesalePrice?: number | null
+  /** B2C Retail Price — direct-to-candidate retail price. */
+  b2cRetailPrice?: number | null
+  /** Snapshot of B2C retail price locked on RECEIVED status. */
+  snapB2cRetailPrice?: number | null
+  /** Snapshot of sale price locked on RECEIVED status. */
+  snapSalePrice?: number | null
+  /** Snapshot of additional fees locked on RECEIVED status. */
+  snapAdditionalFees?: number | null
+  /** Snapshot of discount locked on RECEIVED status. */
+  snapDiscount?: number | null
+  /** Snapshot of total billed locked on RECEIVED status. */
+  snapTotalBilled?: number | null
+  /** Commission amount unlocked on DELIVERED status. */
+  commissionAmount?: number | null
+  /** Status reason note mandatory for ON_HOLD / CANCELLED. */
+  statusReasonNote?: string | null
 }
 
 /** RTO processing record for an order (Phase 3). */

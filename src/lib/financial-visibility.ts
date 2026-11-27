@@ -1,34 +1,42 @@
 /**
  * Role-based financial field visibility for API responses.
  *
- * Security hotfix (F8 / F9 / F10a). This is a NEW helper: it does not modify
- * any of the five protected M0 helpers in `src/middleware/auth.ts`
- * (checkOrderAccess, getAccessibleClientIds, checkClientAccess,
- * maskFinancialFields, filterOrdersByRole).
+ * Security hotfix. Implements the 4-layer controlled pricing visibility matrix
+ * from docs v5.1 §1 and v5.0 §2.
  *
  * Approved policy:
- *  - SUPER_ADMIN / ADMIN: all financial fields visible.
- *  - BDC: supplier cost, margin and margin percentage hidden; selling price
- *    and revenue aggregates remain visible.
- *  - B2B_AGENT (and any unrecognised non-admin role): all of the above plus
- *    selling price and price-derived revenue aggregates hidden (fail closed).
+ *   - SUPER_ADMIN / ACCOUNTS: all 4 layers visible (True RTO Cost, Approved Internal
+ *     Floor, B2B Wholesale, B2C Retail).
+ *   - OPS_ADMIN: True RTO Cost hidden; Approved Internal Cost, B2B Wholesale,
+ *     B2C Retail view-only.
+ *   - SALES_BDC: True RTO Cost hidden; Approved Internal Cost view-only;
+ *     B2C Retail visible (quote/apply); B2B Wholesale hidden.
+ *   - EXTERNAL_BROKER: only assigned B2B Wholesale tier visible; everything
+ *     else hidden.
+ *   - CANDIDATE (IN_HOUSE_B2C): own invoice only; all cost layers hidden.
+ *   - CANDIDATE (EXTERNAL_BROKER): ALL pricing, fees, invoice tabs hidden.
  *
- * This check deliberately examines every role claim rather than a single
- * primary role. A B2B_AGENT claim must mask price/revenue even on a dual-role
- * account, so central role normalization must not weaken this fail-closed rule.
- *
- * Keys are deleted rather than set to undefined so callers can rely on fields
- * being absent from the serialized JSON. Arrays and nested objects are walked
- * so report rows cannot bypass the policy.
+ * Keys are deleted rather than set to undefined so fields are absent from JSON.
+ * Arrays and nested objects are walked so report rows cannot bypass the policy.
  */
 
 import type { AuthUser } from "@/middleware/auth";
 
-/** Fields revealing partner cost / margin — hidden from BDC and B2B_AGENT. */
-const COST_MARGIN_FIELDS = [
+/** Fields revealing True RTO Base Cost — hidden from everyone except SUPER_ADMIN/ACCOUNTS. */
+const TRUE_RTO_COST_FIELDS = [
+  "true_rto_cost",
+  "snap_true_rto_cost",
   "supplierCostSnapshot",
   "supplierCost",
   "cost",
+  "rtoFee",
+] as const;
+
+/** Fields revealing Approved Internal Cost — hidden from non-admin/non-ops. */
+const APPROVED_INTERNAL_FIELDS = [
+  "approved_internal_cost",
+  "snap_approved_internal_cost",
+  "approvedInternalCost",
   "margin",
   "grossMargin",
   "net_profit",
@@ -37,15 +45,25 @@ const COST_MARGIN_FIELDS = [
   "marginPercent",
 ] as const;
 
-/** Fields revealing selling price / revenue — hidden from B2B_AGENT only. */
-const PRICE_REVENUE_FIELDS = [
+/** Fields revealing B2B Wholesale Price — hidden from BDC, candidates, non-broker. */
+const B2B_WHOLESALE_FIELDS = [
+  "fixed_b2b_price",
+  "b2b_wholesale_price",
+  "b2bPrice",
+  "wholesalePrice",
+] as const;
+
+/** Fields revealing B2C Retail Price / revenue — hidden from B2B brokers and B2B candidates. */
+const B2C_RETAIL_FIELDS = [
   "sellingPrice",
+  "b2c_retail_price",
+  "b2cPrice",
+  "retailPrice",
   "revenue",
   "pipelineValue",
   "invoiced",
   "clientInvoiced",
   "collected",
-  // Unallocated receipts are cash/revenue data; never expose to B2B_AGENT.
   "unallocated",
   "unallocatedAmount",
   "paid",
@@ -56,12 +74,25 @@ const PRICE_REVENUE_FIELDS = [
   "totalOverdue",
   "commissionEarned",
   "feeTotal",
-  // Generic report aggregate keys (ageing buckets, instalments, payments).
   "amount",
 ] as const;
 
-const COST_MARGIN = new Set<string>(COST_MARGIN_FIELDS);
-const PRICE_REVENUE = new Set<string>(PRICE_REVENUE_FIELDS);
+/** Invoice-related fields — hidden from B2B candidates entirely. */
+const INVOICE_FIELDS = [
+  "invoices",
+  "invoice",
+  "invoiceNumber",
+  "snap_sale_price",
+  "snap_additional_fees",
+  "snap_discount",
+  "snap_total_billed",
+] as const;
+
+const TRUE_RTO_COST = new Set<string>(TRUE_RTO_COST_FIELDS);
+const APPROVED_INTERNAL = new Set<string>(APPROVED_INTERNAL_FIELDS);
+const B2B_WHOLESALE = new Set<string>(B2B_WHOLESALE_FIELDS);
+const B2C_RETAIL = new Set<string>(B2C_RETAIL_FIELDS);
+const INVOICE = new Set<string>(INVOICE_FIELDS);
 
 function rolesOf(auth: AuthUser): string[] {
   return [auth?.role, ...(auth?.roleNames ?? [])].filter(
@@ -69,27 +100,58 @@ function rolesOf(auth: AuthUser): string[] {
   );
 }
 
-/** Admins see every financial field; used for explicit call-site checks too. */
+/** Admins (SUPER_ADMIN / ACCOUNTS / ADMIN) see every financial field. */
 export function canViewAllFinancials(auth: AuthUser): boolean {
   const roles = rolesOf(auth);
-  return roles.includes("SUPER_ADMIN") || roles.includes("ADMIN");
+  return roles.includes("SUPER_ADMIN") || roles.includes("ACCOUNTS") || roles.includes("ADMIN");
 }
 
-/** BDC retains selling price / revenue; B2B_AGENT (or unknown) does not. */
+/** Can view Approved Internal Cost (SUPER_ADMIN, ACCOUNTS, ADMIN, OPS_ADMIN, SALES_BDC). */
+export function canViewApprovedInternal(auth: AuthUser): boolean {
+  const roles = rolesOf(auth);
+  if (canViewAllFinancials(auth)) return true;
+  return roles.includes("OPS_ADMIN") || roles.includes("SALES_BDC");
+}
+
+/** Can view B2C retail price / revenue (SUPER_ADMIN, ACCOUNTS, ADMIN, OPS_ADMIN, SALES_BDC, BDC). */
 export function canViewPriceAndRevenue(auth: AuthUser): boolean {
   if (canViewAllFinancials(auth)) return true;
   const roles = rolesOf(auth);
-  return roles.includes("BDC") && !roles.includes("B2B_AGENT");
+  return (
+    roles.includes("OPS_ADMIN") ||
+    roles.includes("SALES_BDC") ||
+    (roles.includes("BDC") && !roles.includes("B2B_AGENT"))
+  );
+}
+
+/** Can view B2B wholesale price (SUPER_ADMIN, ACCOUNTS, OPS_ADMIN, EXTERNAL_BROKER assigned tier). */
+export function canViewB2BWholesale(auth: AuthUser): boolean {
+  const roles = rolesOf(auth);
+  if (canViewAllFinancials(auth)) return true;
+  if (roles.includes("OPS_ADMIN")) return true;
+  if (roles.includes("EXTERNAL_BROKER") || roles.includes("B2B_AGENT")) return true;
+  return false;
+}
+
+/** B2B candidate (channel_type EXTERNAL_BROKER) sees NO pricing/invoice data. */
+export function isB2BCandidate(auth: AuthUser): boolean {
+  const roles = rolesOf(auth);
+  return roles.includes("CANDIDATE") && auth.channelType === "EXTERNAL_BROKER";
 }
 
 /**
- * Mutate `value` in place, removing every financial field the caller may not
- * see. Safe to call on plain objects, arrays and nested report structures.
- * BSON values, Dates and Buffers are left untouched.
+ * Mutate `value` in place, removing every financial field the caller may not see.
+ * Safe to call on plain objects, arrays and nested report structures.
  */
 export function applyFinancialVisibility<T>(auth: AuthUser, value: T): T {
   if (canViewAllFinancials(auth)) return value;
-  const hidePriceRevenue = !canViewPriceAndRevenue(auth);
+
+  const roles = rolesOf(auth);
+  const hideTrueRto = !roles.includes("SUPER_ADMIN") && !roles.includes("ACCOUNTS") && !roles.includes("ADMIN");
+  const hideApprovedInternal = !canViewApprovedInternal(auth);
+  const hideB2C = !canViewPriceAndRevenue(auth);
+  const hideB2B = !canViewB2BWholesale(auth);
+  const hideInvoices = isB2BCandidate(auth);
 
   const visit = (node: unknown): void => {
     if (Array.isArray(node)) {
@@ -102,11 +164,23 @@ export function applyFinancialVisibility<T>(auth: AuthUser, value: T): T {
 
     const record = node as Record<string, unknown>;
     for (const key of Object.keys(record)) {
-      if (COST_MARGIN.has(key)) {
+      if (hideTrueRto && TRUE_RTO_COST.has(key)) {
         delete record[key];
         continue;
       }
-      if (hidePriceRevenue && PRICE_REVENUE.has(key)) {
+      if (hideApprovedInternal && APPROVED_INTERNAL.has(key)) {
+        delete record[key];
+        continue;
+      }
+      if (hideB2B && B2B_WHOLESALE.has(key)) {
+        delete record[key];
+        continue;
+      }
+      if (hideB2C && B2C_RETAIL.has(key)) {
+        delete record[key];
+        continue;
+      }
+      if (hideInvoices && INVOICE.has(key)) {
         delete record[key];
         continue;
       }
