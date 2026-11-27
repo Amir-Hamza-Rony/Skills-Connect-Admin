@@ -5,8 +5,7 @@
   "crons": [
     {
       "path": "/api/cron/process-jobs",
-      "schedule": "*/5 * * * *",
-      "description": "Process due background jobs (QB sync, invoice sync, overdue checks)"
+      "schedule": "0 0 * * *"
     }
   ]
 }
