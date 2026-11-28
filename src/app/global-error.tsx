@@ -1,5 +1,4 @@
 "use client"
-
 /**
  * Global error boundary for the Next.js App Router.
  * Catches unexpected errors during rendering and provides a graceful

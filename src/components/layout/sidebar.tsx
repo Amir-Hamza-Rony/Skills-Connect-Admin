@@ -61,14 +61,14 @@ function NavList({
       aria-label="Primary"
       className={cn("space-y-5", collapsed ? "px-1.5" : "px-2")}
     >
-      {NAV_SECTIONS.map((section) => {
+      {NAV_SECTIONS.map((section, idx) => {
         const visible = section.items.filter((item) => {
           const required = ROUTE_PERMISSIONS[item.href]
           return !required || hasPermission(permissions, required)
         })
         if (visible.length === 0) return null
         return (
-          <div key={section.title}>
+          <div key={`${section.title}-${idx}`}>
             {!collapsed && (
               <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {section.title}

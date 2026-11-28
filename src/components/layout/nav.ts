@@ -55,7 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Operations",
     items: [
-      { label: "Candidates & Applications", icon: Users, href: "/candidates", legacyFrom: ["/clients"] },
+      { label: "Applicants", icon: Users, href: "/candidates", legacyFrom: ["/clients"] },
       { label: "Enrolments", icon: ClipboardList, href: "/enrolments", legacyFrom: ["/orders"] },
       { label: "Documents", icon: FileText, href: "/documents" },
       { label: "Workflow", icon: Workflow, href: "/workflow" },
