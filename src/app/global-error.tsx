@@ -1,8 +1,11 @@
+"use client"
 /**
  * Global error boundary for the Next.js App Router.
  * Catches unexpected errors during rendering and provides a graceful
  * fallback instead of a blank white screen.
  */
+
+import { useEffect } from "react"
 
 export default function GlobalError({
   error,
@@ -11,6 +14,10 @@ export default function GlobalError({
   error: Error
   reset: () => void
 }) {
+  useEffect(() => {
+    console.error("Global error caught:", error)
+  }, [error])
+
   return (
     <html>
       <head>
