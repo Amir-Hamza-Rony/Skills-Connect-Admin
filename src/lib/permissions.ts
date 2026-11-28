@@ -1,12 +1,27 @@
 import type { Permission, RoleName } from "@/lib/types"
 
 /**
- * RBAC matrix — Boss reference documents (§3 Role-Based Visibility Matrix).
+ * Role → portal mapping (docs v5.1 §1, v5.0 §1).
  *
- * Four roles: SUPER_ADMIN, ADMIN, BDC, B2B_AGENT.
- * This copy exists so the SPA can hide nav links and buttons it knows will
- * fail — it never grants or denies access. Server-side enforcement is the
- * source of truth via `withAuth` / `requirePermission` and the API layer.
+ * 6 roles: SUPER_ADMIN, OPS_ADMIN, ACCOUNTS, SALES_BDC, EXTERNAL_BROKER, CANDIDATE
+ * 5 portals: /admin, /ops, /sales, /partner, /applicant
+ */
+export const ROLE_PORTAL: Record<RoleName, string> = {
+  SUPER_ADMIN: "/admin",
+  OPS_ADMIN: "/ops",
+  ACCOUNTS: "/ops",
+  SALES_BDC: "/sales",
+  EXTERNAL_BROKER: "/partner",
+  CANDIDATE: "/applicant",
+  ADMIN: "/admin",
+  BDC: "/sales",
+  B2B_AGENT: "/partner",
+  EMPLOYEE: "/ops",
+}
+
+/**
+ * RBAC matrix — docs require backend enforcement via withAuth / requirePermission.
+ * This copy drives nav visibility only; never grants access.
  */
 export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
   SUPER_ADMIN: [
@@ -34,6 +49,49 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "finance.reconcile",
     "rplPartners.manage",
     "rplPartners.view",
+    "scopes.manage",
+  ],
+  OPS_ADMIN: [
+    "orders.view",
+    "orders.manage",
+    "documents.view",
+    "documents.review",
+    "qualifications.manage",
+    "rto.manage",
+    "reports.view",
+    "audit.view",
+    "scopes.manage",
+  ],
+  ACCOUNTS: [
+    "finance.view",
+    "finance.manage",
+    "qb.retry",
+    "qb.manage",
+    "reports.view",
+    "orders.view",
+    "documents.view",
+    "commissions.view",
+  ],
+  SALES_BDC: [
+    "clients.view",
+    "clients.manage",
+    "orders.view",
+    "orders.manage",
+    "documents.view",
+    "reports.view",
+    "commissions.view",
+  ],
+  EXTERNAL_BROKER: [
+    "clients.view",
+    "clients.manage",
+    "orders.view",
+    "documents.view",
+    "reports.view",
+  ],
+  CANDIDATE: [
+    "clients.view",
+    "documents.view",
+    "orders.view",
   ],
   ADMIN: [
     "users.manage",
@@ -69,7 +127,6 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "clients.view",
     "clients.manage",
     "orders.view",
-    "orders.manage",
     "documents.view",
     "reports.view",
   ],
@@ -80,12 +137,17 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
   ],
 }
 
-/**
- * Full canonical permission set. SUPER_ADMIN holds every key, so this is the
- * single source of truth for secondary consumers (permission API, role edit
- * whitelist). Do not duplicate the list in those call sites.
- */
-export const ALL_PERMISSIONS: Permission[] = [...ROLE_PERMISSIONS.SUPER_ADMIN]
+/** Full canonical permission set. */
+export const ALL_PERMISSIONS: Permission[] = [
+  ...new Set([
+    ...ROLE_PERMISSIONS.SUPER_ADMIN,
+    ...ROLE_PERMISSIONS.OPS_ADMIN,
+    ...ROLE_PERMISSIONS.ACCOUNTS,
+    ...ROLE_PERMISSIONS.SALES_BDC,
+    ...ROLE_PERMISSIONS.EXTERNAL_BROKER,
+    ...ROLE_PERMISSIONS.CANDIDATE,
+  ]),
+]
 
 export function hasPermission(
   userPermissions: Permission[],
@@ -97,6 +159,11 @@ export function hasPermission(
 /** Navigation visibility per route (mirrors server-side enforcement). */
 export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/dashboard": null,
+  "/admin": null,
+  "/ops": null,
+  "/sales": null,
+  "/partner": null,
+  "/applicant": null,
   "/clients": "clients.view",
   "/orders": "orders.view",
   "/qualifications": "qualifications.manage",
@@ -132,32 +199,67 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/excel/bulk-rtos": "rto.manage",
   "/excel/bulk-quals": "qualifications.manage",
   "/excel/bulk-mappings": "qualifications.manage",
+  "/scopes": "scopes.manage",
+  "/qualifications/:id/scopes": "scopes.manage",
+  // Phase 5: new canonical paths
+  "/candidates": "clients.view",
+  "/enrolments": "orders.view",
+  "/provider/qualifications": "qualifications.manage",
+  "/provider/scopes": "scopes.manage",
+  "/provider/enrolment-kits": "scopes.manage",
+  "/provider/rtos": "rto.manage",
+  "/provider/rpl-partners": "rplPartners.view",
+  "/sales/agents": "agents.manage",
+  "/partner/external-agents": "clients.view",
+  "/pricing/pricing": "pricing.manage",
+  "/pricing/categories": "pricing.manage",
+  "/pricing/lists": "pricing.manage",
+  "/pricing/fees": "pricing.manage",
+  "/finance/finance": "finance.view",
+  "/finance/commission-rules": "commissions.manage",
+  "/finance/commission-records": "commissions.manage",
+  "/finance/commission-payouts": "commissions.manage",
+  "/finance/bdc-commission-ledger": "commissions.view",
+  "/settings/reports": "reports.view",
+  "/settings/audit": "audit.view",
+  "/settings/users": "users.manage",
+  "/settings/roles": "roles.manage",
+  "/settings/settings": "settings.manage",
+  "/settings/quickbooks": "qb.manage",
+  "/settings/reconciliation": "finance.reconcile",
 }
 
 /** Default dashboard view per role. */
 export const DEFAULT_VIEW_FOR: Record<RoleName, string> = {
   SUPER_ADMIN: "management",
+  OPS_ADMIN: "operations",
+  ACCOUNTS: "finance",
+  SALES_BDC: "agent",
+  EXTERNAL_BROKER: "b2b",
+  CANDIDATE: "applicant",
   ADMIN: "management",
   BDC: "agent",
   B2B_AGENT: "b2b",
   EMPLOYEE: "employee",
 }
 
-/** All five role names, for UI checkbox population. */
-export const ALL_ROLES: RoleName[] = ["SUPER_ADMIN", "ADMIN", "BDC", "B2B_AGENT", "EMPLOYEE"]
+/** All role names, for UI checkbox population. */
+export const ALL_ROLES: RoleName[] = [
+  "SUPER_ADMIN",
+  "OPS_ADMIN",
+  "ACCOUNTS",
+  "SALES_BDC",
+  "EXTERNAL_BROKER",
+  "CANDIDATE",
+  "ADMIN",
+  "BDC",
+  "B2B_AGENT",
+  "EMPLOYEE",
+]
 
 /**
- * Resolve the single role that drives dashboard scoping and display.
- *
- * `roleNames` is the authoritative list written from the user document at
- * login/refresh. The legacy `role` field can be stale (for example an ADMIN or
- * B2B_AGENT account that still carries `role: "BDC"`), so it is only a fallback
- * when no canonical role name is present. Priority follows ALL_ROLES, which is
- * also the order used by the dashboard UI, keeping server and client in sync.
- *
- * Unknown/non-canonical strings are intentionally ignored here rather than
- * guessed at: permission enforcement continues to use the exact values in the
- * signed token, so this helper never grants access on its own.
+ * Resolve the primary role that drives dashboard scoping and display.
+ * Priority follows ALL_ROLES. Legacy role is a fallback.
  */
 export function resolvePrimaryRole(input: {
   role?: string | null;

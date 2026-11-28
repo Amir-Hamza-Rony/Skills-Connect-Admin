@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { createRto, listRtos, rtoLabel, updateRto } from "@/lib/store"
-import type { Rto, RtoStatus, RtoAccreditationStatus } from "@/lib/types"
+import { createRto, listRtos, listScopes, rtoLabel, updateRto } from "@/lib/store"
+import type { Rto, RtoStatus, RtoAccreditationStatus, TrainingPackageTag, RtoQualificationScope } from "@/lib/types"
 
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -32,6 +32,10 @@ function accreditationVariant(status: RtoAccreditationStatus | null): "success" 
   return ACCREDITATION_VARIANT[status]
 }
 
+const TRAINING_PACKAGE_TAGS: TrainingPackageTag[] = [
+  "CHC", "AUR", "BSB", "CPC", "CPP", "HLT", "ICT", "FNS", "TLI", "SIS",
+]
+
 export function RtosPage() {
   const [rows, setRows] = useState<Rto[] | null>(null)
   const [viewing, setViewing] = useState<Rto | null>(null)
@@ -53,19 +57,40 @@ export function RtosPage() {
   const [accreditationNotes, setAccreditationNotes] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [allScopes, setAllScopes] = useState<RtoQualificationScope[] | null>(null)
+  const [tagFilter, setTagFilter] = useState<TrainingPackageTag | "">("")
+  const [viewScopes, setViewScopes] = useState<RtoQualificationScope[] | null>(null)
 
   useEffect(() => {
-    void (async () => setRows(await listRtos()))()
+    void (async () => {
+      const [rts, sc] = await Promise.all([listRtos(), listScopes()])
+      setRows(rts)
+      setAllScopes(sc)
+    })()
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      if (!viewing) {
+        setViewScopes(null)
+        return
+      }
+      const scopes = await listScopes({ issuingRtoId: viewing.id })
+      setViewScopes(scopes)
+    })()
+  }, [viewing])
 
   const visible = useMemo(() => {
     const list = rows ?? []
+    const scopes = allScopes ?? []
+    const rtoIdsWithScopes = new Set(scopes.map((s) => s.issuingRtoId))
     return list.filter((r) => {
       if (search && !rtoLabel(r).toLowerCase().includes(search.toLowerCase())) return false
       if (statusFilter && r.status !== statusFilter) return false
+      if (tagFilter && !rtoIdsWithScopes.has(r.id)) return false
       return true
     })
-  }, [rows, search, statusFilter])
+  }, [rows, search, statusFilter, tagFilter, allScopes])
 
   async function onCreate(e: FormEvent) {
     e.preventDefault()
@@ -192,7 +217,7 @@ export function RtosPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="success">Live data</Badge>
-          <Button size="sm" onClick={() => setCreating(true)}>
+          <Button onClick={() => setCreating(true)}>
             Add RTO
           </Button>
         </div>
@@ -218,6 +243,18 @@ export function RtosPage() {
           <option value="at-risk">At risk</option>
           <option value="suspended">Suspended</option>
           <option value="inactive">Inactive</option>
+        </select>
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value as TrainingPackageTag | "")}
+          className={inputCls}
+        >
+          <option value="">All tags</option>
+          {TRAINING_PACKAGE_TAGS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -253,12 +290,22 @@ export function RtosPage() {
             ),
           },
           {
+            key: "trueRtoCost",
+            label: "Lowest True RTO Cost",
+            render: (r) => {
+              const scopes = (allScopes ?? []).filter((s) => s.issuingRtoId === r.id)
+              if (scopes.length === 0) return <span className="text-muted-foreground">—</span>
+              const lowest = Math.min(...scopes.map((s) => s.trueRtoCost))
+              return <span className="font-mono text-sm">AUD {lowest.toLocaleString()}</span>
+            },
+          },
+          {
             key: "actions",
             label: "Actions",
             render: (r) => (
               <div className="flex items-center gap-2">
                 <Button
-                  size="sm"
+                 
                   variant="outline"
                   onClick={() => {
                     setLegalName(r.legalName)
@@ -281,14 +328,14 @@ export function RtosPage() {
                   Edit
                 </Button>
                 <Button
-                  size="sm"
+                 
                   variant={r.status === "active" ? "destructive" : "default"}
                   onClick={() => toggleStatus(r)}
                 >
                   {r.status === "active" ? "Deactivate" : "Activate"}
                 </Button>
                 <Button
-                  size="sm"
+                 
                   variant="outline"
                   onClick={() => setViewing(r)}
                 >
@@ -663,9 +710,52 @@ export function RtosPage() {
                 ))}
               </ul>
             )}
+
+            <h3 className="font-medium">Qualification Scopes & True RTO Costs</h3>
+            {viewScopes === null ? (
+              <p className="text-sm text-muted-foreground">Loading scopes…</p>
+            ) : viewScopes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No qualification scopes mapped to this RTO yet.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border bg-card">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-muted/50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Qualification</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Intermediary Partner</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Delivery Mode</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">True RTO Cost</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewScopes.map((s) => (
+                      <tr key={s.id} className="border-t hover:bg-muted/40">
+                        <td className="px-3 py-2 font-medium">{s.qualificationId}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {s.intermediaryPartnerId ?? "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant="secondary">{s.deliveryMode}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          AUD {s.trueRtoCost.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant={s.status === "active" ? "success" : "secondary"}>{s.status}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </Dialog>
     </div>
   )
 }
+

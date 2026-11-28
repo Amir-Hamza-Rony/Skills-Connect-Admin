@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 
 import { useAuth } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
+import { portalRedirectFor } from "@/lib/route-guard"
 import type { Permission } from "@/lib/types"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -73,5 +74,33 @@ export function RequirePermission({
       </div>
     )
   }
+  return <>{children}</>
+}
+
+/**
+ * Portal route guard — docs v5.1 §6 QA #1.
+ *
+ * Redirects a user who lands on a portal they are not permitted to access
+ * (e.g., a SALES_BDC typing /admin or /partner) to their permitted portal.
+ * Use inside each portal layout or as a wrapper around portal page trees.
+ */
+export function RequirePortal({ children }: { children: ReactNode }) {
+  const { user, authLoading } = useAuth()
+  const pathname = usePathname()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (authLoading || !user) return
+    const redirectTo = portalRedirectFor(
+      user.roleNames,
+      user.channelType,
+      pathname,
+    )
+    if (redirectTo) {
+      router.replace(redirectTo)
+    }
+  }, [authLoading, user, pathname, router])
+
+  if (authLoading || !user) return null
   return <>{children}</>
 }

@@ -24,6 +24,7 @@ export interface AuthUser {
   agency_name?: string | null;
   b2b_tier?: "SILVER" | "GOLD" | "PLATINUM";
   default_commission_pct?: number;
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_BROKER" | null;
   permissions: string[];
 }
 
@@ -88,6 +89,7 @@ function verifyToken(handler: RouteHandler): RouteHandler {
         roleNames: payload.roleNames,
         agency_name: payload.agency_name ?? null,
         b2b_tier: payload.b2b_tier,
+        channelType: payload.channelType ?? null,
         default_commission_pct: payload.default_commission_pct,
         permissions: payload.permissions,
       };

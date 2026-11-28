@@ -76,6 +76,21 @@ export const GET = withAuth("orders.view",
           // M1.4 (D2): canonical API-facing names for the stored fields.
           enrollmentCode: o.enrollmentCode ?? null,
           channelType: o.channel_type ?? null,
+          // 4-Layer Controlled Pricing Matrix (docs v5.1 §2, v5.0 §2).
+          trueRtoCost: o.trueRtoCost ?? null,
+          snapTrueRtoCost: o.snapTrueRtoCost ?? null,
+          approvedInternalCost: o.approvedInternalCost ?? null,
+          snapApprovedInternalCost: o.snapApprovedInternalCost ?? null,
+          b2bWholesalePrice: o.b2bWholesalePrice ?? null,
+          snapB2bWholesalePrice: o.snapB2bWholesalePrice ?? null,
+          b2cRetailPrice: o.b2cRetailPrice ?? null,
+          snapB2cRetailPrice: o.snapB2cRetailPrice ?? null,
+          snapSalePrice: o.snapSalePrice ?? null,
+          snapAdditionalFees: o.snapAdditionalFees ?? null,
+          snapDiscount: o.snapDiscount ?? null,
+          snapTotalBilled: o.snapTotalBilled ?? null,
+          commissionAmount: o.commissionAmount ?? null,
+          statusReasonNote: o.statusReasonNote ?? null,
         };
         // --- Financial field masking ---
         // partner_cost_price (supplierCostSnapshot) hidden from BDC / B2B_AGENT
@@ -117,6 +132,11 @@ export const POST = withAuth("orders.manage",
       rtoContactId,
       rtoContactName,
       rplPartnerId,
+      trueRtoCost,
+      approvedInternalCost,
+      b2bWholesalePrice,
+      b2cRetailPrice,
+      channelType,
     } = body;
 
     if (
@@ -317,7 +337,7 @@ export const POST = withAuth("orders.manage",
       salesAgentId: salesAgentOid,
       sourceAgentId: sourceAgentOid,
       rtoId: rtoOid,
-      status: "New",
+      status: "DRAFT",
       evidenceStatus: "Not Started",
       rtoSubmissionStatus: "Not Ready",
       certificateStatus: "Not Issued",
@@ -334,17 +354,28 @@ export const POST = withAuth("orders.manage",
       additionalFees,
       feeTotal,
       completedAt: null,
-      history: [{ timestamp: now, field: "status", before: "—", after: "New" }],
+      history: [{ timestamp: now, field: "status", before: "—", after: "DRAFT" }],
       createdAt: now,
       updatedAt: now,
+      // 4-Layer Controlled Pricing Matrix (docs v5.1 §2, v5.0 §2).
+      trueRtoCost: trueRtoCost !== undefined ? Number(trueRtoCost) : null,
+      approvedInternalCost: approvedInternalCost !== undefined ? Number(approvedInternalCost) : null,
+      b2bWholesalePrice: b2bWholesalePrice !== undefined ? Number(b2bWholesalePrice) : null,
+      b2cRetailPrice: b2cRetailPrice !== undefined ? Number(b2cRetailPrice) : null,
+      channel_type: channelType ?? null,
     };
     // Tag enrollment with the creating agent for Phase 1 data scoping.
     if (actor.role === "BDC" || actor.roleNames.includes("BDC")) {
       insertDoc.bdc_id = actor.userId;
-      insertDoc.channel_type = "B2C_BDC";
-    } else if (actor.role === "B2B_AGENT" || actor.roleNames.includes("B2B_AGENT")) {
+      insertDoc.channel_type = "IN_HOUSE_B2C";
+    } else if (
+      actor.role === "B2B_AGENT" ||
+      actor.roleNames.includes("B2B_AGENT") ||
+      actor.role === "EXTERNAL_BROKER" ||
+      actor.roleNames.includes("EXTERNAL_BROKER")
+    ) {
       insertDoc.b2b_agent_id = actor.userId;
-      insertDoc.channel_type = "B2B_AGENT";
+      insertDoc.channel_type = "EXTERNAL_B2B";
     }
     // M1.4 (D2): the enrollment code is allocated server-side immediately
     // before insert. A bounded retry handles a legacy/manual collision with
@@ -390,7 +421,7 @@ export const POST = withAuth("orders.manage",
       action: "create",
       before: null,
       after: {
-        status: "New",
+        status: "DRAFT",
         sellingPrice: resolvedSellingPrice,
         supplierCostSnapshot,
         otherCost: Number(otherCost),
@@ -400,6 +431,10 @@ export const POST = withAuth("orders.manage",
         feeTotal,
         enrollmentCode,
         channelType: insertDoc.channel_type ?? null,
+        trueRtoCost: insertDoc.trueRtoCost,
+        approvedInternalCost: insertDoc.approvedInternalCost,
+        b2bWholesalePrice: insertDoc.b2bWholesalePrice,
+        b2cRetailPrice: insertDoc.b2cRetailPrice,
         rplPartnerId: resolvedRplPartnerId,
       },
     });

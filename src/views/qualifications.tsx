@@ -1,10 +1,11 @@
 "use client"
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import React, { useEffect, useMemo, useState, type FormEvent } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { Dialog } from "@/components/dialog"
+import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   createQualification,
@@ -12,7 +13,8 @@ import {
   qualificationLabel,
   updateQualification,
 } from "@/lib/store"
-import type { Qualification, QualificationStatus } from "@/lib/types"
+import { listScopesForQualification, listEnrolmentKits } from "@/lib/store"
+import type { Qualification, QualificationStatus, TrainingPackageTag, DeliveryMode, RtoQualificationScope, EnrolmentKit } from "@/lib/types"
 
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -22,6 +24,10 @@ const STATUS_VARIANT: Record<QualificationStatus, "success" | "warning"> = {
   superseded: "warning",
 }
 
+const TRAINING_PACKAGE_TAGS: TrainingPackageTag[] = [
+  "CHC", "AUR", "BSB", "CPC", "CPP", "HLT", "ICT", "FNS", "TLI", "SIS",
+]
+
 export function QualificationsPage() {
   const [rows, setRows] = useState<Qualification[] | null>(null)
   const [viewing, setViewing] = useState<Qualification | null>(null)
@@ -29,27 +35,60 @@ export function QualificationsPage() {
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<QualificationStatus | "">("")
+  const [tagFilter, setTagFilter] = useState<TrainingPackageTag | "">("")
   const [code, setCode] = useState("")
   const [title, setTitle] = useState("")
   const [pkg, setPkg] = useState("")
   const [industry, setIndustry] = useState("")
   const [licensingRefs, setLicensingRefs] = useState("")
   const [status, setStatus] = useState<QualificationStatus>("current")
+  const [isBundle, setIsBundle] = useState(false)
+  const [deliveryModes, setDeliveryModes] = useState<DeliveryMode[]>([])
+  const [trainingPackageTags, setTrainingPackageTags] = useState<TrainingPackageTag[]>([])
+  const [viewScopes, setViewScopes] = useState<RtoQualificationScope[] | null>(null)
+  const [viewKits, setViewKits] = useState<EnrolmentKit[] | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const handleDeliveryModesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selected = Array.from(e.target.selectedOptions).map((o) => o.value)
+    setDeliveryModes(selected as DeliveryMode[])
+  }
+
+  const handleTagsChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selected = Array.from(e.target.selectedOptions).map((o) => o.value)
+    setTrainingPackageTags(selected as TrainingPackageTag[])
+  }
 
   useEffect(() => {
     void (async () => setRows(await listQualifications()))()
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      if (!viewing) {
+        setViewScopes(null)
+        setViewKits(null)
+        return
+      }
+      const [scopes, kits] = await Promise.all([
+        listScopesForQualification(viewing.id),
+        listEnrolmentKits({ qualificationId: viewing.id }),
+      ])
+      setViewScopes(scopes)
+      setViewKits(kits)
+    })()
+  }, [viewing])
 
   const visible = useMemo(() => {
     const list = rows ?? []
     return list.filter((q) => {
       if (search && !qualificationLabel(q).toLowerCase().includes(search.toLowerCase())) return false
       if (statusFilter && q.status !== statusFilter) return false
+      if (tagFilter && !q.trainingPackageTags?.includes(tagFilter)) return false
       return true
     })
-  }, [rows, search, statusFilter])
+  }, [rows, search, statusFilter, tagFilter])
 
   async function onCreate(e: FormEvent) {
     e.preventDefault()
@@ -66,6 +105,9 @@ export function QualificationsPage() {
         trainingPackage: pkg.trim(),
         industry: industry.trim(),
         status,
+        isBundle,
+        deliveryModes,
+        trainingPackageTags,
         licensingRefs: licensingRefs.trim()
           ? JSON.parse(licensingRefs.trim())
           : [],
@@ -78,6 +120,9 @@ export function QualificationsPage() {
       setIndustry("")
       setLicensingRefs("")
       setStatus("current")
+      setIsBundle(false)
+      setDeliveryModes([])
+      setTrainingPackageTags([])
     } catch (err: any) {
       setError(err?.message ?? "Failed to create qualification. The code may already exist.")
     } finally {
@@ -100,6 +145,9 @@ export function QualificationsPage() {
         trainingPackage: pkg.trim(),
         industry: industry.trim(),
         status,
+        isBundle,
+        deliveryModes,
+        trainingPackageTags,
       })
       setRows((prev) =>
         prev?.map((r) => (r.id === updated.id ? updated : r)) ?? null,
@@ -152,7 +200,7 @@ export function QualificationsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="success">Live data</Badge>
-          <Button size="sm" onClick={() => setCreating(true)}>
+          <Button onClick={() => setCreating(true)}>
             Add qualification
           </Button>
         </div>
@@ -177,6 +225,18 @@ export function QualificationsPage() {
           <option value="current">Current</option>
           <option value="superseded">Superseded</option>
         </select>
+        <select
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value as TrainingPackageTag | "")}
+          className={inputCls}
+        >
+          <option value="">All tags</option>
+          {TRAINING_PACKAGE_TAGS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
       </div>
 
       <DataTable<Qualification>
@@ -186,8 +246,39 @@ export function QualificationsPage() {
         columns={[
           { key: "code", label: "Code" },
           { key: "title", label: "Title" },
-          { key: "trainingPackage", label: "Training package" },
+          {
+            key: "trainingPackage",
+            label: "Training package",
+          },
+          {
+            key: "tags",
+            label: "Tags",
+            render: (q) => (
+              <div className="flex flex-wrap gap-1">
+                {(q.trainingPackageTags ?? []).map((t) => (
+                  <Badge key={t} variant="secondary">{t}</Badge>
+                ))}
+              </div>
+            ),
+          },
           { key: "industry", label: "Industry" },
+          {
+            key: "deliveryModes",
+            label: "Delivery modes",
+            render: (q) => (
+              <span className="text-muted-foreground text-sm">
+                {(q.deliveryModes ?? []).join(", ") || "—"}
+              </span>
+            ),
+          },
+          {
+            key: "isBundle",
+            label: "Bundle",
+            render: (q) =>
+              q.isBundle ? <Badge variant="success">Bundle</Badge> : (
+                <Badge variant="secondary">—</Badge>
+              ),
+          },
           {
             key: "status",
             label: "Status",
@@ -210,7 +301,7 @@ export function QualificationsPage() {
             render: (q) => (
               <div className="flex items-center gap-2">
                 <Button
-                  size="sm"
+                 
                   variant="outline"
                   onClick={() => {
                     setCode(q.code)
@@ -218,20 +309,23 @@ export function QualificationsPage() {
                     setPkg(q.trainingPackage)
                     setIndustry(q.industry)
                     setStatus(q.status)
+                    setIsBundle(q.isBundle ?? false)
+                    setDeliveryModes(q.deliveryModes ?? [])
+                    setTrainingPackageTags(q.trainingPackageTags ?? [])
                     setEditing(q)
                   }}
                 >
                   Edit
                 </Button>
                 <Button
-                  size="sm"
+                 
                   variant={q.status === "current" ? "destructive" : "default"}
                   onClick={() => toggleStatus(q)}
                 >
                   {q.status === "current" ? "Supersede" : "Activate"}
                 </Button>
                 <Button
-                  size="sm"
+                 
                   variant="outline"
                   onClick={() => setViewing(q)}
                 >
@@ -309,6 +403,56 @@ export function QualificationsPage() {
                 className={inputCls}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="q-isBundle" className="text-sm font-medium">
+              Dual Qualification (Bundle)
+            </Label>
+            <select
+              id="q-isBundle"
+              value={isBundle ? "true" : "false"}
+              onChange={(e) => setIsBundle(e.target.value === "true")}
+              className={inputCls}
+            >
+              <option value="false">No</option>
+              <option value="true">Yes (e.g. dual qualification)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="q-deliveryModes" className="text-sm font-medium">
+              Delivery Modes
+            </label>
+            <select
+              id="q-deliveryModes"
+              multiple
+              value={deliveryModes}
+              onChange={handleDeliveryModesChange}
+              className={inputCls}
+            >
+              {["RPL", "ONLINE", "CLASSROOM"].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="q-tags" className="text-sm font-medium">
+              Training Package Tags
+            </label>
+            <select
+              id="q-tags"
+              multiple
+              value={trainingPackageTags}
+              onChange={handleTagsChange}
+              className={inputCls}
+            >
+              {TRAINING_PACKAGE_TAGS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-1.5">
             <label htmlFor="q-licensing" className="text-sm font-medium">Licensing Refs (JSON array)</label>
@@ -410,6 +554,56 @@ export function QualificationsPage() {
               />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="eq-isBundle" className="text-sm font-medium">
+              Dual Qualification (Bundle)
+            </Label>
+            <select
+              id="eq-isBundle"
+              value={isBundle ? "true" : "false"}
+              onChange={(e) => setIsBundle(e.target.value === "true")}
+              className={inputCls}
+            >
+              <option value="false">No</option>
+              <option value="true">Yes (e.g. dual qualification)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="eq-deliveryModes" className="text-sm font-medium">
+              Delivery Modes
+            </label>
+            <select
+              id="eq-deliveryModes"
+              multiple
+              value={deliveryModes}
+              onChange={handleDeliveryModesChange}
+              className={inputCls}
+            >
+              {["RPL", "ONLINE", "CLASSROOM"].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="eq-tags" className="text-sm font-medium">
+              Training Package Tags
+            </label>
+            <select
+              id="eq-tags"
+              multiple
+              value={trainingPackageTags}
+              onChange={handleTagsChange}
+              className={inputCls}
+            >
+              {TRAINING_PACKAGE_TAGS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
           {error && (
             <p role="alert" className="text-sm text-destructive">{error}</p>
           )}
@@ -434,23 +628,93 @@ export function QualificationsPage() {
         title={viewing ? qualificationLabel(viewing) : "Qualification"}
         description={viewing ? `${viewing.trainingPackage} · ${viewing.industry}` : undefined}
       >
-        <h3 className="pb-2 text-sm font-medium">Licensing & skills assessment</h3>
-        {!viewing || viewing.licensingRefs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No licensing references recorded for this qualification.
-          </p>
-        ) : (
-          <ul className="space-y-2.5">
-            {viewing.licensingRefs.map((ref, i) => (
-              <li key={i} className="rounded-lg border p-3 text-sm">
-                <p className="font-medium">{ref.authority}</p>
-                <p className="text-muted-foreground">Industry: {ref.industry}</p>
-                <p className="text-muted-foreground">Prerequisites: {ref.prerequisites}</p>
-                <p className="text-muted-foreground">Outcome: {ref.outcome}</p>
-              </li>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {viewing?.isBundle && (
+              <Badge variant="success">Bundle (Dual Qualification)</Badge>
+            )}
+            {(viewing?.deliveryModes ?? []).map((m) => (
+              <Badge key={m} variant="secondary">{m}</Badge>
             ))}
-          </ul>
-        )}
+            {(viewing?.trainingPackageTags ?? []).map((t) => (
+              <Badge key={t} variant="outline">{t}</Badge>
+            ))}
+          </div>
+
+          <h3 className="pb-2 text-sm font-medium">Licensing & skills assessment</h3>
+          {!viewing || viewing.licensingRefs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No licensing references recorded for this qualification.
+            </p>
+          ) : (
+            <ul className="space-y-2.5">
+              {viewing.licensingRefs.map((ref, i) => (
+                <li key={i} className="rounded-lg border p-3 text-sm">
+                  <p className="font-medium">{ref.authority}</p>
+                  <p className="text-muted-foreground">Industry: {ref.industry}</p>
+                  <p className="text-muted-foreground">Prerequisites: {ref.prerequisites}</p>
+                  <p className="text-muted-foreground">Outcome: {ref.outcome}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <h3 className="pb-2 text-sm font-medium">Mapped Colleges & Scopes</h3>
+          {viewScopes === null ? (
+            <p className="text-sm text-muted-foreground">Loading scopes…</p>
+          ) : viewScopes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No mapped colleges for this qualification yet. Create scopes in the
+              Qualification Scopes page.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border bg-card">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted/50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Issuing RTO</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Intermediary Partner</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Delivery Mode</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">True RTO Cost</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Enrolment Kits</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewScopes.map((s) => {
+                    const kitsForScope = (viewKits ?? []).filter(
+                      (k) => k.qualificationId === s.qualificationId && k.issuingRtoId === s.issuingRtoId
+                    )
+                    return (
+                      <tr key={s.id} className="border-t hover:bg-muted/40">
+                        <td className="px-3 py-2 font-medium">{s.issuingRtoId}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {s.intermediaryPartnerId ?? "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant="secondary">{s.deliveryMode}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          AUD {s.trueRtoCost.toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant={s.status === "active" ? "success" : "secondary"}>{s.status}</Badge>
+                        </td>
+                        <td className="px-3 py-2">
+                          {kitsForScope.length > 0 ? (
+                            <span className="text-xs font-medium">{kitsForScope.length} kit{kitsForScope.length > 1 ? "s" : ""}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </Dialog>
     </div>
   )
