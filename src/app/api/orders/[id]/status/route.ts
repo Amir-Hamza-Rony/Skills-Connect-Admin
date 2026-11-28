@@ -107,6 +107,19 @@ export const PATCH = withAuth("orders.manage",
 
     const before = order.status;
 
+    // 100-Point ID gate: RECEIVED requires client id_points_verified >= 100.
+    if (status === "RECEIVED" && before !== "RECEIVED") {
+      const clients = await collection("clients");
+      const client = await clients.findOne({ _id: order.clientId });
+      const idPoints = client?.id_points_verified ?? 0;
+      if (Number(idPoints) < 100) {
+        return NextResponse.json(
+          { error: { code: "ID_POINTS_NOT_VERIFIED", message: "Client must have 100 verified ID points before enrolment can be received." } },
+          { status: 400 },
+        );
+      }
+    }
+
     // Determine which transition set applies.
     const appStatuses = ["DRAFT", "RECEIVED", "IN_PROGRESS", "DELIVERED", "ON_HOLD", "CANCELLED"];
     const isAppFlow = appStatuses.includes(before) || appStatuses.includes(status);

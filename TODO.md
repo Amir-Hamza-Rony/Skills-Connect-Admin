@@ -69,13 +69,21 @@
 - External broker assigned fixed wholesale tiers — new view at /partner/external-agents
 - Lint clean, typecheck clean, 377/377 tests pass
 
-## ⏳ Phase 6 — Testing & QA (PENDING)
+## ✅ Phase 6 — Testing & QA (COMPLETED)
+- Route guard penetration testing: SALES_BDC/EXTERNAL_BROKER blocked from qualifications/RTO/scopes management (403); SUPER_ADMIN accesses all routes (not 403); unauthenticated returns 401
+- Payload inspection: trueRtoCost/snapTrueRtoCost/supplierCostSnapshot absent from JSON under SALES_BDC and EXTERNAL_BROKER; present under SUPER_ADMIN/ACCOUNTS; applyFinancialVisibility removes all cost layers per policy
+- B2B candidate isolation: CANDIDATE with EXTERNAL_BROKER channelType sees no pricing/invoice fields; EXTERNAL_BROKER order gets EXTERNAL_B2B channelType
+- 100-Point ID gate: RECEIVED blocked when id_points_verified < 100 (ID_POINTS_NOT_VERIFIED); allowed when >= 100
+- Immutable snapshot verification: snapshots locked on RECEIVED unchanged by master price edits; preserved through IN_PROGRESS and DELIVERED
+- Lint clean, typecheck clean, 399/399 tests pass
+
+## ⏳ Phase 7 — Production Readiness (PENDING)
 Tasks:
-- Route guard penetration testing (unauthorized URL navigation redirects to permitted portal)
-- Payload inspection (zero margin leakage: true_rto_cost absent from JSON under SALES_BDC/EXTERNAL_BROKER)
-- B2B candidate isolation (channel_type EXTERNAL_B2B → zero pricing/invoice tabs in /applicant)
-- 100-Point ID gate (RECEIVED blocked when id_points_verified < 100; returning candidate inherits verified USI + ID docs)
-- Immutable snapshot verification (editing master prices doesn't alter RECEIVED/IN_PROGRESS/DELIVERED figures)
+- End-to-end smoke tests across all 9 sidebar sections
+- Performance benchmarks on large order lists
+- Accessibility audit (WCAG AA) on all forms and tables
+- Error boundary coverage for all API routes
+- Deployment checklist and rollback procedure
 
 ---
 

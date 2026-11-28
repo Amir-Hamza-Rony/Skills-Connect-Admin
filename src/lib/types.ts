@@ -389,6 +389,8 @@ export interface Client {
   referredByStudentId?: string | null
   externalReferrerName?: string | null
   updatedAt?: string
+  /** 100-Point ID check (Phase 6). RECEIVED blocked when < 100. */
+  id_points_verified?: number | null
 }
 
 export interface StatusChange {

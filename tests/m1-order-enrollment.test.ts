@@ -273,8 +273,11 @@ describe("M1.4 / D7 — frozen application status workflow", () => {
   });
 
   it("allows an existing transition and rejects an undefined one", async () => {
+    const clientId = await seedClient(undefined, "Test Client", "client@test.com", {
+      id_points_verified: 100,
+    });
     const orderId = await seedOrder(
-      new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(),
+      new ObjectId(), clientId, new ObjectId(), new ObjectId(), new ObjectId(), new ObjectId(),
       { status: "DRAFT" },
     );
     const ok = await transitionOrder(

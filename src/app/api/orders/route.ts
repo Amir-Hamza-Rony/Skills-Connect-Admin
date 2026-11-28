@@ -368,7 +368,12 @@ export const POST = withAuth("orders.manage",
     if (actor.role === "BDC" || actor.roleNames.includes("BDC")) {
       insertDoc.bdc_id = actor.userId;
       insertDoc.channel_type = "IN_HOUSE_B2C";
-    } else if (actor.role === "B2B_AGENT" || actor.roleNames.includes("B2B_AGENT")) {
+    } else if (
+      actor.role === "B2B_AGENT" ||
+      actor.roleNames.includes("B2B_AGENT") ||
+      actor.role === "EXTERNAL_BROKER" ||
+      actor.roleNames.includes("EXTERNAL_BROKER")
+    ) {
       insertDoc.b2b_agent_id = actor.userId;
       insertDoc.channel_type = "EXTERNAL_B2B";
     }

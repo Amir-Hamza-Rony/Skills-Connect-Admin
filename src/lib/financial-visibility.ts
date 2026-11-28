@@ -26,6 +26,8 @@ import type { AuthUser } from "@/middleware/auth";
 const TRUE_RTO_COST_FIELDS = [
   "true_rto_cost",
   "snap_true_rto_cost",
+  "trueRtoCost",
+  "snapTrueRtoCost",
   "supplierCostSnapshot",
   "supplierCost",
   "cost",
@@ -37,6 +39,7 @@ const APPROVED_INTERNAL_FIELDS = [
   "approved_internal_cost",
   "snap_approved_internal_cost",
   "approvedInternalCost",
+  "snapApprovedInternalCost",
   "margin",
   "grossMargin",
   "net_profit",
@@ -51,6 +54,8 @@ const B2B_WHOLESALE_FIELDS = [
   "b2b_wholesale_price",
   "b2bPrice",
   "wholesalePrice",
+  "b2bWholesalePrice",
+  "snapB2bWholesalePrice",
 ] as const;
 
 /** Fields revealing B2C Retail Price / revenue — hidden from B2B brokers and B2B candidates. */
@@ -75,6 +80,12 @@ const B2C_RETAIL_FIELDS = [
   "commissionEarned",
   "feeTotal",
   "amount",
+  "b2cRetailPrice",
+  "snapB2cRetailPrice",
+  "snapSalePrice",
+  "snapAdditionalFees",
+  "snapDiscount",
+  "snapTotalBilled",
 ] as const;
 
 /** Invoice-related fields — hidden from B2B candidates entirely. */
@@ -86,6 +97,10 @@ const INVOICE_FIELDS = [
   "snap_additional_fees",
   "snap_discount",
   "snap_total_billed",
+  "snapSalePrice",
+  "snapAdditionalFees",
+  "snapDiscount",
+  "snapTotalBilled",
 ] as const;
 
 const TRUE_RTO_COST = new Set<string>(TRUE_RTO_COST_FIELDS);
