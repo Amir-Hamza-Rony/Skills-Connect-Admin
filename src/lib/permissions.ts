@@ -49,6 +49,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "finance.reconcile",
     "rplPartners.manage",
     "rplPartners.view",
+    "scopes.manage",
   ],
   OPS_ADMIN: [
     "orders.view",
@@ -59,6 +60,7 @@ export const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     "rto.manage",
     "reports.view",
     "audit.view",
+    "scopes.manage",
   ],
   ACCOUNTS: [
     "finance.view",
@@ -197,6 +199,8 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/excel/bulk-rtos": "rto.manage",
   "/excel/bulk-quals": "qualifications.manage",
   "/excel/bulk-mappings": "qualifications.manage",
+  "/scopes": "scopes.manage",
+  "/qualifications/:id/scopes": "scopes.manage",
 }
 
 /** Default dashboard view per role. */

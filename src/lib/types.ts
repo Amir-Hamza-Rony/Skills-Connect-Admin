@@ -65,6 +65,12 @@ export interface Agent {
 
 export type QualificationStatus = "current" | "superseded"
 
+export type DeliveryMode = "RPL" | "ONLINE" | "CLASSROOM"
+
+export type TrainingPackageTag =
+  | "CHC" | "AUR" | "BSB" | "CPC" | "CPP" | "HLT"
+  | "ICT" | "FNS" | "TLI" | "SIS"
+
 export interface LicensingRef {
   industry: string
   authority: string
@@ -80,6 +86,42 @@ export interface Qualification {
   industry: string
   status: QualificationStatus
   licensingRefs: LicensingRef[]
+  /** Delivery mode variants offered for this qualification. */
+  deliveryModes?: DeliveryMode[]
+  /** True for dual qualifications (e.g. CHC33021 + CHC43121). */
+  isBundle?: boolean
+  /** Training package tags for filtering and grouping. */
+  trainingPackageTags?: TrainingPackageTag[]
+}
+
+/** Composite-key scope: qualification + partner + RTO + delivery mode → true RTO cost. */
+export interface RtoQualificationScope {
+  id: string
+  qualificationId: string
+  intermediaryPartnerId: string | null
+  issuingRtoId: string
+  deliveryMode: DeliveryMode
+  trueRtoCost: number
+  currency: Currency
+  effectiveFrom?: string
+  effectiveTo: string | null
+  status: "active" | "inactive"
+  createdAt: string
+  updatedAt: string
+}
+
+/** RTO-specific enrolment kit attached per (issuing_rto_id, qualification_id) pair. */
+export interface EnrolmentKit {
+  id: string
+  qualificationId: string
+  issuingRtoId: string
+  fileName: string
+  fileUrl: string
+  contentType: string
+  sizeBytes: number
+  active: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export type RtoStatus = "active" | "suspended" | "at-risk" | "inactive"
@@ -185,6 +227,7 @@ export type Permission =
   | "finance.reconcile"
   | "rplPartners.manage"
   | "rplPartners.view"
+  | "scopes.manage"
 
 /* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */

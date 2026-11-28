@@ -16,6 +16,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Target,
   Tags,
   Upload,
   UserCog,
@@ -50,10 +51,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Management",
     items: [
-      { label: "Clients", icon: Users, href: "/clients" },
-      { label: "Orders", icon: ClipboardList, href: "/orders" },
+      { label: "Applicants", icon: Users, href: "/clients" },
+      { label: "Enrolments", icon: ClipboardList, href: "/orders" },
       { label: "Qualifications", icon: GraduationCap, href: "/qualifications" },
-      { label: "RTOs & Colleges", icon: Building2, href: "/rtos" },
+      { label: "RTO / RTO Partners", icon: Building2, href: "/rtos" },
       { label: "Agents", icon: Briefcase, href: "/agents" },
       { label: "Pricing", icon: Tags, href: "/pricing" },
       { label: "Price Categories", icon: CreditCard, href: "/price-categories" },
@@ -67,6 +68,13 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Bulk Mapping Import", icon: Upload, href: "/excel/bulk-mappings" },
       { label: "RPL Partners", icon: Users, href: "/rpl-partners" },
       { label: "Import Templates", icon: ClipboardList, href: "/excel/templates" },
+    ],
+  },
+  {
+    title: "Provider Module",
+    items: [
+      { label: "Qualification Scopes", icon: Target, href: "/scopes" },
+      { label: "Enrolment Kits", icon: FileText, href: "/enrolment-kits" },
     ],
   },
   {
