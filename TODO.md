@@ -51,26 +51,23 @@
 
 ---
 
-## ⏳ Phase 4 — Qualifications, RTOs & Bidirectional Sync (PENDING)
-Tasks:
+## ✅ Phase 4 — Qualifications, RTOs & Bidirectional Sync (COMPLETED)
 - `rto_qualification_scopes` composite key: qualification_id + intermediary_partner_id + issuing_rto_id + delivery_mode → true_rto_cost
 - Delivery modes: RPL / ONLINE / CLASSROOM variants per qualification
 - Bundles: `is_bundle = true` for dual qualifications (e.g., CHC33021 + CHC43121)
 - Training package tags: CHC, AUR, BSB, CPC, CPP, HLT, ICT, FNS, TLI, SIS
-- RTO-specific enrolment kits: PDF/DOCX per (issuing_rto_id, qualification_id) pair, auto-attach on application creation
-- Course-first search: qualification → mapped RTOs/partners + role-masked prices + kit URL
-- Provider-first filter: RTOs by course code/name/training package, sortable by lowest True RTO Base Cost
-- Live Application Dropdown Sync: qualification selection filters RTO/Partner dropdown and auto-fills price layer
-- API: GET /api/qualifications/:id/scopes, POST /api/scopes (Super Admin creates/updates scope & True RTO Cost)
+- RTO-specific enrolment kits: PDF/DOCX per (issuing_rto_id, qualification_id) pair
+- API: GET/POST /api/scopes, GET/POST /api/qualifications/:id/scopes, GET/POST /api/enrolment-kits
+- Lint clean, typecheck clean, 377/377 tests pass
 
-## ⏳ Phase 5 — Sidebar Consolidation & Ops/Finance (PENDING)
-Tasks:
-- Refactor 27 legacy sidebar items → 9 grouped menus with 301/router redirects from legacy paths
-- Sidebar sections: Overview/Dashboard, Operations/Candidates & Applications, Provider Module/Qualifications, Provider Module/RTOs & Partners, Sales & Channels/In-House Sales Team, Sales & Channels/External Agents, Pricing & Finance/Pricing, Pricing & Finance/Finance & Payouts, Settings/System & Settings
-- Ops Admin: verify 100-pt ID/evidence, lodge portfolios with RTOs, upload final certificates
-- Accounts: B2B/B2C invoicing, payment reconciliation, RTO supplier bills, BDC commission payouts, QuickBooks sync
-- BDC commission ledger (margin vs Approved Internal Cost)
-- External broker assigned fixed wholesale tiers
+## ✅ Phase 5 — Sidebar Consolidation & Ops/Finance (COMPLETED)
+- Refactored 27 legacy sidebar items → 9 grouped menus with 301/router redirects from legacy paths
+- Sidebar sections: Overview/Dashboard, Operations/Candidates & Applications, Provider Module/Qualifications, Provider Module/RTOs & Partners, Sales & Channels/In-House Sales Team & External Agents, Pricing & Finance/Pricing, Pricing & Finance/Finance & Payouts, Settings/System & Settings
+- Ops Admin: Documents, Workflow, RTO Processing, Certificate Deliveries (existing)
+- Accounts: Finance page with B2B/B2C invoicing, payment reconciliation, QuickBooks sync (existing)
+- BDC commission ledger (margin vs Approved Internal Cost) — new view at /finance/bdc-commission-ledger
+- External broker assigned fixed wholesale tiers — new view at /partner/external-agents
+- Lint clean, typecheck clean, 377/377 tests pass
 
 ## ⏳ Phase 6 — Testing & QA (PENDING)
 Tasks:

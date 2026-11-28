@@ -61,6 +61,8 @@ export interface Agent {
   contact: string
   commissionRule: string
   active: boolean
+  /** Fixed wholesale tier assigned to external brokers. */
+  b2b_tier?: "SILVER" | "GOLD" | "PLATINUM" | null
 }
 
 export type QualificationStatus = "current" | "superseded"
