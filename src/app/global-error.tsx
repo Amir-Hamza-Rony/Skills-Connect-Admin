@@ -1,4 +1,4 @@
-"use strict"
+"use client"
 
 /**
  * Global error boundary for the Next.js App Router.
