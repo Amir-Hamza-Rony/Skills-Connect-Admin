@@ -1,5 +1,16 @@
 /**
- * PATCH /api/orders/[id]/status — change order status with history
+ * PATCH /api/orders/[id]/status — change order status with history.
+ *
+ * Application pipeline statuses (docs v5.1 §2 Module 3 Step D, v5.0 §6):
+ *   DRAFT → RECEIVED → IN_PROGRESS → DELIVERED → ON_HOLD / CANCELLED
+ *
+ * Immutable price snapshots: when an application moves to RECEIVED, lock
+ * true_rto_cost, approved_internal_cost, sale_price, additional_fees and
+ * commission_amount as static values on the applications row (docs v5.1 §2,
+ * v5.0 §5).
+ *
+ * ON_HOLD / CANCELLED require a mandatory status_reason_note logged to Audit
+ * Logs (docs v5.1 §2 Module 3 Step D).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -9,7 +20,16 @@ import { collection, safeObjectId } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { checkOrderAccess } from "@/middleware/auth";
 
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+const APPLICATION_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ["RECEIVED", "ON_HOLD", "CANCELLED"],
+  RECEIVED: ["IN_PROGRESS", "ON_HOLD", "CANCELLED"],
+  IN_PROGRESS: ["DELIVERED", "ON_HOLD", "CANCELLED"],
+  DELIVERED: ["ON_HOLD", "CANCELLED"],
+  ON_HOLD: ["DRAFT", "RECEIVED", "IN_PROGRESS", "DELIVERED", "CANCELLED"],
+  CANCELLED: [],
+};
+
+const LEGACY_TRANSITIONS: Record<string, string[]> = {
   Lead: ["Qualified", "Lost"],
   Qualified: ["Won", "Lost"],
   Won: ["New", "Lost"],
@@ -72,7 +92,7 @@ export const PATCH = withAuth("orders.manage",
       );
     }
 
-    const { status } = body;
+    const { status, statusReasonNote } = body;
     if (!status) {
       return NextResponse.json({ error: { code: "BAD_REQUEST", message: "status required." } }, { status: 400 });
     }
@@ -86,7 +106,27 @@ export const PATCH = withAuth("orders.manage",
     }
 
     const before = order.status;
-    const allowed = ALLOWED_TRANSITIONS[before] ?? [];
+
+    // 100-Point ID gate: RECEIVED requires client id_points_verified >= 100.
+    if (status === "RECEIVED" && before !== "RECEIVED") {
+      const clients = await collection("clients");
+      const client = await clients.findOne({ _id: order.clientId });
+      const idPoints = client?.id_points_verified ?? 0;
+      if (Number(idPoints) < 100) {
+        return NextResponse.json(
+          { error: { code: "ID_POINTS_NOT_VERIFIED", message: "Client must have 100 verified ID points before enrolment can be received." } },
+          { status: 400 },
+        );
+      }
+    }
+
+    // Determine which transition set applies.
+    const appStatuses = ["DRAFT", "RECEIVED", "IN_PROGRESS", "DELIVERED", "ON_HOLD", "CANCELLED"];
+    const isAppFlow = appStatuses.includes(before) || appStatuses.includes(status);
+    const allowed = isAppFlow
+      ? (APPLICATION_TRANSITIONS[before] ?? [])
+      : (LEGACY_TRANSITIONS[before] ?? []);
+
     if (!allowed.includes(status)) {
       return NextResponse.json(
         { error: { code: "INVALID_TRANSITION", message: `Cannot move from ${before} to ${status}` } },
@@ -94,9 +134,30 @@ export const PATCH = withAuth("orders.manage",
       );
     }
 
+    // ON_HOLD / CANCELLED require a mandatory status_reason_note.
+    if ((status === "ON_HOLD" || status === "CANCELLED") && !statusReasonNote) {
+      return NextResponse.json(
+        { error: { code: "BAD_REQUEST", message: "statusReasonNote is required for ON_HOLD or CANCELLED." } },
+        { status: 400 },
+      );
+    }
+
     const now = new Date();
     const update: Record<string, unknown> = { status, updatedAt: now };
     if (status === "Completed") update.completedAt = now;
+    if (statusReasonNote) update.statusReasonNote = statusReasonNote;
+
+    // Immutable price snapshots on RECEIVED (docs v5.1 §2, v5.0 §5).
+    if (status === "RECEIVED" && before !== "RECEIVED") {
+      update.snapTrueRtoCost = order.trueRtoCost ?? null;
+      update.snapApprovedInternalCost = order.approvedInternalCost ?? null;
+      update.snapB2bWholesalePrice = order.b2bWholesalePrice ?? null;
+      update.snapB2cRetailPrice = order.b2cRetailPrice ?? null;
+      update.snapSalePrice = order.sellingPrice;
+      update.snapAdditionalFees = order.feeTotal;
+      update.snapDiscount = 0;
+      update.snapTotalBilled = order.sellingPrice + order.feeTotal;
+    }
 
     const historyEntry: Record<string, unknown> = { timestamp: now, field: "status", before, after: status, actorId: actor.userId };
 
@@ -112,7 +173,16 @@ export const PATCH = withAuth("orders.manage",
       entityId: String(id),
       action: "status_transition",
       before: { status: before },
-      after: { status },
+      after: { status, statusReasonNote },
+      snapshots: status === "RECEIVED" ? {
+        snapTrueRtoCost: order.trueRtoCost ?? null,
+        snapApprovedInternalCost: order.approvedInternalCost ?? null,
+        snapB2bWholesalePrice: order.b2bWholesalePrice ?? null,
+        snapB2cRetailPrice: order.b2cRetailPrice ?? null,
+        snapSalePrice: order.sellingPrice,
+        snapAdditionalFees: order.feeTotal,
+        snapTotalBilled: order.sellingPrice + order.feeTotal,
+      } : null,
     });
 
     return NextResponse.json({ ok: true, before, after: status });

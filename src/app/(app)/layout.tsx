@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 
 import { AppShell } from "@/components/layout/app-shell"
+import { ErrorBoundary } from "@/components/error-boundary"
 import { RequireAuth } from "@/components/require-auth"
 
 /**
@@ -10,7 +11,9 @@ import { RequireAuth } from "@/components/require-auth"
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>
-      <AppShell>{children}</AppShell>
+      <ErrorBoundary>
+        <AppShell>{children}</AppShell>
+      </ErrorBoundary>
     </RequireAuth>
   )
 }

@@ -1,6 +1,7 @@
 import { apiFetch, uploadFile } from "@/lib/api"
 import type {
   Agent,
+  EnrolmentKit,
   Order,
   Permission,
   PriceCategory,
@@ -10,6 +11,7 @@ import type {
   Role,
   RoleName,
   Rto,
+  RtoQualificationScope,
   SupplierRoute,
   User,
   UserRef,
@@ -124,7 +126,7 @@ export async function createQualification(
 
 export async function updateQualification(
   id: string,
-  patch: Partial<Pick<Qualification, "code" | "title" | "trainingPackage" | "industry" | "status" | "licensingRefs">>,
+  patch: Partial<Pick<Qualification, "code" | "title" | "trainingPackage" | "industry" | "status" | "licensingRefs" | "isBundle" | "deliveryModes" | "trainingPackageTags">>,
 ): Promise<Qualification> {
   const data = await apiFetch<{ item: Qualification }>(`/masters/qualifications/${id}`, {
     method: "PATCH",
@@ -238,6 +240,139 @@ export async function updateMapping(
 
 export async function deleteMapping(id: string): Promise<void> {
   await apiFetch<{ ok: boolean }>(`/masters/qualification-rto-mappings/${id}`, {
+    method: "DELETE",
+  })
+}
+
+/* ---------- Qualification → RTO scopes (Phase 4) ---------- */
+
+export interface ScopeItem extends RtoQualificationScope {}
+
+export async function listScopes({
+  qualificationId,
+  issuingRtoId,
+  deliveryMode,
+  status,
+}: {
+  qualificationId?: string
+  issuingRtoId?: string
+  deliveryMode?: string
+  status?: string
+} = {}): Promise<RtoQualificationScope[]> {
+  const params = new URLSearchParams()
+  if (qualificationId) params.set("qualificationId", qualificationId)
+  if (issuingRtoId) params.set("issuingRtoId", issuingRtoId)
+  if (deliveryMode) params.set("deliveryMode", deliveryMode)
+  if (status) params.set("status", status)
+  const data = await apiFetch<{ items: RtoQualificationScope[]; total: number }>(
+    `/scopes?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function listScopesForQualification(
+  qualificationId: string,
+): Promise<RtoQualificationScope[]> {
+  const data = await apiFetch<{ items: RtoQualificationScope[] }>(
+    `/qualifications/${qualificationId}/scopes`,
+  )
+  return data.items
+}
+
+export async function createScope(
+  s: Omit<RtoQualificationScope, "id" | "createdAt" | "updatedAt">,
+): Promise<RtoQualificationScope> {
+  const data = await apiFetch<{ scope: RtoQualificationScope }>("/scopes", {
+    method: "POST",
+    body: s,
+  })
+  return data.scope
+}
+
+export async function updateScope(
+  id: string,
+  patch: Partial<
+    Pick<
+      RtoQualificationScope,
+      | "intermediaryPartnerId"
+      | "issuingRtoId"
+      | "deliveryMode"
+      | "trueRtoCost"
+      | "currency"
+      | "effectiveFrom"
+      | "effectiveTo"
+      | "status"
+    >
+  >,
+): Promise<RtoQualificationScope> {
+  const data = await apiFetch<{ scope: RtoQualificationScope }>(
+    `/scopes/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.scope
+}
+
+export async function deleteScope(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/scopes/${id}`, { method: "DELETE" })
+}
+
+/* ---------- Enrolment kits (Phase 4) ---------- */
+
+export interface EnrolmentKitItem extends EnrolmentKit {}
+
+export async function listEnrolmentKits({
+  qualificationId,
+  issuingRtoId,
+  active,
+}: {
+  qualificationId?: string
+  issuingRtoId?: string
+  active?: boolean
+} = {}): Promise<EnrolmentKit[]> {
+  const params = new URLSearchParams()
+  if (qualificationId) params.set("qualificationId", qualificationId)
+  if (issuingRtoId) params.set("issuingRtoId", issuingRtoId)
+  if (active !== undefined) params.set("active", String(active))
+  const data = await apiFetch<{ items: EnrolmentKit[]; total: number }>(
+    `/enrolment-kits?${params.toString()}`,
+  )
+  return data.items
+}
+
+export async function createEnrolmentKit(
+  k: Omit<EnrolmentKit, "id" | "createdAt" | "updatedAt">,
+): Promise<EnrolmentKit> {
+  const data = await apiFetch<{ kit: EnrolmentKit }>("/enrolment-kits", {
+    method: "POST",
+    body: k,
+  })
+  return data.kit
+}
+
+export async function updateEnrolmentKit(
+  id: string,
+  patch: Partial<
+    Pick<
+      EnrolmentKit,
+      | "qualificationId"
+      | "issuingRtoId"
+      | "fileName"
+      | "fileUrl"
+      | "contentType"
+      | "sizeBytes"
+      | "active"
+    >
+  >,
+): Promise<EnrolmentKit> {
+  const data = await apiFetch<{ kit: EnrolmentKit }>(
+    `/enrolment-kits/${id}`,
+    { method: "PATCH", body: patch },
+  )
+  return data.kit
+}
+
+export async function deleteEnrolmentKit(id: string): Promise<void> {
+  await apiFetch<{ ok: boolean }>(`/enrolment-kits/${id}`, {
     method: "DELETE",
   })
 }

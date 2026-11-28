@@ -4,7 +4,17 @@
  * future REST/MongoDB backend can plug in without UI changes.
  */
 
-export type RoleName = "SUPER_ADMIN" | "ADMIN" | "BDC" | "B2B_AGENT" | "EMPLOYEE"
+export type RoleName =
+  | "SUPER_ADMIN"
+  | "OPS_ADMIN"
+  | "ACCOUNTS"
+  | "SALES_BDC"
+  | "EXTERNAL_BROKER"
+  | "CANDIDATE"
+  | "ADMIN"
+  | "BDC"
+  | "B2B_AGENT"
+  | "EMPLOYEE"
 
 export interface Role {
   id: string
@@ -26,6 +36,8 @@ export interface User {
   active: boolean
   is_active: boolean
   lastLoginAt: string | null
+  /** Channel type: IN_HOUSE_B2C or EXTERNAL_B2B (docs v5.1/v5.0). */
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_B2B" | null
 }
 
 /**
@@ -49,9 +61,17 @@ export interface Agent {
   contact: string
   commissionRule: string
   active: boolean
+  /** Fixed wholesale tier assigned to external brokers. */
+  b2b_tier?: "SILVER" | "GOLD" | "PLATINUM" | null
 }
 
 export type QualificationStatus = "current" | "superseded"
+
+export type DeliveryMode = "RPL" | "ONLINE" | "CLASSROOM"
+
+export type TrainingPackageTag =
+  | "CHC" | "AUR" | "BSB" | "CPC" | "CPP" | "HLT"
+  | "ICT" | "FNS" | "TLI" | "SIS"
 
 export interface LicensingRef {
   industry: string
@@ -68,6 +88,42 @@ export interface Qualification {
   industry: string
   status: QualificationStatus
   licensingRefs: LicensingRef[]
+  /** Delivery mode variants offered for this qualification. */
+  deliveryModes?: DeliveryMode[]
+  /** True for dual qualifications (e.g. CHC33021 + CHC43121). */
+  isBundle?: boolean
+  /** Training package tags for filtering and grouping. */
+  trainingPackageTags?: TrainingPackageTag[]
+}
+
+/** Composite-key scope: qualification + partner + RTO + delivery mode → true RTO cost. */
+export interface RtoQualificationScope {
+  id: string
+  qualificationId: string
+  intermediaryPartnerId: string | null
+  issuingRtoId: string
+  deliveryMode: DeliveryMode
+  trueRtoCost: number
+  currency: Currency
+  effectiveFrom?: string
+  effectiveTo: string | null
+  status: "active" | "inactive"
+  createdAt: string
+  updatedAt: string
+}
+
+/** RTO-specific enrolment kit attached per (issuing_rto_id, qualification_id) pair. */
+export interface EnrolmentKit {
+  id: string
+  qualificationId: string
+  issuingRtoId: string
+  fileName: string
+  fileUrl: string
+  contentType: string
+  sizeBytes: number
+  active: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export type RtoStatus = "active" | "suspended" | "at-risk" | "inactive"
@@ -173,11 +229,18 @@ export type Permission =
   | "finance.reconcile"
   | "rplPartners.manage"
   | "rplPartners.view"
+  | "scopes.manage"
 
 /* ================= Day-3: Clients, Orders, Workflow, Documents ========== */
 /* Statuses use the exact vocabularies from Spec §5–§6. Never merge them. */
 
 export type OrderStatus =
+  | "DRAFT"
+  | "RECEIVED"
+  | "IN_PROGRESS"
+  | "DELIVERED"
+  | "ON_HOLD"
+  | "CANCELLED"
   | "Lead"
   | "Qualified"
   | "Won"
@@ -196,14 +259,14 @@ export type OrderStatus =
   | "Approved"
   | "Certificate Issued"
   | "Completed"
-  | "On Hold"
-  | "Cancelled"
   | "Refunded"
 
 export const ORDER_STATUS_GROUPS: Array<{
   group: string
   statuses: OrderStatus[]
 }> = [
+  { group: "Application", statuses: ["DRAFT", "RECEIVED", "IN_PROGRESS", "DELIVERED"] },
+  { group: "Exception", statuses: ["ON_HOLD", "CANCELLED"] },
   { group: "Sales", statuses: ["Lead", "Qualified", "Won", "Lost"] },
   {
     group: "Onboarding",
@@ -218,7 +281,6 @@ export const ORDER_STATUS_GROUPS: Array<{
     statuses: ["Under Assessment", "Additional Evidence Required", "Rework Required"],
   },
   { group: "Completion", statuses: ["Approved", "Certificate Issued", "Completed"] },
-  { group: "Exception", statuses: ["On Hold", "Cancelled", "Refunded"] },
 ]
 
 export type DocumentStatus =
@@ -327,6 +389,8 @@ export interface Client {
   referredByStudentId?: string | null
   externalReferrerName?: string | null
   updatedAt?: string
+  /** 100-Point ID check (Phase 6). RECEIVED blocked when < 100. */
+  id_points_verified?: number | null
 }
 
 export interface StatusChange {
@@ -388,7 +452,7 @@ export interface Order {
   /** Server-generated `SC-YYYY-NNNN`; never accepted from a request body. */
   enrollmentCode?: string | null
   /** DB key remains snake_case `channel_type`; this is the API-facing name. */
-  channelType?: "B2C_BDC" | "B2B_AGENT" | null
+  channelType?: "IN_HOUSE_B2C" | "EXTERNAL_B2B" | null
   /** User-id space owner fields (NOT agent ids). Never auto-assigned. */
   bdc_id?: string | null
   b2b_agent_id?: string | null
@@ -398,6 +462,35 @@ export interface Order {
   updatedAt: string
   completedAt: string | null
   history: StatusChange[]
+  /** 4-Layer Controlled Pricing Matrix (docs v5.1 §2, v5.0 §2). */
+  /** True RTO Base Cost — confidential fee owed to Issuing RTO / Partner. */
+  trueRtoCost?: number | null
+  /** Snapshot of true RTO cost locked on RECEIVED status. */
+  snapTrueRtoCost?: number | null
+  /** Approved Internal Floor — internal transfer floor set by Super Admin. */
+  approvedInternalCost?: number | null
+  /** Snapshot of approved internal cost locked on RECEIVED status. */
+  snapApprovedInternalCost?: number | null
+  /** B2B Fixed Wholesale Price — tiered wholesale rate billed to External Brokers. */
+  b2bWholesalePrice?: number | null
+  /** Snapshot of B2B wholesale price locked on RECEIVED status. */
+  snapB2bWholesalePrice?: number | null
+  /** B2C Retail Price — direct-to-candidate retail price. */
+  b2cRetailPrice?: number | null
+  /** Snapshot of B2C retail price locked on RECEIVED status. */
+  snapB2cRetailPrice?: number | null
+  /** Snapshot of sale price locked on RECEIVED status. */
+  snapSalePrice?: number | null
+  /** Snapshot of additional fees locked on RECEIVED status. */
+  snapAdditionalFees?: number | null
+  /** Snapshot of discount locked on RECEIVED status. */
+  snapDiscount?: number | null
+  /** Snapshot of total billed locked on RECEIVED status. */
+  snapTotalBilled?: number | null
+  /** Commission amount unlocked on DELIVERED status. */
+  commissionAmount?: number | null
+  /** Status reason note mandatory for ON_HOLD / CANCELLED. */
+  statusReasonNote?: string | null
 }
 
 /** RTO processing record for an order (Phase 3). */

@@ -50,6 +50,7 @@ export interface AuditInput {
   action: string;
   before?: unknown;
   after?: unknown;
+  snapshots?: unknown;
 }
 
 export async function writeAudit(input: AuditInput): Promise<void> {
@@ -63,6 +64,7 @@ export async function writeAudit(input: AuditInput): Promise<void> {
       action: input.action,
       before: sanitizeAudit(input.before),
       after: sanitizeAudit(input.after),
+      snapshots: input.snapshots ? sanitizeAudit(input.snapshots) : null,
       createdAt: new Date(),
     });
   } catch (err) {

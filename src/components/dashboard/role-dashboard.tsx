@@ -35,9 +35,9 @@ interface RoleConfig {
 }
 
 /**
- * The four existing roles only. Proposed SALES_AGENT / SOURCE_AGENT /
- * PARTNER_AGENT names are order responsibilities, not roles in this system;
- * BDC and B2B_AGENT are the agent-facing dashboards.
+ * Dashboard configuration for all roles (docs v5.1 §1, v5.0 §1).
+ * 6 roles: SUPER_ADMIN, OPS_ADMIN, ACCOUNTS, SALES_BDC, EXTERNAL_BROKER, CANDIDATE
+ * plus legacy aliases: ADMIN, BDC, B2B_AGENT, EMPLOYEE
  */
 const CONFIG: Record<RoleName, RoleConfig> = {
   SUPER_ADMIN: {
@@ -45,6 +45,36 @@ const CONFIG: Record<RoleName, RoleConfig> = {
     subtitle: "Whole-of-business performance, finance, commission and delivery",
     tabs: ["overview", "clients", "orders", "payments", "performance", "analytics"],
     sections: ["overview", "pipeline", "finance", "commission"],
+  },
+  OPS_ADMIN: {
+    title: "Operations centre",
+    subtitle: "Applications, 100-point ID verification, RTO lodgement and certificate delivery",
+    tabs: ["overview", "clients", "orders", "payments"],
+    sections: ["overview", "pipeline"],
+  },
+  ACCOUNTS: {
+    title: "Finance & payouts",
+    subtitle: "B2B/B2C invoicing, payment reconciliation, RTO bills, QuickBooks sync",
+    tabs: ["overview", "clients", "orders", "payments"],
+    sections: ["overview", "finance"],
+  },
+  SALES_BDC: {
+    title: "My assignments",
+    subtitle: "Assigned clients and orders, processing stage and follow-ups",
+    tabs: ["overview", "clients", "orders", "analytics"],
+    sections: ["overview", "pipeline"],
+  },
+  EXTERNAL_BROKER: {
+    title: "Partner overview",
+    subtitle: "Assigned orders, certificate progress and wholesale pricing",
+    tabs: ["overview", "clients", "orders"],
+    sections: ["overview", "pipeline"],
+  },
+  CANDIDATE: {
+    title: "Applicant portal",
+    subtitle: "Your application status, evidence uploads and certificate download",
+    tabs: ["overview"],
+    sections: ["overview"],
   },
   ADMIN: {
     title: "Operations centre",
