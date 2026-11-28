@@ -132,8 +132,13 @@ export function FinancePage() {
       setSummary(s)
       setPayments(pay)
       setQbRows(q)
+      const qbStatuses = await Promise.all(
+        inv.map((i) =>
+          qbStatusFor("invoice", i.id).then((status) => ({ id: i.id, status })),
+        ),
+      )
       const m: Record<string, string> = {}
-      for (const i of inv) m[i.id] = await qbStatusFor("invoice", i.id)
+      for (const { id, status } of qbStatuses) m[id] = status
       setQbMap(m)
     })()
   }, [])
