@@ -126,7 +126,7 @@ export async function createQualification(
 
 export async function updateQualification(
   id: string,
-  patch: Partial<Pick<Qualification, "code" | "title" | "trainingPackage" | "industry" | "status" | "licensingRefs">>,
+  patch: Partial<Pick<Qualification, "code" | "title" | "trainingPackage" | "industry" | "status" | "licensingRefs" | "isBundle" | "deliveryModes" | "trainingPackageTags">>,
 ): Promise<Qualification> {
   const data = await apiFetch<{ item: Qualification }>(`/masters/qualifications/${id}`, {
     method: "PATCH",
